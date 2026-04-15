@@ -1,0 +1,30 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.vite/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editores
+.vscode/settings.json
+.idea/
+*.swp
+
+# SO
+.DS_Store
+Thumbs.db
+
+# Rapier WASM (generado)
+*.wasm.d.ts
