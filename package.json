@@ -1,0 +1,13 @@
+{
+  "name": "rogue-arena",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter client dev\" \"pnpm --filter server dev\"",
+    "build": "pnpm --filter client build && pnpm --filter server build",
+    "lint": "pnpm --recursive lint",
+    "typecheck": "pnpm --recursive typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
