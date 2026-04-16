@@ -1,39 +1,42 @@
 import './style.css';
 import * as THREE from 'three';
 import { GameLoop } from './engine/GameLoop';
+import { SceneManager } from './engine/SceneManager';
 
-// Configuración básica de Three.js
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.z = 5;
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-
-// Agregar canvas al DOM
+// Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = '';
-app.appendChild(renderer.domElement);
+const canvas = document.createElement('canvas');
+canvas.id = 'three-canvas';
+app.appendChild(canvas);
 
-// Crear un cubo giratorio
+// Crear SceneManager (maneja escena, renderer, cámara, luces, sombras)
+const sceneManager = new SceneManager(canvas);
+
+// Obtener referencias para uso local
+const scene = sceneManager.getScene();
+const camera = sceneManager.getCamera();
+const renderer = sceneManager.getRenderer();
+
+// Crear un cubo giratorio con sombras
 const geometry = new THREE.BoxGeometry(1, 1, 1);
 const material = new THREE.MeshPhongMaterial({
   color: 0x00ff88,
   shininess: 100,
 });
 const cube = new THREE.Mesh(geometry, material);
-scene.add(cube);
+cube.castShadow = true;
+cube.receiveShadow = true;
+sceneManager.add(cube);
 
-// Luz
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-scene.add(ambientLight);
-
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-directionalLight.position.set(5, 5, 5);
-scene.add(directionalLight);
+// Crear un plano para proyectar sombras
+const planeGeometry = new THREE.PlaneGeometry(10, 10);
+const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 30 });
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.rotation.x = -Math.PI / 2;
+plane.position.y = -2;
+plane.receiveShadow = true;
+sceneManager.add(plane);
 
 // Variables para HMR
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -50,21 +53,14 @@ gameLoop.setFixedUpdate((dt: number) => {
   cube.rotation.y += rotationSpeed * 0.7 * dt * 60;
 });
 
-// Render: interpolación
+// Render: usar SceneManager para renderizar
 gameLoop.setRender((alpha: number) => {
-  renderer.render(scene, camera);
+  sceneManager.render();
   
   // Mostrar FPS en modo desarrollo
   if (import.meta.env.DEV) {
     displayFps(gameLoop.fps);
   }
-});
-
-// Manejo de redimensionamiento
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
 // Iniciar Game Loop
@@ -118,6 +114,7 @@ declare global {
   }
 }
 
-console.log('✅ Three.js scene initialized');
+console.log('✅ Three.js scene initialized with SceneManager');
 console.log('🎮 Rogue Arena Client - Vite + Three.js');
 console.log('🔄 HMR ready - Try: changeCubeColor(0xff0000) in console');
+console.log('🌄 SceneManager active: shadows enabled, low‑poly fog, optimized renderer');
