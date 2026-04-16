@@ -37,16 +37,30 @@ const inputManager = new InputManager();
 // const camera = sceneManager.getCamera();
 // const renderer = sceneManager.getRenderer();
 
-// Crear un cubo giratorio con sombras
+// Crear cubos para los jugadores
 const geometry = new THREE.BoxGeometry(1, 1, 1);
-const material = new THREE.MeshPhongMaterial({
+
+// Cubo del Player 1 (verde)
+const materialP1 = new THREE.MeshPhongMaterial({
   color: 0x00ff88,
   shininess: 100,
 });
-const cube = new THREE.Mesh(geometry, material);
-cube.castShadow = true;
-cube.receiveShadow = true;
-sceneManager.add(cube);
+const cubeP1 = new THREE.Mesh(geometry, materialP1);
+cubeP1.castShadow = true;
+cubeP1.receiveShadow = true;
+cubeP1.position.set(-3, 0, 0); // Posición inicial separada
+sceneManager.add(cubeP1);
+
+// Cubo del Player 2 (rojo)
+const materialP2 = new THREE.MeshPhongMaterial({
+  color: 0xff4444,
+  shininess: 100,
+});
+const cubeP2 = new THREE.Mesh(geometry, materialP2);
+cubeP2.castShadow = true;
+cubeP2.receiveShadow = true;
+cubeP2.position.set(3, 0, 0); // Posición inicial separada
+sceneManager.add(cubeP2);
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -59,7 +73,7 @@ sceneManager.add(plane);
 
 // Variables para HMR
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-let cubeColor = 0x00ff88; // Usada en changeCubeColor
+let cubeColor = 0x00ff88; // Usada en changeCubeColor (solo afecta P1)
 let rotationSpeed = 0.01;
 
 // Crear Game Loop con Fixed Timestep
@@ -70,18 +84,28 @@ gameLoop.setFixedUpdate((dt: number) => {
   // Actualizar estado de input (una vez por tick)
   inputManager.update();
 
-  // Ejemplo: mover cubo con input del Player 1
+  // Obtener estados de ambos jugadores
   const p1State = inputManager.getState(1);
-  cube.position.x += p1State.moveDir.x * dt * 5;
-  cube.position.z += p1State.moveDir.y * dt * 5; // Nota: en Three.js, Z es profundidad, Y es altura
+  const p2State = inputManager.getState(2);
 
-  // Rotación básica
-  cube.rotation.x += rotationSpeed * dt * 60;
-  cube.rotation.y += rotationSpeed * 0.7 * dt * 60;
+  // Mover Player 1 (WASD) - invertir eje Z para que W sea "adelante" (negativo)
+  cubeP1.position.x += p1State.moveDir.x * dt * 5;
+  cubeP1.position.z -= p1State.moveDir.y * dt * 5; // Negativo para que W mueva hacia adelante
+
+  // Mover Player 2 (Flechas) - misma lógica
+  cubeP2.position.x += p2State.moveDir.x * dt * 5;
+  cubeP2.position.z -= p2State.moveDir.y * dt * 5;
+
+  // Rotación básica (solo para visualización)
+  cubeP1.rotation.x += rotationSpeed * dt * 60;
+  cubeP1.rotation.y += rotationSpeed * 0.7 * dt * 60;
+  cubeP2.rotation.x += rotationSpeed * dt * 60;
+  cubeP2.rotation.y += rotationSpeed * 0.7 * dt * 60;
 
   // Mostrar estado de input en modo desarrollo
   if (import.meta.env.DEV) {
     displayInputState(p1State, 1);
+    displayInputState(p2State, 2);
   }
 });
 
@@ -127,20 +151,22 @@ function displayFps(fps: number): void {
 
 // Función para mostrar estado de input (solo desarrollo)
 function displayInputState(state: import('./engine/InputManager').InputState, playerId: number): void {
-  let inputElement = document.getElementById('input-state');
+  const elementId = `input-state-p${playerId}`;
+  let inputElement = document.getElementById(elementId);
   if (!inputElement) {
     inputElement = document.createElement('div');
-    inputElement.id = 'input-state';
+    inputElement.id = elementId;
     inputElement.style.position = 'fixed';
-    inputElement.style.top = '40px';
     inputElement.style.right = '10px';
-    inputElement.style.color = '#ffaa00';
+    inputElement.style.color = playerId === 1 ? '#ffaa00' : '#44aaff';
     inputElement.style.fontFamily = 'monospace';
     inputElement.style.fontSize = '12px';
     inputElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
     inputElement.style.padding = '5px 10px';
     inputElement.style.borderRadius = '5px';
     inputElement.style.zIndex = '1000';
+    // Posición vertical: P1 arriba, P2 abajo
+    inputElement.style.top = playerId === 1 ? '40px' : '70px';
     document.body.appendChild(inputElement);
   }
   const dir = state.moveDir;
@@ -153,11 +179,11 @@ if (import.meta.hot) {
     console.log('HMR: Three.js scene updated');
   });
 
-  // Función para cambiar color del cubo (para probar HMR)
+  // Función para cambiar color del cubo (para probar HMR) - afecta solo al Player 1
   window.changeCubeColor = (color: number) => {
     cubeColor = color;
-    if (cube.material instanceof THREE.MeshPhongMaterial) {
-      cube.material.color.setHex(color);
+    if (cubeP1.material instanceof THREE.MeshPhongMaterial) {
+      cubeP1.material.color.setHex(color);
     }
   };
 

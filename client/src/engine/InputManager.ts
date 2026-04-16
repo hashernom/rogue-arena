@@ -35,6 +35,9 @@ export class InputManager {
     p2_abilityE: 'BracketLeft',
   } as const;
 
+  /** Tipo de todas las teclas de juego posibles */
+  private static readonly GAME_KEYS = Object.values(InputManager.KEY_MAP) as readonly string[];
+
   private keys: Set<string>;
   private gamepads: Gamepad[] = [];
   private states: {
@@ -70,10 +73,17 @@ export class InputManager {
    */
   private setupEventListeners(): void {
     window.addEventListener('keydown', (e) => {
+      // Prevenir comportamiento por defecto de teclas de juego (flechas, espacio, etc.)
+      if (this.isGameKey(e.code)) {
+        e.preventDefault();
+      }
       this.keys.add(e.code);
     });
 
     window.addEventListener('keyup', (e) => {
+      if (this.isGameKey(e.code)) {
+        e.preventDefault();
+      }
       this.keys.delete(e.code);
     });
 
@@ -83,6 +93,13 @@ export class InputManager {
       this.states[1] = this.createEmptyState();
       this.states[2] = this.createEmptyState();
     });
+  }
+
+  /**
+   * Determina si una tecla es usada por el juego y debe prevenir el comportamiento por defecto.
+   */
+  private isGameKey(code: string): boolean {
+    return InputManager.GAME_KEYS.includes(code as any);
   }
 
   /**
