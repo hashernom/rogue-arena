@@ -1,5 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
+import { GameLoop } from './engine/GameLoop';
 
 // Configuración básica de Three.js
 const scene = new THREE.Scene();
@@ -39,15 +40,25 @@ scene.add(directionalLight);
 let cubeColor = 0x00ff88; // Usada en changeCubeColor
 let rotationSpeed = 0.01;
 
-// Función de animación
-function animate() {
-  requestAnimationFrame(animate);
+// Crear Game Loop con Fixed Timestep
+const gameLoop = new GameLoop();
 
-  cube.rotation.x += rotationSpeed;
-  cube.rotation.y += rotationSpeed * 0.7;
+// Fixed Update: física a 60Hz
+gameLoop.setFixedUpdate((dt: number) => {
+  // Actualizar rotación del cubo con timestep fijo
+  cube.rotation.x += rotationSpeed * dt * 60; // Multiplicar por 60 para mantener misma velocidad
+  cube.rotation.y += rotationSpeed * 0.7 * dt * 60;
+});
 
+// Render: interpolación
+gameLoop.setRender((alpha: number) => {
   renderer.render(scene, camera);
-}
+  
+  // Mostrar FPS en modo desarrollo
+  if (import.meta.env.DEV) {
+    displayFps(gameLoop.fps);
+  }
+});
 
 // Manejo de redimensionamiento
 window.addEventListener('resize', () => {
@@ -56,8 +67,29 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Iniciar animación
-animate();
+// Iniciar Game Loop
+gameLoop.start();
+
+// Función para mostrar FPS en pantalla (solo desarrollo)
+function displayFps(fps: number): void {
+  let fpsElement = document.getElementById('fps-counter');
+  if (!fpsElement) {
+    fpsElement = document.createElement('div');
+    fpsElement.id = 'fps-counter';
+    fpsElement.style.position = 'fixed';
+    fpsElement.style.top = '10px';
+    fpsElement.style.right = '10px';
+    fpsElement.style.color = '#00ff88';
+    fpsElement.style.fontFamily = 'monospace';
+    fpsElement.style.fontSize = '14px';
+    fpsElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    fpsElement.style.padding = '5px 10px';
+    fpsElement.style.borderRadius = '5px';
+    fpsElement.style.zIndex = '1000';
+    document.body.appendChild(fpsElement);
+  }
+  fpsElement.textContent = `FPS: ${fps}`;
+}
 
 // Exportar para HMR
 if (import.meta.hot) {
