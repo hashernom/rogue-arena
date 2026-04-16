@@ -4,6 +4,7 @@ import { GameLoop } from './engine/GameLoop';
 import { SceneManager } from './engine/SceneManager';
 import { CameraController } from './engine/CameraController';
 import { AssetLoader } from './engine/AssetLoader';
+import { InputManager } from './engine/InputManager';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -27,6 +28,9 @@ const assetLoader = new AssetLoader();
 // Si falla, el loader manejará el error y podemos usar un fallback.
 const demoModelUrl = 'https://threejs.org/examples/models/gltf/Duck/glTF/Duck.gltf';
 assetLoader.preload([demoModelUrl]);
+
+// Crear InputManager para controles desacoplados
+const inputManager = new InputManager();
 
 // Referencias disponibles si se necesitan en el futuro
 // const scene = sceneManager.getScene();
@@ -63,9 +67,22 @@ const gameLoop = new GameLoop();
 
 // Fixed Update: física a 60Hz
 gameLoop.setFixedUpdate((dt: number) => {
-  // Actualizar rotación del cubo con timestep fijo
-  cube.rotation.x += rotationSpeed * dt * 60; // Multiplicar por 60 para mantener misma velocidad
+  // Actualizar estado de input (una vez por tick)
+  inputManager.update();
+
+  // Ejemplo: mover cubo con input del Player 1
+  const p1State = inputManager.getState(1);
+  cube.position.x += p1State.moveDir.x * dt * 5;
+  cube.position.z += p1State.moveDir.y * dt * 5; // Nota: en Three.js, Z es profundidad, Y es altura
+
+  // Rotación básica
+  cube.rotation.x += rotationSpeed * dt * 60;
   cube.rotation.y += rotationSpeed * 0.7 * dt * 60;
+
+  // Mostrar estado de input en modo desarrollo
+  if (import.meta.env.DEV) {
+    displayInputState(p1State, 1);
+  }
 });
 
 // Render: usar SceneManager para renderizar
@@ -106,6 +123,28 @@ function displayFps(fps: number): void {
     document.body.appendChild(fpsElement);
   }
   fpsElement.textContent = `FPS: ${fps}`;
+}
+
+// Función para mostrar estado de input (solo desarrollo)
+function displayInputState(state: import('./engine/InputManager').InputState, playerId: number): void {
+  let inputElement = document.getElementById('input-state');
+  if (!inputElement) {
+    inputElement = document.createElement('div');
+    inputElement.id = 'input-state';
+    inputElement.style.position = 'fixed';
+    inputElement.style.top = '40px';
+    inputElement.style.right = '10px';
+    inputElement.style.color = '#ffaa00';
+    inputElement.style.fontFamily = 'monospace';
+    inputElement.style.fontSize = '12px';
+    inputElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    inputElement.style.padding = '5px 10px';
+    inputElement.style.borderRadius = '5px';
+    inputElement.style.zIndex = '1000';
+    document.body.appendChild(inputElement);
+  }
+  const dir = state.moveDir;
+  inputElement.textContent = `P${playerId}: dir(${dir.x.toFixed(2)}, ${dir.y.toFixed(2)}) A:${state.attacking ? 'Y' : 'N'} Q:${state.abilityQ ? 'Y' : 'N'} E:${state.abilityE ? 'Y' : 'N'}`;
 }
 
 // Exportar para HMR
