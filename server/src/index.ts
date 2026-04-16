@@ -12,10 +12,10 @@ const io = new Server(httpServer, {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Rogue Arena Server' });
+  res.json({ status: 'ok' });
 });
 
 io.on('connection', (socket) => {
