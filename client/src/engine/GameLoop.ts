@@ -63,7 +63,7 @@ export class GameLoop {
     
     this.isRunning = true;
     this.lastTime = performance.now();
-    this.fpsCounter.lastFpsUpdate = this.lastTime;
+    this.fpsCounter.lastFpsUpdate = 0; // Inicializar en 0 segundos
     this.tick(this.lastTime);
   }
   
