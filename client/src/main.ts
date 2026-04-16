@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GameLoop } from './engine/GameLoop';
 import { SceneManager } from './engine/SceneManager';
 import { CameraController } from './engine/CameraController';
+import { AssetLoader } from './engine/AssetLoader';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -17,6 +18,15 @@ const sceneManager = new SceneManager(canvas);
 // Crear CameraController con cámara isométrica ortográfica
 const cameraController = new CameraController(20); // frustumSize = 20 (arena 30x30 cabe)
 sceneManager.setCamera(cameraController.getCamera());
+
+// Crear AssetLoader para gestión centralizada de modelos
+const assetLoader = new AssetLoader();
+
+// Precargar assets críticos antes del primer tick (ejemplo: modelo de prueba)
+// Usamos un modelo público de Three.js para demostración.
+// Si falla, el loader manejará el error y podemos usar un fallback.
+const demoModelUrl = 'https://threejs.org/examples/models/gltf/Duck/glTF/Duck.gltf';
+assetLoader.preload([demoModelUrl]);
 
 // Referencias disponibles si se necesitan en el futuro
 // const scene = sceneManager.getScene();
