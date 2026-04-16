@@ -5,7 +5,8 @@ import { SceneManager } from './engine/SceneManager';
 import { CameraController } from './engine/CameraController';
 import { AssetLoader } from './engine/AssetLoader';
 import { InputManager } from './engine/InputManager';
-import { PhysicsWorld } from './physics/PhysicsWorld';
+import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
+import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -80,12 +81,58 @@ let rotationSpeed = 0.01;
 // Variable global para PhysicsWorld (accesible desde HMR si es necesario)
 let physicsWorld: PhysicsWorld | null = null;
 
+// Handles de cuerpos físicos
+let player1BodyHandle: RigidBodyHandle | null = null;
+let player2BodyHandle: RigidBodyHandle | null = null;
+let planeBodyHandle: RigidBodyHandle | null = null;
+
 // Función asíncrona que inicializa Rapier3D WASM y luego inicia el juego
 async function initGameWithPhysics(): Promise<void> {
   try {
     console.log('🔄 Inicializando Rapier3D WASM...');
     physicsWorld = await PhysicsWorld.init();
     console.log('✅ Rapier3D WASM cargado y PhysicsWorld listo');
+
+    // Crear cuerpos físicos para los jugadores y el plano
+    if (physicsWorld) {
+      // Plano estático (suelo)
+      const planeCollider = RAPIER.ColliderDesc.cuboid(15, 0.1, 15); // half-extents (30x0.2x30)
+      planeBodyHandle = physicsWorld.createBody({
+        type: 'static',
+        position: new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z),
+        rotation: new THREE.Euler(plane.rotation.x, plane.rotation.y, plane.rotation.z),
+        collider: planeCollider,
+      });
+
+      // Jugador 1: cuerpo dinámico (cubo)
+      const boxCollider = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5); // half-extents (1x1x1)
+      boxCollider.setRestitution(0.2);
+      boxCollider.setFriction(0.5);
+      boxCollider.setMass(1.0);
+      player1BodyHandle = physicsWorld.createBody({
+        type: 'dynamic',
+        position: new THREE.Vector3(cubeP1.position.x, cubeP1.position.y, cubeP1.position.z),
+        collider: boxCollider,
+      });
+
+      // Jugador 2: cuerpo dinámico (cubo)
+      const boxCollider2 = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
+      boxCollider2.setRestitution(0.2);
+      boxCollider2.setFriction(0.5);
+      boxCollider2.setMass(1.0);
+      player2BodyHandle = physicsWorld.createBody({
+        type: 'dynamic',
+        position: new THREE.Vector3(cubeP2.position.x, cubeP2.position.y, cubeP2.position.z),
+        collider: boxCollider2,
+      });
+
+      // Sincronizar meshes con cuerpos físicos
+      physicsWorld.syncToThree(cubeP1, player1BodyHandle);
+      physicsWorld.syncToThree(cubeP2, player2BodyHandle);
+      physicsWorld.syncToThree(plane, planeBodyHandle);
+
+      console.log('📦 Cuerpos físicos creados y sincronizados');
+    }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
     // Continuar sin física (modo degradado)
@@ -104,23 +151,36 @@ async function initGameWithPhysics(): Promise<void> {
     const p1State = inputManager.getState(1);
     const p2State = inputManager.getState(2);
 
-    // Mover Player 1 (WASD) - invertir eje Z para que W sea "adelante" (negativo)
-    cubeP1.position.x += p1State.moveDir.x * dt * 5;
-    cubeP1.position.z -= p1State.moveDir.y * dt * 5; // Negativo para que W mueva hacia adelante
+    // Aplicar fuerzas a los cuerpos físicos (si existen)
+    if (physicsWorld && player1BodyHandle && player2BodyHandle) {
+      const body1 = physicsWorld.getBody(player1BodyHandle);
+      const body2 = physicsWorld.getBody(player2BodyHandle);
 
-    // Mover Player 2 (Flechas) - misma lógica
-    cubeP2.position.x += p2State.moveDir.x * dt * 5;
-    cubeP2.position.z -= p2State.moveDir.y * dt * 5;
+      // Fuerza de movimiento basada en input (impulso)
+      const impulseStrength = 2.0; // ajuste empírico
+      if (body1) {
+        body1.applyImpulse(
+          { x: p1State.moveDir.x * impulseStrength, y: 0, z: -p1State.moveDir.y * impulseStrength },
+          true
+        );
+      }
+      if (body2) {
+        body2.applyImpulse(
+          { x: p2State.moveDir.x * impulseStrength, y: 0, z: -p2State.moveDir.y * impulseStrength },
+          true
+        );
+      }
+    }
 
-    // Rotación básica (solo para visualización)
+    // Rotación básica (solo para visualización) - mantener independiente de física
     cubeP1.rotation.x += rotationSpeed * dt * 60;
     cubeP1.rotation.y += rotationSpeed * 0.7 * dt * 60;
     cubeP2.rotation.x += rotationSpeed * dt * 60;
     cubeP2.rotation.y += rotationSpeed * 0.7 * dt * 60;
 
-    // Si hay PhysicsWorld, avanzar la simulación física
+    // Avanzar simulación física y sincronizar todos los meshes
     if (physicsWorld) {
-      physicsWorld.step(dt);
+      physicsWorld.stepAll(dt);
     }
 
     // Mostrar estado de input en modo desarrollo
