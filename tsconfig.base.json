@@ -13,13 +13,13 @@
     "isolatedModules": true,
     "noEmit": false,
     "jsx": "preserve",
-    "baseUrl": ".",
+    // baseUrl eliminado
     "paths": {
       "@rogue-arena/shared": ["./shared/src"],
       "@rogue-arena/client": ["./client/src"],
       "@rogue-arena/server": ["./server/src"]
-    },
-    "ignoreDeprecations": "5.0"
+    }
+    // ignoreDeprecations ya no es necesario si borras baseUrl
   },
   "exclude": ["node_modules", "dist"]
 }
