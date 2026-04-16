@@ -18,7 +18,8 @@
       "@rogue-arena/shared": ["./shared/src"],
       "@rogue-arena/client": ["./client/src"],
       "@rogue-arena/server": ["./server/src"]
-    }
+    },
+    "ignoreDeprecations": "6.0"
   },
   "exclude": ["node_modules", "dist"]
 }
