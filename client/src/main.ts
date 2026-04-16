@@ -2,6 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import { GameLoop } from './engine/GameLoop';
 import { SceneManager } from './engine/SceneManager';
+import { CameraController } from './engine/CameraController';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -13,10 +14,14 @@ app.appendChild(canvas);
 // Crear SceneManager (maneja escena, renderer, cámara, luces, sombras)
 const sceneManager = new SceneManager(canvas);
 
-// Obtener referencias para uso local
-const scene = sceneManager.getScene();
-const camera = sceneManager.getCamera();
-const renderer = sceneManager.getRenderer();
+// Crear CameraController con cámara isométrica ortográfica
+const cameraController = new CameraController(20); // frustumSize = 20 (arena 30x30 cabe)
+sceneManager.setCamera(cameraController.getCamera());
+
+// Referencias disponibles si se necesitan en el futuro
+// const scene = sceneManager.getScene();
+// const camera = sceneManager.getCamera();
+// const renderer = sceneManager.getRenderer();
 
 // Crear un cubo giratorio con sombras
 const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -30,7 +35,7 @@ cube.receiveShadow = true;
 sceneManager.add(cube);
 
 // Crear un plano para proyectar sombras
-const planeGeometry = new THREE.PlaneGeometry(10, 10);
+const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
 const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 30 });
 const plane = new THREE.Mesh(planeGeometry, planeMaterial);
 plane.rotation.x = -Math.PI / 2;
@@ -54,7 +59,7 @@ gameLoop.setFixedUpdate((dt: number) => {
 });
 
 // Render: usar SceneManager para renderizar
-gameLoop.setRender((alpha: number) => {
+gameLoop.setRender((_alpha: number) => {
   sceneManager.render();
   
   // Mostrar FPS en modo desarrollo
@@ -65,6 +70,12 @@ gameLoop.setRender((alpha: number) => {
 
 // Iniciar Game Loop
 gameLoop.start();
+
+// Manejo de redimensionado: actualizar CameraController y SceneManager
+window.addEventListener('resize', () => {
+  cameraController.handleResize();
+  // SceneManager ya actualiza el renderer internamente
+});
 
 // Función para mostrar FPS en pantalla (solo desarrollo)
 function displayFps(fps: number): void {
@@ -118,3 +129,4 @@ console.log('✅ Three.js scene initialized with SceneManager');
 console.log('🎮 Rogue Arena Client - Vite + Three.js');
 console.log('🔄 HMR ready - Try: changeCubeColor(0xff0000) in console');
 console.log('🌄 SceneManager active: shadows enabled, low‑poly fog, optimized renderer');
+console.log('📐 CameraController active: isometric OrthographicCamera (frustumSize=20)');

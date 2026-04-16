@@ -7,16 +7,16 @@ import * as THREE from 'three';
 export class SceneManager {
   private scene: THREE.Scene;
   private renderer: THREE.WebGLRenderer;
-  private camera: THREE.PerspectiveCamera;
+  private camera: THREE.Camera;
   private ambientLight: THREE.AmbientLight;
   private directionalLight: THREE.DirectionalLight;
 
   /**
    * Crea una instancia de SceneManager.
    * @param canvas - Elemento canvas donde se renderizará la escena.
-   * @param camera - Cámara perspectiva (opcional). Si no se proporciona, se crea una por defecto.
+   * @param camera - Cámara (opcional). Si no se proporciona, se crea una perspectiva por defecto.
    */
-  constructor(canvas: HTMLCanvasElement, camera?: THREE.PerspectiveCamera) {
+  constructor(canvas: HTMLCanvasElement, camera?: THREE.Camera) {
     this.scene = this.createScene();
     this.renderer = this.createRenderer(canvas);
     this.camera = camera ?? this.createDefaultCamera();
@@ -120,11 +120,11 @@ export class SceneManager {
 
   /**
    * Maneja el redimensionado de la ventana.
+   * Actualiza solo el renderer; la cámara debe manejar su propio resize (ej. CameraController).
    */
   private handleResize(): void {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
     this.updateRendererSize(this.renderer);
+    // Notificar a la cámara si es necesario (delegado a quien la controle)
   }
 
   /**
@@ -158,8 +158,16 @@ export class SceneManager {
   /**
    * Obtiene la cámara.
    */
-  public getCamera(): THREE.PerspectiveCamera {
+  public getCamera(): THREE.Camera {
     return this.camera;
+  }
+
+  /**
+   * Reemplaza la cámara actual.
+   * @param camera - Nueva cámara.
+   */
+  public setCamera(camera: THREE.Camera): void {
+    this.camera = camera;
   }
 
   /**
