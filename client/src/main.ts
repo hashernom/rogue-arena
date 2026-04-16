@@ -5,6 +5,7 @@ import { SceneManager } from './engine/SceneManager';
 import { CameraController } from './engine/CameraController';
 import { AssetLoader } from './engine/AssetLoader';
 import { InputManager } from './engine/InputManager';
+import { PhysicsWorld } from './physics/PhysicsWorld';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -76,51 +77,81 @@ sceneManager.add(plane);
 let cubeColor = 0x00ff88; // Usada en changeCubeColor (solo afecta P1)
 let rotationSpeed = 0.01;
 
-// Crear Game Loop con Fixed Timestep
-const gameLoop = new GameLoop();
+// Variable global para PhysicsWorld (accesible desde HMR si es necesario)
+let physicsWorld: PhysicsWorld | null = null;
 
-// Fixed Update: física a 60Hz
-gameLoop.setFixedUpdate((dt: number) => {
-  // Actualizar estado de input (una vez por tick)
-  inputManager.update();
-
-  // Obtener estados de ambos jugadores
-  const p1State = inputManager.getState(1);
-  const p2State = inputManager.getState(2);
-
-  // Mover Player 1 (WASD) - invertir eje Z para que W sea "adelante" (negativo)
-  cubeP1.position.x += p1State.moveDir.x * dt * 5;
-  cubeP1.position.z -= p1State.moveDir.y * dt * 5; // Negativo para que W mueva hacia adelante
-
-  // Mover Player 2 (Flechas) - misma lógica
-  cubeP2.position.x += p2State.moveDir.x * dt * 5;
-  cubeP2.position.z -= p2State.moveDir.y * dt * 5;
-
-  // Rotación básica (solo para visualización)
-  cubeP1.rotation.x += rotationSpeed * dt * 60;
-  cubeP1.rotation.y += rotationSpeed * 0.7 * dt * 60;
-  cubeP2.rotation.x += rotationSpeed * dt * 60;
-  cubeP2.rotation.y += rotationSpeed * 0.7 * dt * 60;
-
-  // Mostrar estado de input en modo desarrollo
-  if (import.meta.env.DEV) {
-    displayInputState(p1State, 1);
-    displayInputState(p2State, 2);
+// Función asíncrona que inicializa Rapier3D WASM y luego inicia el juego
+async function initGameWithPhysics(): Promise<void> {
+  try {
+    console.log('🔄 Inicializando Rapier3D WASM...');
+    physicsWorld = await PhysicsWorld.init();
+    console.log('✅ Rapier3D WASM cargado y PhysicsWorld listo');
+  } catch (error) {
+    console.error('❌ Error al inicializar Rapier3D:', error);
+    // Continuar sin física (modo degradado)
+    console.warn('⚠️ Continuando sin física (modo degradado)');
   }
-});
 
-// Render: usar SceneManager para renderizar
-gameLoop.setRender((_alpha: number) => {
-  sceneManager.render();
-  
-  // Mostrar FPS en modo desarrollo
+  // Crear Game Loop con Fixed Timestep
+  const gameLoop = new GameLoop();
+
+  // Fixed Update: física a 60Hz
+  gameLoop.setFixedUpdate((dt: number) => {
+    // Actualizar estado de input (una vez por tick)
+    inputManager.update();
+
+    // Obtener estados de ambos jugadores
+    const p1State = inputManager.getState(1);
+    const p2State = inputManager.getState(2);
+
+    // Mover Player 1 (WASD) - invertir eje Z para que W sea "adelante" (negativo)
+    cubeP1.position.x += p1State.moveDir.x * dt * 5;
+    cubeP1.position.z -= p1State.moveDir.y * dt * 5; // Negativo para que W mueva hacia adelante
+
+    // Mover Player 2 (Flechas) - misma lógica
+    cubeP2.position.x += p2State.moveDir.x * dt * 5;
+    cubeP2.position.z -= p2State.moveDir.y * dt * 5;
+
+    // Rotación básica (solo para visualización)
+    cubeP1.rotation.x += rotationSpeed * dt * 60;
+    cubeP1.rotation.y += rotationSpeed * 0.7 * dt * 60;
+    cubeP2.rotation.x += rotationSpeed * dt * 60;
+    cubeP2.rotation.y += rotationSpeed * 0.7 * dt * 60;
+
+    // Si hay PhysicsWorld, avanzar la simulación física
+    if (physicsWorld) {
+      physicsWorld.step(dt);
+    }
+
+    // Mostrar estado de input en modo desarrollo
+    if (import.meta.env.DEV) {
+      displayInputState(p1State, 1);
+      displayInputState(p2State, 2);
+    }
+  });
+
+  // Render: usar SceneManager para renderizar
+  gameLoop.setRender((_alpha: number) => {
+    sceneManager.render();
+    
+    // Mostrar FPS en modo desarrollo
+    if (import.meta.env.DEV) {
+      displayFps(gameLoop.fps);
+    }
+  });
+
+  // Iniciar Game Loop
+  gameLoop.start();
+  console.log('🎮 Game Loop iniciado con física integrada');
+
+  // Exponer physicsWorld globalmente para depuración (solo desarrollo)
   if (import.meta.env.DEV) {
-    displayFps(gameLoop.fps);
+    (window as any).physicsWorld = physicsWorld;
   }
-});
+}
 
-// Iniciar Game Loop
-gameLoop.start();
+// Llamar a la inicialización asíncrona
+initGameWithPhysics();
 
 // Manejo de redimensionado: actualizar CameraController y SceneManager
 window.addEventListener('resize', () => {
