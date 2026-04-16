@@ -113,6 +113,8 @@ async function initGameWithPhysics(): Promise<void> {
         type: 'dynamic',
         position: new THREE.Vector3(cubeP1.position.x, cubeP1.position.y, cubeP1.position.z),
         collider: boxCollider,
+        lockRotations: true,
+        gravityScale: 0,
       });
 
       // Jugador 2: cuerpo dinámico (cubo)
@@ -124,6 +126,8 @@ async function initGameWithPhysics(): Promise<void> {
         type: 'dynamic',
         position: new THREE.Vector3(cubeP2.position.x, cubeP2.position.y, cubeP2.position.z),
         collider: boxCollider2,
+        lockRotations: true,
+        gravityScale: 0,
       });
 
       // Sincronizar meshes con cuerpos físicos
