@@ -106,9 +106,9 @@ async function initGameWithPhysics(): Promise<void> {
 
       // Jugador 1: cuerpo dinámico (cubo)
       const boxCollider = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5); // half-extents (1x1x1)
-      boxCollider.setRestitution(0.2);
-      boxCollider.setFriction(0.5);
-      boxCollider.setMass(1.0);
+      boxCollider.setRestitution(0.05); // reducida para menos rebote
+      boxCollider.setFriction(1.2); // mayor fricción para detenerse más rápido
+      boxCollider.setMass(2.0); // mayor masa para mayor inercia
       player1BodyHandle = physicsWorld.createBody({
         type: 'dynamic',
         position: new THREE.Vector3(cubeP1.position.x, cubeP1.position.y, cubeP1.position.z),
@@ -119,9 +119,9 @@ async function initGameWithPhysics(): Promise<void> {
 
       // Jugador 2: cuerpo dinámico (cubo)
       const boxCollider2 = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
-      boxCollider2.setRestitution(0.2);
-      boxCollider2.setFriction(0.5);
-      boxCollider2.setMass(1.0);
+      boxCollider2.setRestitution(0.05);
+      boxCollider2.setFriction(1.2);
+      boxCollider2.setMass(2.0);
       player2BodyHandle = physicsWorld.createBody({
         type: 'dynamic',
         position: new THREE.Vector3(cubeP2.position.x, cubeP2.position.y, cubeP2.position.z),
@@ -130,12 +130,19 @@ async function initGameWithPhysics(): Promise<void> {
         gravityScale: 0,
       });
 
+      // Configurar damping lineal para movimiento más controlado
+      const body1 = physicsWorld.getBody(player1BodyHandle);
+      const body2 = physicsWorld.getBody(player2BodyHandle);
+      if (body1) body1.setLinearDamping(5.0);
+      if (body2) body2.setLinearDamping(5.0);
+      // Damping angular no necesario porque las rotaciones están bloqueadas
+
       // Sincronizar meshes con cuerpos físicos
       physicsWorld.syncToThree(cubeP1, player1BodyHandle);
       physicsWorld.syncToThree(cubeP2, player2BodyHandle);
       physicsWorld.syncToThree(plane, planeBodyHandle);
 
-      console.log('📦 Cuerpos físicos creados y sincronizados');
+      console.log('📦 Cuerpos físicos creados y sincronizados (damping aplicado)');
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -160,19 +167,33 @@ async function initGameWithPhysics(): Promise<void> {
       const body1 = physicsWorld.getBody(player1BodyHandle);
       const body2 = physicsWorld.getBody(player2BodyHandle);
 
-      // Fuerza de movimiento basada en input (impulso)
-      const impulseStrength = 2.0; // ajuste empírico
+      // Fuerza de movimiento basada en input (fuerza continua)
+      const forceStrength = 40.0; // ajuste empírico (masa 2.0, aceleración deseada)
+      const maxSpeed = 8.0; // velocidad máxima en unidades/segundo
+
       if (body1) {
-        body1.applyImpulse(
-          { x: p1State.moveDir.x * impulseStrength, y: 0, z: -p1State.moveDir.y * impulseStrength },
-          true
-        );
+        // Aplicar fuerza en la dirección del input
+        const force = { x: p1State.moveDir.x * forceStrength, y: 0, z: -p1State.moveDir.y * forceStrength };
+        body1.addForce(force, true);
+
+        // Limitar velocidad máxima
+        const linVel = body1.linvel();
+        const speed = Math.sqrt(linVel.x * linVel.x + linVel.z * linVel.z);
+        if (speed > maxSpeed) {
+          const scale = maxSpeed / speed;
+          body1.setLinvel({ x: linVel.x * scale, y: 0, z: linVel.z * scale }, true);
+        }
       }
       if (body2) {
-        body2.applyImpulse(
-          { x: p2State.moveDir.x * impulseStrength, y: 0, z: -p2State.moveDir.y * impulseStrength },
-          true
-        );
+        const force = { x: p2State.moveDir.x * forceStrength, y: 0, z: -p2State.moveDir.y * forceStrength };
+        body2.addForce(force, true);
+
+        const linVel = body2.linvel();
+        const speed = Math.sqrt(linVel.x * linVel.x + linVel.z * linVel.z);
+        if (speed > maxSpeed) {
+          const scale = maxSpeed / speed;
+          body2.setLinvel({ x: linVel.x * scale, y: 0, z: linVel.z * scale }, true);
+        }
       }
     }
 
