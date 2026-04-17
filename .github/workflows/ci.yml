@@ -47,6 +47,12 @@ jobs:
           ls -la server/node_modules/@rogue-arena/shared || echo "Symlink not found"
           echo "Checking if dist exists in symlink:"
           ls -la server/node_modules/@rogue-arena/shared/dist/ || echo "dist not accessible"
+          echo "=== Debug: TypeScript configuration ==="
+          cd server && npx tsc --showConfig | grep -A 10 -B 5 paths || echo "tsc showConfig failed"
+          echo "=== Debug: realpath of symlink ==="
+          realpath server/node_modules/@rogue-arena/shared || echo "realpath not available"
+          echo "=== Debug: listing shared/dist ==="
+          ls -la shared/dist/ || echo "shared/dist missing"
         
       - name: Run ESLint
         run: pnpm lint
@@ -57,9 +63,9 @@ jobs:
           echo "✅ Shared typecheck passed"
           cd ../client && pnpm typecheck
           echo "✅ Client typecheck passed"
-          # Para server, usar tsc --build para respetar project references
-          cd ../server && npx tsc --build --verbose
-          echo "✅ Server typecheck passed (with project references)"
+          # Usar pnpm typecheck que ejecuta tsc --noEmit con project references
+          cd ../server && pnpm typecheck
+          echo "✅ Server typecheck passed"
         
       - name: Build all packages
         run: pnpm build
