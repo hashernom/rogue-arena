@@ -38,6 +38,16 @@ jobs:
           echo "✅ Checking types file:"
           cat dist/index.d.ts || echo "No index.d.ts"
         
+      - name: Regenerate symlinks after build
+        run: |
+          echo "Regenerating pnpm symlinks..."
+          pnpm install --no-frozen-lockfile
+          echo "✅ Symlinks regenerated"
+          echo "Checking symlink in server/node_modules:"
+          ls -la server/node_modules/@rogue-arena/shared || echo "Symlink not found"
+          echo "Checking if dist exists in symlink:"
+          ls -la server/node_modules/@rogue-arena/shared/dist/ || echo "dist not accessible"
+        
       - name: Run ESLint
         run: pnpm lint
         
@@ -45,10 +55,6 @@ jobs:
         run: |
           cd shared && pnpm typecheck
           echo "✅ Shared typecheck passed"
-          echo "Checking symlink in server/node_modules:"
-          ls -la ../server/node_modules/@rogue-arena/shared || echo "Symlink not found"
-          echo "Listing shared dist:"
-          ls -la dist/
           cd ../client && pnpm typecheck
           echo "✅ Client typecheck passed"
           cd ../server && pnpm typecheck
