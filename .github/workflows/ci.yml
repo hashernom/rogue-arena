@@ -30,7 +30,13 @@ jobs:
         run: pnpm install --frozen-lockfile
         
       - name: Build shared package (required for type check)
-        run: cd shared && pnpm build
+        run: |
+          cd shared
+          pnpm build
+          echo "✅ Shared built. Listing dist:"
+          ls -la dist/
+          echo "✅ Checking types file:"
+          cat dist/index.d.ts || echo "No index.d.ts"
         
       - name: Run ESLint
         run: pnpm lint
