@@ -56,3 +56,7 @@ rogue-arena/
 | Dev | Rol |
 |-----|-----|
 | [@hashernom](https://github.com/hashernom) | Tech Lead / Full Stack |
+
+---
+
+*CI Pipeline activa — Última ejecución: [Ver estado](https://github.com/hashernom/rogue-arena/actions)*

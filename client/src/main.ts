@@ -1,90 +1,337 @@
-import './style.css'
-import * as THREE from 'three'
+import './style.css';
+import * as THREE from 'three';
+import { GameLoop } from './engine/GameLoop';
+import { SceneManager } from './engine/SceneManager';
+import { CameraController } from './engine/CameraController';
+import { AssetLoader } from './engine/AssetLoader';
+import { InputManager } from './engine/InputManager';
+import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
+import RAPIER from '@dimforge/rapier3d-compat';
 
-// Configuración básica de Three.js
-const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x1a1a2e)
+// Obtener elemento canvas existente o crear uno nuevo
+const app = document.querySelector<HTMLDivElement>('#app')!;
+app.innerHTML = '';
+const canvas = document.createElement('canvas');
+canvas.id = 'three-canvas';
+app.appendChild(canvas);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
-camera.position.z = 5
+// Crear SceneManager (maneja escena, renderer, cámara, luces, sombras)
+const sceneManager = new SceneManager(canvas);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(window.innerWidth, window.innerHeight)
-renderer.setPixelRatio(window.devicePixelRatio)
+// Crear CameraController con cámara isométrica ortográfica
+const cameraController = new CameraController(20); // frustumSize = 20 (arena 30x30 cabe)
+sceneManager.setCamera(cameraController.getCamera());
 
-// Agregar canvas al DOM
-const app = document.querySelector<HTMLDivElement>('#app')!
-app.innerHTML = ''
-app.appendChild(renderer.domElement)
+// Crear AssetLoader para gestión centralizada de modelos
+const assetLoader = new AssetLoader();
 
-// Crear un cubo giratorio
-const geometry = new THREE.BoxGeometry(1, 1, 1)
-const material = new THREE.MeshPhongMaterial({ 
+// Precargar assets críticos antes del primer tick (ejemplo: modelo de prueba)
+// Usamos un modelo público de Three.js para demostración.
+// Si falla, el loader manejará el error y podemos usar un fallback.
+const demoModelUrl = 'https://threejs.org/examples/models/gltf/Duck/glTF/Duck.gltf';
+assetLoader.preload([demoModelUrl]);
+
+// Crear InputManager para controles desacoplados
+const inputManager = new InputManager();
+
+// Referencias disponibles si se necesitan en el futuro
+// const scene = sceneManager.getScene();
+// const camera = sceneManager.getCamera();
+// const renderer = sceneManager.getRenderer();
+
+// Crear cubos para los jugadores
+const geometry = new THREE.BoxGeometry(1, 1, 1);
+
+// Cubo del Player 1 (verde)
+const materialP1 = new THREE.MeshPhongMaterial({
   color: 0x00ff88,
-  shininess: 100
-})
-const cube = new THREE.Mesh(geometry, material)
-scene.add(cube)
+  shininess: 100,
+});
+const cubeP1 = new THREE.Mesh(geometry, materialP1);
+cubeP1.castShadow = true;
+cubeP1.receiveShadow = true;
+cubeP1.position.set(-3, 0, 0); // Posición inicial separada
+sceneManager.add(cubeP1);
 
-// Luz
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
-scene.add(ambientLight)
+// Cubo del Player 2 (rojo)
+const materialP2 = new THREE.MeshPhongMaterial({
+  color: 0xff4444,
+  shininess: 100,
+});
+const cubeP2 = new THREE.Mesh(geometry, materialP2);
+cubeP2.castShadow = true;
+cubeP2.receiveShadow = true;
+cubeP2.position.set(3, 0, 0); // Posición inicial separada
+sceneManager.add(cubeP2);
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-directionalLight.position.set(5, 5, 5)
-scene.add(directionalLight)
+// Crear un plano para proyectar sombras
+const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
+const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 30 });
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.rotation.x = -Math.PI / 2;
+plane.position.y = -2;
+plane.receiveShadow = true;
+sceneManager.add(plane);
 
 // Variables para HMR
-let cubeColor = 0x00ff88
-let rotationSpeed = 0.01
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+let cubeColor = 0x00ff88; // Usada en changeCubeColor (solo afecta P1)
+let rotationSpeed = 0.01;
 
-// Función de animación
-function animate() {
-  requestAnimationFrame(animate)
-  
-  cube.rotation.x += rotationSpeed
-  cube.rotation.y += rotationSpeed * 0.7
-  
-  renderer.render(scene, camera)
+// Variable global para PhysicsWorld (accesible desde HMR si es necesario)
+let physicsWorld: PhysicsWorld | null = null;
+
+// Handles de cuerpos físicos
+let player1BodyHandle: RigidBodyHandle | null = null;
+let player2BodyHandle: RigidBodyHandle | null = null;
+let planeBodyHandle: RigidBodyHandle | null = null;
+
+// Función asíncrona que inicializa Rapier3D WASM y luego inicia el juego
+async function initGameWithPhysics(): Promise<void> {
+  try {
+    console.log('🔄 Inicializando Rapier3D WASM...');
+    physicsWorld = await PhysicsWorld.init();
+    console.log('✅ Rapier3D WASM cargado y PhysicsWorld listo');
+
+    // Crear cuerpos físicos para los jugadores y el plano
+    if (physicsWorld) {
+      // Plano estático (suelo) - tamaño enorme para evitar bordes invisibles
+      const planeCollider = RAPIER.ColliderDesc.cuboid(200, 0.1, 200); // half-extents (400x0.2x400)
+      planeBodyHandle = physicsWorld.createBody({
+        type: 'static',
+        position: new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z),
+        rotation: new THREE.Euler(plane.rotation.x, plane.rotation.y, plane.rotation.z),
+        collider: planeCollider,
+      });
+
+      // Jugador 1: cuerpo dinámico (cubo)
+      const boxCollider = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5); // half-extents (1x1x1)
+      boxCollider.setRestitution(0.05); // reducida para menos rebote
+      boxCollider.setFriction(1.2); // mayor fricción para detenerse más rápido
+      boxCollider.setMass(1.0); // masa reducida para mayor agilidad
+      player1BodyHandle = physicsWorld.createBody({
+        type: 'dynamic',
+        position: new THREE.Vector3(cubeP1.position.x, cubeP1.position.y, cubeP1.position.z),
+        collider: boxCollider,
+        lockRotations: true,
+        gravityScale: 0,
+      });
+
+      // Jugador 2: cuerpo dinámico (cubo)
+      const boxCollider2 = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
+      boxCollider2.setRestitution(0.05);
+      boxCollider2.setFriction(1.2);
+      boxCollider2.setMass(1.0);
+      player2BodyHandle = physicsWorld.createBody({
+        type: 'dynamic',
+        position: new THREE.Vector3(cubeP2.position.x, cubeP2.position.y, cubeP2.position.z),
+        collider: boxCollider2,
+        lockRotations: true,
+        gravityScale: 0,
+      });
+
+      // Configurar damping lineal para movimiento más controlado (reducido para respuesta más rápida)
+      const body1 = physicsWorld.getBody(player1BodyHandle);
+      const body2 = physicsWorld.getBody(player2BodyHandle);
+      if (body1) body1.setLinearDamping(1.0);
+      if (body2) body2.setLinearDamping(1.0);
+      // Damping angular no necesario porque las rotaciones están bloqueadas
+
+      // Sincronizar meshes con cuerpos físicos
+      physicsWorld.syncToThree(cubeP1, player1BodyHandle);
+      physicsWorld.syncToThree(cubeP2, player2BodyHandle);
+      physicsWorld.syncToThree(plane, planeBodyHandle);
+
+      console.log('📦 Cuerpos físicos creados y sincronizados (damping aplicado)');
+    }
+  } catch (error) {
+    console.error('❌ Error al inicializar Rapier3D:', error);
+    // Continuar sin física (modo degradado)
+    console.warn('⚠️ Continuando sin física (modo degradado)');
+  }
+
+  // Crear Game Loop con Fixed Timestep
+  const gameLoop = new GameLoop();
+
+  // Fixed Update: física a 60Hz
+  gameLoop.setFixedUpdate((dt: number) => {
+    // Actualizar estado de input (una vez por tick)
+    inputManager.update();
+
+    // Obtener estados de ambos jugadores
+    const p1State = inputManager.getState(1);
+    const p2State = inputManager.getState(2);
+
+    // Aplicar fuerzas a los cuerpos físicos (si existen)
+    if (physicsWorld && player1BodyHandle && player2BodyHandle) {
+      const body1 = physicsWorld.getBody(player1BodyHandle);
+      const body2 = physicsWorld.getBody(player2BodyHandle);
+
+      // Fuerza de movimiento basada en input (fuerza continua)
+      const forceStrength = 120.0; // aumentada para respuesta más rápida (masa 1.0)
+      const maxSpeed = 15.0; // velocidad máxima aumentada
+
+      if (body1) {
+        // Aplicar fuerza en la dirección del input
+        const force = {
+          x: p1State.moveDir.x * forceStrength,
+          y: 0,
+          z: -p1State.moveDir.y * forceStrength,
+        };
+        body1.addForce(force, true);
+
+        // Limitar velocidad máxima
+        const linVel = body1.linvel();
+        const speed = Math.sqrt(linVel.x * linVel.x + linVel.z * linVel.z);
+        if (speed > maxSpeed) {
+          const scale = maxSpeed / speed;
+          body1.setLinvel({ x: linVel.x * scale, y: 0, z: linVel.z * scale }, true);
+        }
+      }
+      if (body2) {
+        const force = {
+          x: p2State.moveDir.x * forceStrength,
+          y: 0,
+          z: -p2State.moveDir.y * forceStrength,
+        };
+        body2.addForce(force, true);
+
+        const linVel = body2.linvel();
+        const speed = Math.sqrt(linVel.x * linVel.x + linVel.z * linVel.z);
+        if (speed > maxSpeed) {
+          const scale = maxSpeed / speed;
+          body2.setLinvel({ x: linVel.x * scale, y: 0, z: linVel.z * scale }, true);
+        }
+      }
+    }
+
+    // Rotación básica (solo para visualización) - mantener independiente de física
+    cubeP1.rotation.x += rotationSpeed * dt * 60;
+    cubeP1.rotation.y += rotationSpeed * 0.7 * dt * 60;
+    cubeP2.rotation.x += rotationSpeed * dt * 60;
+    cubeP2.rotation.y += rotationSpeed * 0.7 * dt * 60;
+
+    // Avanzar simulación física y sincronizar todos los meshes
+    if (physicsWorld) {
+      physicsWorld.stepAll(dt);
+    }
+
+    // Mostrar estado de input en modo desarrollo
+    if (import.meta.env.DEV) {
+      displayInputState(p1State, 1);
+      displayInputState(p2State, 2);
+    }
+  });
+
+  // Render: usar SceneManager para renderizar
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  gameLoop.setRender((_alpha: number) => {
+    // _alpha no se usa porque SceneManager.render() no necesita interpolación
+    sceneManager.render();
+
+    // Mostrar FPS en modo desarrollo
+    if (import.meta.env.DEV) {
+      displayFps(gameLoop.fps);
+    }
+  });
+
+  // Iniciar Game Loop
+  gameLoop.start();
+  console.log('🎮 Game Loop iniciado con física integrada');
+
+  // Exponer physicsWorld globalmente para depuración (solo desarrollo)
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).physicsWorld = physicsWorld;
+  }
 }
 
-// Manejo de redimensionamiento
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
-})
+// Llamar a la inicialización asíncrona (ignoramos la promesa intencionalmente)
+void initGameWithPhysics();
 
-// Iniciar animación
-animate()
+// Manejo de redimensionado: actualizar CameraController y SceneManager
+window.addEventListener('resize', () => {
+  cameraController.handleResize();
+  // SceneManager ya actualiza el renderer internamente
+});
+
+// Función para mostrar FPS en pantalla (solo desarrollo)
+function displayFps(fps: number): void {
+  let fpsElement = document.getElementById('fps-counter');
+  if (!fpsElement) {
+    fpsElement = document.createElement('div');
+    fpsElement.id = 'fps-counter';
+    fpsElement.style.position = 'fixed';
+    fpsElement.style.top = '10px';
+    fpsElement.style.right = '10px';
+    fpsElement.style.color = '#00ff88';
+    fpsElement.style.fontFamily = 'monospace';
+    fpsElement.style.fontSize = '14px';
+    fpsElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    fpsElement.style.padding = '5px 10px';
+    fpsElement.style.borderRadius = '5px';
+    fpsElement.style.zIndex = '1000';
+    document.body.appendChild(fpsElement);
+  }
+  fpsElement.textContent = `FPS: ${fps}`;
+}
+
+// Función para mostrar estado de input (solo desarrollo)
+function displayInputState(
+  state: import('./engine/InputManager').InputState,
+  playerId: number
+): void {
+  const elementId = `input-state-p${playerId}`;
+  let inputElement = document.getElementById(elementId);
+  if (!inputElement) {
+    inputElement = document.createElement('div');
+    inputElement.id = elementId;
+    inputElement.style.position = 'fixed';
+    inputElement.style.right = '10px';
+    inputElement.style.color = playerId === 1 ? '#ffaa00' : '#44aaff';
+    inputElement.style.fontFamily = 'monospace';
+    inputElement.style.fontSize = '12px';
+    inputElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    inputElement.style.padding = '5px 10px';
+    inputElement.style.borderRadius = '5px';
+    inputElement.style.zIndex = '1000';
+    // Posición vertical: P1 arriba, P2 abajo
+    inputElement.style.top = playerId === 1 ? '40px' : '70px';
+    document.body.appendChild(inputElement);
+  }
+  const dir = state.moveDir;
+  inputElement.textContent = `P${playerId}: dir(${dir.x.toFixed(2)}, ${dir.y.toFixed(2)}) A:${state.attacking ? 'Y' : 'N'} Q:${state.abilityQ ? 'Y' : 'N'} E:${state.abilityE ? 'Y' : 'N'}`;
+}
 
 // Exportar para HMR
 if (import.meta.hot) {
-  import.meta.hot.accept((newModule) => {
-    console.log('HMR: Three.js scene updated')
-  })
-  
-  // Función para cambiar color del cubo (para probar HMR)
+  import.meta.hot.accept(() => {
+    console.log('HMR: Three.js scene updated');
+  });
+
+  // Función para cambiar color del cubo (para probar HMR) - afecta solo al Player 1
   window.changeCubeColor = (color: number) => {
-    cubeColor = color
-    if (cube.material instanceof THREE.MeshPhongMaterial) {
-      cube.material.color.setHex(color)
+    cubeColor = color;
+    if (cubeP1.material instanceof THREE.MeshPhongMaterial) {
+      cubeP1.material.color.setHex(color);
     }
-  }
-  
+  };
+
   window.changeRotationSpeed = (speed: number) => {
-    rotationSpeed = speed
-  }
+    rotationSpeed = speed;
+  };
 }
 
 // Tipos globales para HMR
 declare global {
   interface Window {
-    changeCubeColor: (color: number) => void
-    changeRotationSpeed: (speed: number) => void
+    changeCubeColor: (color: number) => void;
+    changeRotationSpeed: (speed: number) => void;
   }
 }
 
-console.log('✅ Three.js scene initialized')
-console.log('🎮 Rogue Arena Client - Vite + Three.js')
-console.log('🔄 HMR ready - Try: changeCubeColor(0xff0000) in console')
+console.log('✅ Three.js scene initialized with SceneManager');
+console.log('🎮 Rogue Arena Client - Vite + Three.js');
+console.log('🔄 HMR ready - Try: changeCubeColor(0xff0000) in console');
+console.log('🌄 SceneManager active: shadows enabled, low‑poly fog, optimized renderer');
+console.log('📐 CameraController active: isometric OrthographicCamera (frustumSize=20)');

@@ -30,5 +30,5 @@ export enum SocketEvents {
   PLAYER_ATTACK = 'player:attack',
   GAME_STATE = 'game:state',
   WAVE_START = 'wave:start',
-  WAVE_END = 'wave:end'
+  WAVE_END = 'wave:end',
 }

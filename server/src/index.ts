@@ -8,23 +8,23 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: 'http://localhost:5173',
-    methods: ['GET', 'POST']
-  }
+    methods: ['GET', 'POST'],
+  },
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Rogue Arena Server' });
+  res.json({ status: 'ok' });
 });
 
-io.on('connection', (socket) => {
+io.on('connection', socket => {
   console.log('Client connected:', socket.id);
 
   socket.emit(SocketEvents.GAME_STATE, {
     players: [],
     wave: 1,
-    timeRemaining: 60
+    timeRemaining: 60,
   });
 
   socket.on('disconnect', () => {

@@ -1,4 +1,4 @@
-name: CI
+name: CI Pipeline
 
 on:
   push:
@@ -8,30 +8,67 @@ on:
 
 jobs:
   lint-build:
-    name: Lint, Typecheck & Build
+    name: Lint, Type Check, and Build
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
-
-      - name: Setup Node.js 20
+          
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-
+          
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Lint
+        
+      - name: Build shared package (required for type check)
+        run: |
+          cd shared
+          # Limpiar construcción previa para evitar errores de composite
+          npx tsc --build --clean 2>/dev/null || echo "No previous build to clean"
+          rm -rf dist tsconfig.tsbuildinfo 2>/dev/null || echo "No files to remove"
+          pnpm build
+          echo "✅ Shared built. Listing dist:"
+          ls -la dist/
+          echo "✅ Checking types file:"
+          cat dist/index.d.ts || echo "No index.d.ts"
+        
+      - name: Regenerate symlinks after build
+        run: |
+          echo "Regenerating pnpm symlinks..."
+          pnpm install --no-frozen-lockfile
+          echo "✅ Symlinks regenerated"
+          echo "Checking symlink in server/node_modules:"
+          ls -la server/node_modules/@rogue-arena/shared || echo "Symlink not found"
+          echo "Checking if dist exists in symlink:"
+          ls -la server/node_modules/@rogue-arena/shared/dist/ || echo "dist not accessible"
+          echo "=== Debug: TypeScript configuration ==="
+          cd server && npx tsc --showConfig | grep -A 10 -B 5 paths || echo "tsc showConfig failed"
+          echo "=== Debug: realpath of symlink ==="
+          realpath server/node_modules/@rogue-arena/shared || echo "realpath not available"
+          echo "=== Debug: listing shared/dist ==="
+          ls -la shared/dist/ || echo "shared/dist missing"
+        
+      - name: Run ESLint
         run: pnpm lint
-
-      - name: Type check
-        run: pnpm typecheck
-
-      - name: Build
+        
+      - name: Run TypeScript type check (shared first)
+        run: |
+          cd shared && pnpm typecheck
+          echo "✅ Shared typecheck passed"
+          cd ../client && pnpm typecheck
+          echo "✅ Client typecheck passed"
+          # Usar pnpm typecheck que ejecuta tsc --noEmit con project references
+          cd ../server && pnpm typecheck
+          echo "✅ Server typecheck passed"
+        
+      - name: Build all packages
         run: pnpm build
