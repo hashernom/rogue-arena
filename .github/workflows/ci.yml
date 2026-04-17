@@ -32,6 +32,9 @@ jobs:
       - name: Build shared package (required for type check)
         run: |
           cd shared
+          # Limpiar construcción previa para evitar errores de composite
+          npx tsc --build --clean 2>/dev/null || echo "No previous build to clean"
+          rm -rf dist tsconfig.tsbuildinfo 2>/dev/null || echo "No files to remove"
           pnpm build
           echo "✅ Shared built. Listing dist:"
           ls -la dist/
