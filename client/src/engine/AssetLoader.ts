@@ -44,16 +44,18 @@ export class AssetLoader {
     const promise = new Promise<GLTF>((resolve, reject) => {
       this.gltfLoader.load(
         url,
-        (gltf) => {
+        gltf => {
           this.cache.set(url, gltf);
           this.loadingPromises.delete(url);
           resolve(gltf);
         },
-        (progress) => {
+        progress => {
           // Opcional: emitir eventos de progreso
-          console.debug(`Loading ${url}: ${(progress.loaded / progress.total * 100).toFixed(1)}%`);
+          console.debug(
+            `Loading ${url}: ${((progress.loaded / progress.total) * 100).toFixed(1)}%`
+          );
         },
-        (error) => {
+        error => {
           this.loadingPromises.delete(url);
           reject(this.createError(url, error));
         }
@@ -83,7 +85,7 @@ export class AssetLoader {
   public clone(gltf: GLTF): THREE.Group {
     const clonedScene = gltf.scene.clone(true);
     // Clonar materiales y geometrías para evitar compartir referencias
-    clonedScene.traverse((child) => {
+    clonedScene.traverse(child => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
           child.material = child.material.clone();
@@ -105,7 +107,7 @@ export class AssetLoader {
     urls.forEach(url => {
       if (!this.cache.has(url) && !this.loadingPromises.has(url)) {
         // Iniciar carga en segundo plano, ignoramos el resultado
-        this.load(url).catch((error) => {
+        this.load(url).catch(error => {
           console.warn(`Preload failed for ${url}:`, error.message);
         });
       }
@@ -126,7 +128,7 @@ export class AssetLoader {
    */
   public dispose(): void {
     this.cache.forEach(gltf => {
-      gltf.scene.traverse((child) => {
+      gltf.scene.traverse(child => {
         if (child instanceof THREE.Mesh) {
           child.geometry?.dispose();
           if (Array.isArray(child.material)) {

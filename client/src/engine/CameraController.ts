@@ -38,7 +38,7 @@ export class CameraController {
 
     const camera = new THREE.OrthographicCamera(
       -halfWidth, // left
-      halfWidth,  // right
+      halfWidth, // right
       halfHeight, // top
       -halfHeight, // bottom
       this.near,

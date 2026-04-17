@@ -173,7 +173,11 @@ async function initGameWithPhysics(): Promise<void> {
 
       if (body1) {
         // Aplicar fuerza en la dirección del input
-        const force = { x: p1State.moveDir.x * forceStrength, y: 0, z: -p1State.moveDir.y * forceStrength };
+        const force = {
+          x: p1State.moveDir.x * forceStrength,
+          y: 0,
+          z: -p1State.moveDir.y * forceStrength,
+        };
         body1.addForce(force, true);
 
         // Limitar velocidad máxima
@@ -185,7 +189,11 @@ async function initGameWithPhysics(): Promise<void> {
         }
       }
       if (body2) {
-        const force = { x: p2State.moveDir.x * forceStrength, y: 0, z: -p2State.moveDir.y * forceStrength };
+        const force = {
+          x: p2State.moveDir.x * forceStrength,
+          y: 0,
+          z: -p2State.moveDir.y * forceStrength,
+        };
         body2.addForce(force, true);
 
         const linVel = body2.linvel();
@@ -216,9 +224,11 @@ async function initGameWithPhysics(): Promise<void> {
   });
 
   // Render: usar SceneManager para renderizar
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   gameLoop.setRender((_alpha: number) => {
+    // _alpha no se usa porque SceneManager.render() no necesita interpolación
     sceneManager.render();
-    
+
     // Mostrar FPS en modo desarrollo
     if (import.meta.env.DEV) {
       displayFps(gameLoop.fps);
@@ -231,12 +241,13 @@ async function initGameWithPhysics(): Promise<void> {
 
   // Exponer physicsWorld globalmente para depuración (solo desarrollo)
   if (import.meta.env.DEV) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).physicsWorld = physicsWorld;
   }
 }
 
-// Llamar a la inicialización asíncrona
-initGameWithPhysics();
+// Llamar a la inicialización asíncrona (ignoramos la promesa intencionalmente)
+void initGameWithPhysics();
 
 // Manejo de redimensionado: actualizar CameraController y SceneManager
 window.addEventListener('resize', () => {
@@ -266,7 +277,10 @@ function displayFps(fps: number): void {
 }
 
 // Función para mostrar estado de input (solo desarrollo)
-function displayInputState(state: import('./engine/InputManager').InputState, playerId: number): void {
+function displayInputState(
+  state: import('./engine/InputManager').InputState,
+  playerId: number
+): void {
   const elementId = `input-state-p${playerId}`;
   let inputElement = document.getElementById(elementId);
   if (!inputElement) {

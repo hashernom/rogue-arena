@@ -12,7 +12,9 @@ type Listener<T = unknown> = (data: T) => void;
  * @template T - Mapa de eventos (por defecto GameEvents)
  */
 export class EventBus<T extends object = GameEvents> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private listeners: Map<keyof T, Set<Listener<any>>> = new Map();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private onceListeners: Map<keyof T, Set<Listener<any>>> = new Map();
 
   /**

@@ -148,7 +148,8 @@ export class PhysicsWorld {
    * Avanza la simulación física un paso fijo y sincroniza todos los meshes registrados.
    * @param deltaTime Tiempo transcurrido desde el último paso (en segundos)
    */
-  step(deltaTime: number): void {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  step(_deltaTime: number): void {
     if (!this.world) {
       throw new Error('PhysicsWorld no inicializado. Llama a init() primero.');
     }

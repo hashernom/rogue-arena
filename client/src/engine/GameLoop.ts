@@ -158,7 +158,8 @@ export class GameLoop {
   /**
    * Actualiza el contador de FPS (solo en modo desarrollo)
    */
-  private updateFpsCounter(elapsed: number): void {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private updateFpsCounter(_elapsed: number): void {
     this.fpsCounter.frames++;
 
     // Actualizar FPS cada segundo

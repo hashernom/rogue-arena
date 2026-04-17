@@ -4,7 +4,7 @@ import * as THREE from 'three';
  * Estado de input para un jugador en un frame.
  */
 export type InputState = {
-  moveDir: THREE.Vector2;   // dirección de movimiento normalizada (magnitude ≤ 1)
+  moveDir: THREE.Vector2; // dirección de movimiento normalizada (magnitude ≤ 1)
   attacking: boolean;
   abilityQ: boolean;
   abilityE: boolean;
@@ -72,7 +72,7 @@ export class InputManager {
    * Configura listeners de teclado y eventos de foco.
    */
   private setupEventListeners(): void {
-    window.addEventListener('keydown', (e) => {
+    window.addEventListener('keydown', e => {
       // Prevenir comportamiento por defecto de teclas de juego (flechas, espacio, etc.)
       if (this.isGameKey(e.code)) {
         e.preventDefault();
@@ -80,7 +80,7 @@ export class InputManager {
       this.keys.add(e.code);
     });
 
-    window.addEventListener('keyup', (e) => {
+    window.addEventListener('keyup', e => {
       if (this.isGameKey(e.code)) {
         e.preventDefault();
       }
@@ -99,19 +99,19 @@ export class InputManager {
    * Determina si una tecla es usada por el juego y debe prevenir el comportamiento por defecto.
    */
   private isGameKey(code: string): boolean {
-    return InputManager.GAME_KEYS.includes(code as any);
+    return InputManager.GAME_KEYS.includes(code);
   }
 
   /**
    * Inicia el polling de gamepads (opcional).
    */
   private setupGamepadPolling(): void {
-    window.addEventListener('gamepadconnected', (e) => {
+    window.addEventListener('gamepadconnected', e => {
       console.log(`Gamepad connected: ${e.gamepad.id}`);
       this.gamepads[e.gamepad.index] = e.gamepad;
     });
 
-    window.addEventListener('gamepaddisconnected', (e) => {
+    window.addEventListener('gamepaddisconnected', e => {
       console.log(`Gamepad disconnected: ${e.gamepad.id}`);
       delete this.gamepads[e.gamepad.index];
     });
@@ -130,8 +130,10 @@ export class InputManager {
    * Actualiza el estado a partir del teclado.
    */
   private updateFromKeyboard(): void {
-    const { p1_up, p1_down, p1_left, p1_right, p1_attack, p1_abilityQ, p1_abilityE } = InputManager.KEY_MAP;
-    const { p2_up, p2_down, p2_left, p2_right, p2_attack, p2_abilityQ, p2_abilityE } = InputManager.KEY_MAP;
+    const { p1_up, p1_down, p1_left, p1_right, p1_attack, p1_abilityQ, p1_abilityE } =
+      InputManager.KEY_MAP;
+    const { p2_up, p2_down, p2_left, p2_right, p2_attack, p2_abilityQ, p2_abilityE } =
+      InputManager.KEY_MAP;
 
     // Player 1
     const p1MoveX = (this.keys.has(p1_right) ? 1 : 0) - (this.keys.has(p1_left) ? 1 : 0);
