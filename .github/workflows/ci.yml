@@ -41,8 +41,11 @@ jobs:
       - name: Run ESLint
         run: pnpm lint
         
-      - name: Run TypeScript type check
-        run: pnpm typecheck
+      - name: Run TypeScript type check (shared first)
+        run: |
+          cd shared && pnpm typecheck
+          cd ../client && pnpm typecheck
+          cd ../server && pnpm typecheck
         
       - name: Build all packages
         run: pnpm build
