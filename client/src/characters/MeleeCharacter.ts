@@ -58,38 +58,136 @@ export class MeleeCharacter extends Character {
    * Carga el modelo GLTF del caballero y lo agrega a la escena.
    */
   private async loadModel(): Promise<void> {
-    try {
-      const gltf = await this.assetLoader.load('/assets/models/knight.glb');
-      const model = this.assetLoader.clone(gltf);
-      
-      // Configurar el modelo
-      model.name = `Knight_${this.id}`;
-      model.scale.set(1, 1, 1);
-      model.position.set(0, 0, 0);
-      
-      // Asegurar que las sombras funcionen
-      model.traverse(child => {
-        if (child instanceof THREE.Mesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
+    console.log(`[MeleeCharacter ${this.id}] Creating procedural knight model...`);
+    
+    // Crear un modelo simple de caballero usando geometrías básicas
+    const group = new THREE.Group();
+    group.name = `Knight_${this.id}`;
+    
+    // Cuerpo (cilindro)
+    const bodyGeometry = new THREE.CylinderGeometry(0.4, 0.5, 1.2, 8);
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a4b8d, // Azul metálico
+      metalness: 0.7,
+      roughness: 0.3
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = 0.6;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
+    
+    // Cabeza (esfera)
+    const headGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+    const headMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd4af37, // Dorado
+      metalness: 0.8,
+      roughness: 0.2
+    });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.y = 1.5;
+    head.castShadow = true;
+    head.receiveShadow = true;
+    group.add(head);
+    
+    // Brazos (cilindros)
+    const armGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 6);
+    const armMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a4b8d,
+      metalness: 0.7,
+      roughness: 0.3
+    });
+    
+    const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+    leftArm.position.set(-0.6, 0.8, 0);
+    leftArm.rotation.z = Math.PI / 6;
+    leftArm.castShadow = true;
+    leftArm.receiveShadow = true;
+    group.add(leftArm);
+    
+    const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+    rightArm.position.set(0.6, 0.8, 0);
+    rightArm.rotation.z = -Math.PI / 6;
+    rightArm.castShadow = true;
+    rightArm.receiveShadow = true;
+    group.add(rightArm);
+    
+    // Piernas (cilindros)
+    const legGeometry = new THREE.CylinderGeometry(0.15, 0.15, 1.0, 6);
+    const legMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1a3b7d,
+      metalness: 0.7,
+      roughness: 0.3
+    });
+    
+    const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+    leftLeg.position.set(-0.25, -0.5, 0);
+    leftLeg.castShadow = true;
+    leftLeg.receiveShadow = true;
+    group.add(leftLeg);
+    
+    const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+    rightLeg.position.set(0.25, -0.5, 0);
+    rightLeg.castShadow = true;
+    rightLeg.receiveShadow = true;
+    group.add(rightLeg);
+    
+    // Espada (caja + cilindro)
+    const swordHandleGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6);
+    const swordHandleMaterial = new THREE.MeshStandardMaterial({
+      color: 0x8b4513, // Marrón
+      metalness: 0.5,
+      roughness: 0.5
+    });
+    const swordHandle = new THREE.Mesh(swordHandleGeometry, swordHandleMaterial);
+    swordHandle.position.set(0.8, 0.8, 0);
+    swordHandle.rotation.z = Math.PI / 2;
+    swordHandle.castShadow = true;
+    swordHandle.receiveShadow = true;
+    group.add(swordHandle);
+    
+    const swordBladeGeometry = new THREE.BoxGeometry(0.05, 0.8, 0.1);
+    const swordBladeMaterial = new THREE.MeshStandardMaterial({
+      color: 0xcccccc, // Plateado
+      metalness: 0.9,
+      roughness: 0.1
+    });
+    const swordBlade = new THREE.Mesh(swordBladeGeometry, swordBladeMaterial);
+    swordBlade.position.set(0.8, 1.2, 0);
+    swordBlade.castShadow = true;
+    swordBlade.receiveShadow = true;
+    group.add(swordBlade);
+    
+    // Escudo (cilindro aplanado)
+    const shieldGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.05, 8);
+    const shieldMaterial = new THREE.MeshStandardMaterial({
+      color: 0xc41e3a, // Rojo
+      metalness: 0.6,
+      roughness: 0.4
+    });
+    const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
+    shield.position.set(-0.8, 0.8, 0);
+    shield.rotation.x = Math.PI / 2;
+    shield.castShadow = true;
+    shield.receiveShadow = true;
+    group.add(shield);
+    
+    // Configurar el grupo completo
+    group.scale.set(1, 1, 1);
+    group.position.set(0, 0, 0);
+    
+    this.model = group;
+    // Agregar a la escena
+    this.sceneManager.add(group);
+    console.log(`[MeleeCharacter ${this.id}] Procedural knight model created and added to scene`);
 
-      this.model = model;
-      // Agregar a la escena
-      this.sceneManager.add(model);
-
-      // Si hay cuerpo físico, sincronizar posición inicial
-      if (this.physicsBody && this.physicsWorld) {
-        const position = this.getBodyPosition();
-        if (position) {
-          model.position.copy(position);
-        }
+    // Si hay cuerpo físico, sincronizar posición inicial
+    if (this.physicsBody && this.physicsWorld) {
+      const position = this.getBodyPosition();
+      if (position) {
+        group.position.copy(position);
+        console.log(`[MeleeCharacter ${this.id}] Model positioned at physics body:`, position);
       }
-    } catch (error) {
-      console.error(`Failed to load knight model for ${this.id}:`, error);
-      // Crear un grupo de placeholder como fallback
-      this.createFallbackModel();
     }
   }
 
