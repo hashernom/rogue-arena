@@ -7,6 +7,9 @@ import { AssetLoader } from './engine/AssetLoader';
 import { InputManager } from './engine/InputManager';
 import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
 import { DebugRenderer } from './physics/DebugRenderer';
+import { EventBus } from './engine/EventBus';
+import { MeleeCharacter } from './characters/MeleeCharacter';
+import { BodyFactory } from './physics/BodyFactory';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -40,21 +43,13 @@ const inputManager = new InputManager();
 // const camera = sceneManager.getCamera();
 // const renderer = sceneManager.getRenderer();
 
-// Crear cubos para los jugadores
+// Crear EventBus para comunicación entre sistemas
+const eventBus = new EventBus();
+
+// Crear cubos para los jugadores (solo Player 2 como cubo, Player 1 será MeleeCharacter)
 const geometry = new THREE.BoxGeometry(1, 1, 1);
 
-// Cubo del Player 1 (verde)
-const materialP1 = new THREE.MeshPhongMaterial({
-  color: 0x00ff88,
-  shininess: 100,
-});
-const cubeP1 = new THREE.Mesh(geometry, materialP1);
-cubeP1.castShadow = true;
-cubeP1.receiveShadow = true;
-cubeP1.position.set(-3, 0, 0); // Posición inicial separada
-sceneManager.add(cubeP1);
-
-// Cubo del Player 2 (rojo)
+// Cubo del Player 2 (rojo) - mantenemos cubo para demostración
 const materialP2 = new THREE.MeshPhongMaterial({
   color: 0xff4444,
   shininess: 100,
@@ -64,6 +59,9 @@ cubeP2.castShadow = true;
 cubeP2.receiveShadow = true;
 cubeP2.position.set(3, 0, 0); // Posición inicial separada
 sceneManager.add(cubeP2);
+
+// MeleeCharacter (Player 1) - se creará después de inicializar física
+let meleeCharacter: MeleeCharacter | null = null;
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -108,18 +106,17 @@ async function initGameWithPhysics(): Promise<void> {
         collider: planeCollider,
       });
 
-      // Jugador 1: cuerpo dinámico (cubo)
-      const boxCollider = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5); // half-extents (1x1x1)
-      boxCollider.setRestitution(0.05); // reducida para menos rebote
-      boxCollider.setFriction(1.2); // mayor fricción para detenerse más rápido
-      boxCollider.setMass(1.0); // masa reducida para mayor agilidad
-      player1BodyHandle = physicsWorld.createBody({
-        type: 'dynamic',
-        position: new THREE.Vector3(cubeP1.position.x, cubeP1.position.y, cubeP1.position.z),
-        collider: boxCollider,
-        lockRotations: true,
-        gravityScale: 0,
-      });
+      // Jugador 1: MeleeCharacter (Caballero)
+      meleeCharacter = new MeleeCharacter(
+        'player1',
+        eventBus,
+        sceneManager,
+        assetLoader,
+        physicsWorld
+      );
+      // Crear cuerpo físico para el caballero en posición inicial (-3, 0, 0)
+      meleeCharacter.createPhysicsBody(new THREE.Vector3(-3, 0, 0));
+      player1BodyHandle = meleeCharacter.getPhysicsBody() ?? null;
 
       // Jugador 2: cuerpo dinámico (cubo)
       const boxCollider2 = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
@@ -135,14 +132,12 @@ async function initGameWithPhysics(): Promise<void> {
       });
 
       // Configurar damping lineal para movimiento más controlado (reducido para respuesta más rápida)
-      const body1 = physicsWorld.getBody(player1BodyHandle);
+      // Solo para jugador 2 (cubo), el MeleeCharacter maneja su propio movimiento cinemático
       const body2 = physicsWorld.getBody(player2BodyHandle);
-      if (body1) body1.setLinearDamping(1.0);
       if (body2) body2.setLinearDamping(1.0);
       // Damping angular no necesario porque las rotaciones están bloqueadas
 
-      // Sincronizar meshes con cuerpos físicos
-      physicsWorld.syncToThree(cubeP1, player1BodyHandle);
+      // Sincronizar meshes con cuerpos físicos (solo cubo y plano)
       physicsWorld.syncToThree(cubeP2, player2BodyHandle);
       physicsWorld.syncToThree(plane, planeBodyHandle);
 
@@ -174,32 +169,19 @@ async function initGameWithPhysics(): Promise<void> {
     const p1State = inputManager.getState(1);
     const p2State = inputManager.getState(2);
 
-    // Aplicar fuerzas a los cuerpos físicos (si existen)
-    if (physicsWorld && player1BodyHandle && player2BodyHandle) {
-      const body1 = physicsWorld.getBody(player1BodyHandle);
+    // Actualizar MeleeCharacter (Player 1) con input
+    if (meleeCharacter) {
+      meleeCharacter.update(dt, p1State);
+    }
+
+    // Aplicar fuerzas al cubo (Player 2) - física dinámica
+    if (physicsWorld && player2BodyHandle) {
       const body2 = physicsWorld.getBody(player2BodyHandle);
 
       // Fuerza de movimiento basada en input (fuerza continua)
       const forceStrength = 120.0; // aumentada para respuesta más rápida (masa 1.0)
       const maxSpeed = 15.0; // velocidad máxima aumentada
 
-      if (body1) {
-        // Aplicar fuerza en la dirección del input
-        const force = {
-          x: p1State.moveDir.x * forceStrength,
-          y: 0,
-          z: -p1State.moveDir.y * forceStrength,
-        };
-        body1.addForce(force, true);
-
-        // Limitar velocidad máxima
-        const linVel = body1.linvel();
-        const speed = Math.sqrt(linVel.x * linVel.x + linVel.z * linVel.z);
-        if (speed > maxSpeed) {
-          const scale = maxSpeed / speed;
-          body1.setLinvel({ x: linVel.x * scale, y: 0, z: linVel.z * scale }, true);
-        }
-      }
       if (body2) {
         const force = {
           x: p2State.moveDir.x * forceStrength,
@@ -218,8 +200,6 @@ async function initGameWithPhysics(): Promise<void> {
     }
 
     // Rotación básica (solo para visualización) - mantener independiente de física
-    cubeP1.rotation.x += rotationSpeed * dt * 60;
-    cubeP1.rotation.y += rotationSpeed * 0.7 * dt * 60;
     cubeP2.rotation.x += rotationSpeed * dt * 60;
     cubeP2.rotation.y += rotationSpeed * 0.7 * dt * 60;
 
@@ -328,11 +308,11 @@ if (import.meta.hot) {
     console.log('HMR: Three.js scene updated');
   });
 
-  // Función para cambiar color del cubo (para probar HMR) - afecta solo al Player 1
+  // Función para cambiar color del cubo (para probar HMR) - afecta solo al Player 2
   window.changeCubeColor = (color: number) => {
     cubeColor = color;
-    if (cubeP1.material instanceof THREE.MeshPhongMaterial) {
-      cubeP1.material.color.setHex(color);
+    if (cubeP2.material instanceof THREE.MeshPhongMaterial) {
+      cubeP2.material.color.setHex(color);
     }
   };
 
