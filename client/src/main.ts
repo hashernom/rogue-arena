@@ -6,6 +6,7 @@ import { CameraController } from './engine/CameraController';
 import { AssetLoader } from './engine/AssetLoader';
 import { InputManager } from './engine/InputManager';
 import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
+import { DebugRenderer } from './physics/DebugRenderer';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -81,6 +82,9 @@ let rotationSpeed = 0.01;
 // Variable global para PhysicsWorld (accesible desde HMR si es necesario)
 let physicsWorld: PhysicsWorld | null = null;
 
+// DebugRenderer para visualizar colliders (solo en desarrollo)
+let debugRenderer: DebugRenderer | null = null;
+
 // Handles de cuerpos físicos
 let player1BodyHandle: RigidBodyHandle | null = null;
 let player2BodyHandle: RigidBodyHandle | null = null;
@@ -141,6 +145,14 @@ async function initGameWithPhysics(): Promise<void> {
       physicsWorld.syncToThree(cubeP1, player1BodyHandle);
       physicsWorld.syncToThree(cubeP2, player2BodyHandle);
       physicsWorld.syncToThree(plane, planeBodyHandle);
+
+      // Crear DebugRenderer para visualizar colliders (solo en desarrollo)
+      if (import.meta.env.DEV) {
+        const scene = sceneManager.getScene();
+        const rapierWorld = physicsWorld.getWorld();
+        debugRenderer = new DebugRenderer(scene, rapierWorld);
+        console.log('🔧 DebugRenderer inicializado (F1 para toggle)');
+      }
 
       console.log('📦 Cuerpos físicos creados y sincronizados (damping aplicado)');
     }
@@ -216,6 +228,11 @@ async function initGameWithPhysics(): Promise<void> {
       physicsWorld.stepAll(dt);
     }
 
+    // Actualizar DebugRenderer para visualizar colliders
+    if (debugRenderer) {
+      debugRenderer.update();
+    }
+
     // Mostrar estado de input en modo desarrollo
     if (import.meta.env.DEV) {
       displayInputState(p1State, 1);
@@ -239,10 +256,12 @@ async function initGameWithPhysics(): Promise<void> {
   gameLoop.start();
   console.log('🎮 Game Loop iniciado con física integrada');
 
-  // Exponer physicsWorld globalmente para depuración (solo desarrollo)
+  // Exponer physicsWorld y debugRenderer globalmente para depuración (solo desarrollo)
   if (import.meta.env.DEV) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).physicsWorld = physicsWorld;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).debugRenderer = debugRenderer;
   }
 }
 
