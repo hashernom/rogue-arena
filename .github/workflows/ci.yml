@@ -44,8 +44,15 @@ jobs:
       - name: Run TypeScript type check (shared first)
         run: |
           cd shared && pnpm typecheck
+          echo "✅ Shared typecheck passed"
+          echo "Checking symlink in server/node_modules:"
+          ls -la ../server/node_modules/@rogue-arena/shared || echo "Symlink not found"
+          echo "Listing shared dist:"
+          ls -la dist/
           cd ../client && pnpm typecheck
+          echo "✅ Client typecheck passed"
           cd ../server && pnpm typecheck
+          echo "✅ Server typecheck passed"
         
       - name: Build all packages
         run: pnpm build
