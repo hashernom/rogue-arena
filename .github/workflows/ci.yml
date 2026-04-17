@@ -57,8 +57,9 @@ jobs:
           echo "✅ Shared typecheck passed"
           cd ../client && pnpm typecheck
           echo "✅ Client typecheck passed"
-          cd ../server && pnpm typecheck
-          echo "✅ Server typecheck passed"
+          # Para server, usar tsc --build para respetar project references
+          cd ../server && npx tsc --build --verbose
+          echo "✅ Server typecheck passed (with project references)"
         
       - name: Build all packages
         run: pnpm build
