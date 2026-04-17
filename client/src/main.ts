@@ -95,8 +95,8 @@ async function initGameWithPhysics(): Promise<void> {
 
     // Crear cuerpos físicos para los jugadores y el plano
     if (physicsWorld) {
-      // Plano estático (suelo)
-      const planeCollider = RAPIER.ColliderDesc.cuboid(15, 0.1, 15); // half-extents (30x0.2x30)
+      // Plano estático (suelo) - tamaño enorme para evitar bordes invisibles
+      const planeCollider = RAPIER.ColliderDesc.cuboid(200, 0.1, 200); // half-extents (400x0.2x400)
       planeBodyHandle = physicsWorld.createBody({
         type: 'static',
         position: new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z),
@@ -108,7 +108,7 @@ async function initGameWithPhysics(): Promise<void> {
       const boxCollider = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5); // half-extents (1x1x1)
       boxCollider.setRestitution(0.05); // reducida para menos rebote
       boxCollider.setFriction(1.2); // mayor fricción para detenerse más rápido
-      boxCollider.setMass(2.0); // mayor masa para mayor inercia
+      boxCollider.setMass(1.0); // masa reducida para mayor agilidad
       player1BodyHandle = physicsWorld.createBody({
         type: 'dynamic',
         position: new THREE.Vector3(cubeP1.position.x, cubeP1.position.y, cubeP1.position.z),
@@ -121,7 +121,7 @@ async function initGameWithPhysics(): Promise<void> {
       const boxCollider2 = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
       boxCollider2.setRestitution(0.05);
       boxCollider2.setFriction(1.2);
-      boxCollider2.setMass(2.0);
+      boxCollider2.setMass(1.0);
       player2BodyHandle = physicsWorld.createBody({
         type: 'dynamic',
         position: new THREE.Vector3(cubeP2.position.x, cubeP2.position.y, cubeP2.position.z),
@@ -130,11 +130,11 @@ async function initGameWithPhysics(): Promise<void> {
         gravityScale: 0,
       });
 
-      // Configurar damping lineal para movimiento más controlado
+      // Configurar damping lineal para movimiento más controlado (reducido para respuesta más rápida)
       const body1 = physicsWorld.getBody(player1BodyHandle);
       const body2 = physicsWorld.getBody(player2BodyHandle);
-      if (body1) body1.setLinearDamping(5.0);
-      if (body2) body2.setLinearDamping(5.0);
+      if (body1) body1.setLinearDamping(1.0);
+      if (body2) body2.setLinearDamping(1.0);
       // Damping angular no necesario porque las rotaciones están bloqueadas
 
       // Sincronizar meshes con cuerpos físicos
@@ -168,8 +168,8 @@ async function initGameWithPhysics(): Promise<void> {
       const body2 = physicsWorld.getBody(player2BodyHandle);
 
       // Fuerza de movimiento basada en input (fuerza continua)
-      const forceStrength = 40.0; // ajuste empírico (masa 2.0, aceleración deseada)
-      const maxSpeed = 8.0; // velocidad máxima en unidades/segundo
+      const forceStrength = 120.0; // aumentada para respuesta más rápida (masa 1.0)
+      const maxSpeed = 15.0; // velocidad máxima aumentada
 
       if (body1) {
         // Aplicar fuerza en la dirección del input
