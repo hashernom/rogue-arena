@@ -10,16 +10,16 @@ export type Vector3Like = Vector3;
  */
 export interface GameEvents {
   // Jugador
-  "player:died": { playerId: string };
-  "player:damaged": { playerId: string; amount: number };
+  'player:died': { playerId: string };
+  'player:damaged': { playerId: string; amount: number };
   // Enemigos
-  "enemy:died": { enemyId: string; position: Vector3Like; reward: number };
+  'enemy:died': { enemyId: string; position: Vector3Like; reward: number };
   // Oleadas
-  "wave:started": { round: number; enemyCount: number };
-  "wave:ended": { round: number };
+  'wave:started': { round: number; enemyCount: number };
+  'wave:ended': { round: number };
   // Tienda
-  "shop:opened": void;
-  "shop:itemBought": { itemId: string; playerId: string };
+  'shop:opened': void;
+  'shop:itemBought': { itemId: string; playerId: string };
   // Estado del juego
-  "game:over": { rounds: number };
+  'game:over': { rounds: number };
 }
