@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         
+      - name: Build shared package (required for type check)
+        run: cd shared && pnpm build
+        
       - name: Run ESLint
         run: pnpm lint
         
