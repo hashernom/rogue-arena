@@ -1,5 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
+import { makeCollisionGroups } from './CollisionGroups';
 
 /**
  * Handle opaco para referenciar un cuerpo rígido de Rapier.
@@ -18,6 +19,18 @@ export interface BodyOptions {
   lockRotations?: boolean; // Para personajes top-down
   lockTranslations?: boolean;
   gravityScale?: number;
+  /**
+   * Grupo de colisión al que pertenece este cuerpo.
+   * Puede ser uno de los grupos predefinidos (Groups.PLAYER, etc.) o una combinación bitwise.
+   * Si se proporciona, se aplicará automáticamente al collider.
+   * Si no se proporciona, se usará el grupo por defecto (colisiona con todo).
+   */
+  collisionGroup?: number;
+  /**
+   * Máscara de colisión que define con qué grupos puede colisionar.
+   * Por defecto se usa la máscara correspondiente al grupo (Masks).
+   */
+  collisionMask?: number;
 }
 
 /**
@@ -45,6 +58,9 @@ export class PhysicsWorld {
    * Inicializa el módulo WASM de Rapier y crea una instancia de PhysicsWorld.
    * @param gravity Vector de gravedad (por defecto { x: 0, y: -20, z: 0 } para top-down)
    * @returns Promise<PhysicsWorld> instancia lista para usar
+   * @remarks
+   * Para arenas top-down donde la gravedad no es necesaria, se puede pasar { x: 0, y: 0, z: 0 }.
+   * La gravedad en Y negativa es útil para constraints de personajes, pero puede ajustarse.
    */
   static async init(gravity?: THREE.Vector3): Promise<PhysicsWorld> {
     // 1. Inicializar el módulo WASM de Rapier (esto descarga y compila el .wasm)
@@ -62,9 +78,12 @@ export class PhysicsWorld {
       z: g.z,
     });
 
-    console.log('✅ PhysicsWorld inicializado con Rapier3D (gravedad:', g, ')');
     return instance;
   }
+
+  // Nota: Para cambiar la gravedad en tiempo de ejecución, se necesita recrear el mundo
+  // o usar una API específica de Rapier. En la versión actual, la gravedad se establece
+  // solo en la inicialización. Para arenas top-down, usar gravedad cero al init.
 
   /**
    * Crea un cuerpo físico y retorna un handle.
@@ -115,6 +134,13 @@ export class PhysicsWorld {
 
     // Colisionador (opcional)
     if (options.collider) {
+      // Aplicar grupos de colisión si se especifican
+      if (options.collisionGroup !== undefined) {
+        const membership = options.collisionGroup;
+        const filter = options.collisionMask ?? 0xffffffff; // por defecto colisiona con todo
+        const groups = makeCollisionGroups(membership, filter);
+        options.collider.setCollisionGroups(groups);
+      }
       world.createCollider(options.collider, body);
     }
 
@@ -145,16 +171,21 @@ export class PhysicsWorld {
   }
 
   /**
-   * Avanza la simulación física un paso fijo y sincroniza todos los meshes registrados.
+   * Avanza la simulación física un paso fijo.
    * @param deltaTime Tiempo transcurrido desde el último paso (en segundos)
+   * @remarks
+   * Para determinismo, se recomienda usar un timestep fijo (ej: 1/60 ≈ 0.0167).
+   * Este método debe llamarse desde el fixed update del GameLoop.
+   * Rapier maneja internamente la integración con el timestep configurado.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  step(_deltaTime: number): void {
+  step(deltaTime: number /* eslint-disable-line @typescript-eslint/no-unused-vars */): void {
     if (!this.world) {
       throw new Error('PhysicsWorld no inicializado. Llama a init() primero.');
     }
-    // Usar el timestep fijo para determinismo
-    this.world.step(undefined); // event queue opcional
+    // Rapier no acepta un dt en step(); usa el timestep configurado internamente.
+    // Para manejar diferentes deltaTimes, necesitamos acumular tiempo y hacer múltiples steps.
+    // Implementación simple: hacer un step por cada frame (asumiendo deltaTime ≈ timestep fijo)
+    this.world.step();
   }
 
   /**
@@ -162,6 +193,9 @@ export class PhysicsWorld {
    * Debe llamarse después de step() en cada fixed update.
    */
   syncAll(): void {
+    // Optimización: si no hay bodies, salir temprano
+    if (this.bodyToMesh.size === 0) return;
+
     for (const [handle, mesh] of this.bodyToMesh) {
       this.syncMesh(handle, mesh);
     }
@@ -170,6 +204,9 @@ export class PhysicsWorld {
   /**
    * Paso completo: avanza la simulación y sincroniza todos los meshes.
    * @param deltaTime Tiempo transcurrido (en segundos)
+   * @remarks
+   * Este método es conveniente para usar directamente desde el game loop.
+   * Para mayor control, se pueden llamar step() y syncAll() por separado.
    */
   stepAll(deltaTime: number): void {
     this.step(deltaTime);
