@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Character, type CharacterStats, CharacterState } from './Character';
+import { Character, type CharacterStats, CharacterState, ModifierType } from './Character';
 import type { InputState } from '../engine/InputManager';
 import type { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
 import { EventBus } from '../engine/EventBus';
@@ -9,36 +9,38 @@ import { BodyFactory } from '../physics/BodyFactory';
 import { AnimationController } from './AnimationController';
 
 /**
- * Caballero melee, primer personaje jugable.
- * Extiende Character y añade movimiento isométrico, modelo 3D y habilidades especiales.
+ * ADC (Attack Damage Carry) - Personaje de daño a distancia.
+ * Extiende Character y añade mecánicas de ataque a distancia, proyectiles y habilidades de rango.
  */
-export class MeleeCharacter extends Character {
-  /** Modelo 3D del caballero */
+export class AdcCharacter extends Character {
+  /** Modelo 3D del arquero/ranger */
   private model: THREE.Group | null = null;
   /** Referencia al SceneManager para agregar/remover el modelo */
   private sceneManager: SceneManager;
   /** AssetLoader para cargar el modelo */
   private assetLoader: AssetLoader;
-  /** Contador de kills para la pasiva Furia */
-  private killCount: number = 0;
-  /** Flag que indica si la furia está lista (3 kills) */
-  private furyReady: boolean = false;
-  /** Tiempo acumulado para rotación suave */
-  private rotationLerpAlpha: number = 0.1;
+  /** Contador de flechas consecutivas (para pasiva de velocidad de ataque) */
+  private consecutiveShots: number = 0;
+  /** Tiempo del último disparo */
+  private lastShotTime: number = 0;
+  /** Pool de proyectiles activos */
+  private activeProjectiles: THREE.Mesh[] = [];
   /** Dirección de movimiento actual (vector 3D) */
   private moveDirection: THREE.Vector3 = new THREE.Vector3();
+  /** Rotación suave del modelo */
+  private rotationLerpAlpha: number = 0.1;
   /** Controlador de animaciones */
   private animationController: AnimationController | null = null;
 
-  /** Stats base del Caballero */
+  /** Stats base del ADC según M4-03 */
   static readonly BASE_STATS: CharacterStats = {
-    hp: 150,
-    maxHp: 150,
-    speed: 4,
-    damage: 25,
-    attackSpeed: 0.8,
-    range: 1.5,
-    armor: 10,
+    hp: 80,
+    maxHp: 80,
+    speed: 5,
+    damage: 15,
+    attackSpeed: 2,
+    range: 8,
+    armor: 2,
   };
 
   constructor(
@@ -49,7 +51,7 @@ export class MeleeCharacter extends Character {
     physicsWorld?: PhysicsWorld,
     physicsBody?: RigidBodyHandle
   ) {
-    super(id, MeleeCharacter.BASE_STATS, eventBus, physicsWorld, physicsBody);
+    super(id, AdcCharacter.BASE_STATS, eventBus, physicsWorld, physicsBody);
     this.sceneManager = sceneManager;
     this.assetLoader = assetLoader;
 
@@ -58,20 +60,18 @@ export class MeleeCharacter extends Character {
   }
 
   /**
-   * Carga el modelo GLTF del caballero y lo agrega a la escena.
+   * Carga el modelo GLTF del arquero/ranger y lo agrega a la escena.
    */
   private async loadModel(): Promise<void> {
     try {
-      // Cargar modelo GLB desde la carpeta pública
-      const gltf = await this.assetLoader.load('/models/Knight.glb');
+      // Cargar modelo GLB desde la carpeta pública (usar Rogue_Hooded.glb como placeholder)
+      const gltf = await this.assetLoader.load('/models/Rogue_Hooded.glb');
       const model = this.assetLoader.clone(gltf);
-      model.name = `Knight_${this.id}`;
+      model.name = `ADC_${this.id}`;
 
-      // Ajustar escala y orientación para que coincida con el mundo del juego
-      // El modelo de KayKit puede ser demasiado grande; escalar a 0.5
+      // Ajustar escala y orientación
       model.scale.set(0.5, 0.5, 0.5);
-      // Rotar para que mire hacia la dirección correcta (depende del modelo)
-      model.rotation.y = Math.PI; // 180 grados si es necesario
+      model.rotation.y = Math.PI;
       model.position.set(0, 0, 0);
 
       // Configurar sombras
@@ -83,20 +83,19 @@ export class MeleeCharacter extends Character {
       });
 
       this.model = model;
-      // Agregar a la escena
       this.sceneManager.add(model);
 
       // Crear AnimationController con los clips del GLTF
       if (gltf.animations && gltf.animations.length > 0) {
-        console.log(`[MeleeCharacter ${this.id}] GLTF tiene ${gltf.animations.length} animaciones:`, gltf.animations.map(a => a.name));
+        console.log(`[AdcCharacter ${this.id}] GLTF tiene ${gltf.animations.length} animaciones:`, gltf.animations.map(a => a.name));
         this.animationController = new AnimationController(model, gltf.animations);
-        console.log(`[MeleeCharacter ${this.id}] AnimationController creado con ${gltf.animations.length} clips`);
+        console.log(`[AdcCharacter ${this.id}] AnimationController creado con ${gltf.animations.length} clips`);
       } else {
-        console.warn(`[MeleeCharacter ${this.id}] GLTF no tiene animaciones, usando fallback`);
+        console.warn(`[AdcCharacter ${this.id}] GLTF no tiene animaciones, usando fallback`);
         this.animationController = new AnimationController(model, []);
       }
 
-      // Si hay cuerpo físico, sincronizar posición inicial
+      // Sincronizar posición con cuerpo físico si existe
       if (this.physicsBody && this.physicsWorld) {
         const position = this.getBodyPosition();
         if (position) {
@@ -104,20 +103,19 @@ export class MeleeCharacter extends Character {
         }
       }
     } catch (error) {
-      console.error(`[MeleeCharacter ${this.id}] Failed to load knight GLB:`, error);
-      // Fallback a modelo procedural
+      console.error(`[AdcCharacter ${this.id}] Failed to load ranger GLB:`, error);
       this.createFallbackModel();
     }
   }
 
   /**
-   * Crea un modelo de fallback (cubo) si el GLTF no carga.
+   * Crea un modelo de fallback (cubo con color distintivo) si el GLTF no carga.
    */
   private createFallbackModel(): void {
-    const geometry = new THREE.BoxGeometry(1, 2, 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 8);
+    const material = new THREE.MeshStandardMaterial({ color: 0x228b22 });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = `Knight_Fallback_${this.id}`;
+    mesh.name = `ADC_Fallback_${this.id}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
@@ -128,7 +126,7 @@ export class MeleeCharacter extends Character {
 
     // Crear AnimationController con animaciones procedurales
     this.animationController = new AnimationController(group, []);
-    console.log(`[MeleeCharacter ${this.id}] AnimationController de fallback creado`);
+    console.log(`[AdcCharacter ${this.id}] AnimationController de fallback creado`);
   }
 
   /**
@@ -153,7 +151,6 @@ export class MeleeCharacter extends Character {
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
 
-    // Para cuerpos cinemáticos, usar setNextKinematicTranslation
     const currentPos = body.translation();
     const newPos = {
       x: currentPos.x + displacement.x,
@@ -162,7 +159,7 @@ export class MeleeCharacter extends Character {
     };
 
     if (import.meta.env.DEV) {
-      console.log(`[MeleeCharacter ${this.id}] moveBody: displ=(${displacement.x.toFixed(2)}, ${displacement.z.toFixed(2)}), newPos=(${newPos.x.toFixed(2)}, ${newPos.z.toFixed(2)})`);
+      console.log(`[AdcCharacter ${this.id}] moveBody: displ=(${displacement.x.toFixed(2)}, ${displacement.z.toFixed(2)}), newPos=(${newPos.x.toFixed(2)}, ${newPos.z.toFixed(2)})`);
     }
 
     body.setNextKinematicTranslation(newPos);
@@ -170,16 +167,11 @@ export class MeleeCharacter extends Character {
 
   /**
    * Convierte input 2D a movimiento 3D isométrico.
-   * Rotación 45° para compensar la perspectiva isométrica.
    */
   private inputToIsometric(moveDir: THREE.Vector2): THREE.Vector3 {
-    // Crear vector 3D a partir del input 2D
     const inputVector = new THREE.Vector3(moveDir.x, 0, moveDir.y);
-
-    // Rotar 45° alrededor del eje Y (perspectiva isométrica)
     const isoMatrix = new THREE.Matrix4().makeRotationY(Math.PI / 4);
     inputVector.applyMatrix4(isoMatrix);
-
     return inputVector.normalize();
   }
 
@@ -202,6 +194,9 @@ export class MeleeCharacter extends Character {
     // Actualizar rotación suave del modelo
     this.updateModelRotation(dt);
 
+    // Actualizar proyectiles
+    this.updateProjectiles(dt);
+
     // Actualizar animaciones
     this.updateAnimations(dt);
   }
@@ -211,22 +206,15 @@ export class MeleeCharacter extends Character {
    */
   private handleMovement(dt: number, inputState: InputState): void {
     if (inputState.moveDir.lengthSq() > 0.01) {
-      // Convertir input a dirección isométrica
       this.moveDirection = this.inputToIsometric(inputState.moveDir);
-
-      // Calcular desplazamiento
       const speed = this.getEffectiveStat('speed');
       const displacement = this.moveDirection.clone().multiplyScalar(speed * dt);
 
-      // Aplicar movimiento al cuerpo físico si existe
       if (this.physicsBody && this.physicsWorld) {
         this.moveBody(displacement);
       } else {
-        // Movimiento sin física (fallback)
         if (this.model) {
           this.model.position.add(displacement);
-        } else {
-          console.warn(`[MeleeCharacter ${this.id}] No model to move`);
         }
       }
 
@@ -238,19 +226,19 @@ export class MeleeCharacter extends Character {
   }
 
   /**
-   * Maneja el ataque básico.
+   * Maneja el ataque a distancia.
    */
   private handleAttack(inputState: InputState): void {
     if (inputState.attacking && this.state !== CharacterState.Attacking) {
-      this.attack();
+      this.shootProjectile();
     }
   }
 
   /**
-   * Maneja la habilidad Q.
+   * Maneja la habilidad Q (lluvia de flechas).
    */
   private handleAbility(inputState: InputState): void {
-    if (inputState.abilityQ && this.furyReady) {
+    if (inputState.abilityQ) {
       this.abilityQ();
     }
   }
@@ -264,7 +252,7 @@ export class MeleeCharacter extends Character {
       if (position) {
         this.model.position.copy(position);
         if (import.meta.env.DEV && this.state === CharacterState.Moving) {
-          console.log(`[MeleeCharacter ${this.id}] syncModelWithPhysics: pos=(${position.x.toFixed(2)}, ${position.z.toFixed(2)})`);
+          console.log(`[AdcCharacter ${this.id}] syncModelWithPhysics: pos=(${position.x.toFixed(2)}, ${position.z.toFixed(2)})`);
         }
       }
     }
@@ -273,24 +261,13 @@ export class MeleeCharacter extends Character {
   /**
    * Actualiza la rotación del modelo suavemente hacia la dirección de movimiento.
    */
-  private updateModelRotation(
-    _dt: number /* eslint-disable-line @typescript-eslint/no-unused-vars */
-  ): void {
+  private updateModelRotation(_dt: number): void {
     if (!this.model || this.moveDirection.lengthSq() < 0.01) return;
 
-    // Calcular ángulo de rotación hacia la dirección de movimiento
     const targetAngle = Math.atan2(this.moveDirection.x, this.moveDirection.z);
-
-    // Rotación actual del modelo
     const currentAngle = this.model.rotation.y;
-
-    // Interpolación lineal suave (LERP)
     const angleDiff = targetAngle - currentAngle;
-
-    // Normalizar diferencia al rango [-π, π]
     const normalizedDiff = ((angleDiff + Math.PI) % (2 * Math.PI)) - Math.PI;
-
-    // Aplicar rotación suave
     const newAngle = currentAngle + normalizedDiff * this.rotationLerpAlpha;
 
     this.model.rotation.y = newAngle;
@@ -309,7 +286,7 @@ export class MeleeCharacter extends Character {
 
     // Log para depuración
     if (import.meta.env.DEV && this.state !== CharacterState.Idle) {
-      console.log(`[MeleeCharacter ${this.id}] Estado: ${this.state}, isAttacking: ${isAttacking}, isDead: ${isDead}`);
+      console.log(`[AdcCharacter ${this.id}] Estado: ${this.state}, isAttacking: ${isAttacking}, isDead: ${isDead}`);
     }
 
     // Sincronizar estado del personaje con animaciones
@@ -320,65 +297,113 @@ export class MeleeCharacter extends Character {
   }
 
   /**
-   * Ataque melee básico.
-   * Por ahora es un placeholder que cambiará el estado.
-   * En M5 se implementará el swing con daño.
+   * Dispara un proyectil (flecha) en la dirección actual del modelo.
    */
-  attack(): void {
+  private shootProjectile(): void {
     if (this.state === CharacterState.Dead) return;
 
     this.setState(CharacterState.Attacking);
+    this.consecutiveShots++;
 
-    // TODO: Implementar lógica de ataque en M5
+    // Crear geometría de flecha
+    const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
+    const material = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+    const arrow = new THREE.Mesh(geometry, material);
+    arrow.castShadow = true;
 
-    // Volver a Idle después de un tiempo (simulado)
+    // Posición inicial: frente del personaje
+    if (this.model) {
+      const direction = new THREE.Vector3(0, 0, -1);
+      direction.applyQuaternion(this.model.quaternion);
+      arrow.position.copy(this.model.position).add(direction.multiplyScalar(1.5));
+      arrow.rotation.copy(this.model.rotation);
+      arrow.rotateX(Math.PI / 2);
+    } else {
+      arrow.position.set(0, 1, 0);
+    }
+
+    this.sceneManager.add(arrow);
+    this.activeProjectiles.push(arrow);
+
+    // Aplicar pasiva: cada 3 disparos consecutivos aumenta velocidad de ataque temporal
+    if (this.consecutiveShots >= 3) {
+      this.applyModifier('attackSpeed', 0.3, ModifierType.Multiplicative, 'adc_passive', 'Pasiva: +30% velocidad de ataque');
+      setTimeout(() => {
+        this.removeModifier('adc_passive');
+      }, 3000);
+      this.consecutiveShots = 0;
+    }
+
+    // Volver a Idle después de un tiempo
     setTimeout(() => {
       if (this.state === CharacterState.Attacking) {
         this.setState(CharacterState.Idle);
       }
-    }, 500);
+    }, 300);
   }
 
   /**
-   * Habilidad Q: Embestida.
-   * Placeholder que se conectará en M5.
+   * Actualiza la posición de todos los proyectiles activos.
    */
-  abilityQ(): void {
-    if (!this.furyReady) return;
+  private updateProjectiles(dt: number): void {
+    const speed = 15;
+    const maxDistance = 30;
 
-    // Consumir furia
-    this.furyReady = false;
+    for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
+      const projectile = this.activeProjectiles[i];
+      const direction = new THREE.Vector3(0, 0, -1);
+      direction.applyQuaternion(projectile.quaternion);
+      projectile.position.add(direction.multiplyScalar(speed * dt));
 
-    // TODO: Implementar movimiento rápido en línea recta en M5
-  }
-
-  /**
-   * Incrementa el contador de kills y activa la furia al llegar a 3.
-   */
-  incrementKillCount(): void {
-    this.killCount++;
-
-    if (this.killCount >= 3 && !this.furyReady) {
-      this.furyReady = true;
-
-      // Emitir evento visual/auditivo (placeholder)
-      // Nota: Necesitamos agregar este evento a GameEvents si queremos tipado fuerte
-      this.eventBus.emit('player:furyReady' as any, { playerId: this.id }); // eslint-disable-line @typescript-eslint/no-explicit-any
+      // Verificar colisión (placeholder)
+      const distance = projectile.position.distanceTo(this.model?.position || new THREE.Vector3());
+      if (distance > maxDistance) {
+        this.sceneManager.remove(projectile);
+        this.activeProjectiles.splice(i, 1);
+      }
     }
   }
 
   /**
-   * Obtiene el contador de kills actual.
+   * Habilidad Q: Lluvia de flechas.
+   * Dispara 5 flechas en un arco frontal.
    */
-  getKillCount(): number {
-    return this.killCount;
+  private abilityQ(): void {
+    if (this.state === CharacterState.Dead) return;
+
+    const count = 5;
+    const spread = Math.PI / 6;
+
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => {
+        if (!this.isAlive()) return;
+
+        // Crear flecha con rotación variada
+        const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
+        const material = new THREE.MeshStandardMaterial({ color: 0xff4500 });
+        const arrow = new THREE.Mesh(geometry, material);
+        arrow.castShadow = true;
+
+        if (this.model) {
+          const angle = (i - (count - 1) / 2) * spread;
+          const direction = new THREE.Vector3(Math.sin(angle), 0, -Math.cos(angle));
+          direction.applyQuaternion(this.model.quaternion);
+          arrow.position.copy(this.model.position).add(direction.multiplyScalar(2));
+          arrow.lookAt(arrow.position.clone().add(direction));
+          arrow.rotateX(Math.PI / 2);
+        }
+
+        this.sceneManager.add(arrow);
+        this.activeProjectiles.push(arrow);
+      }, i * 100);
+    }
   }
 
   /**
-   * Verifica si la furia está lista.
+   * Verifica si el personaje está vivo.
    */
-  isFuryReady(): boolean {
-    return this.furyReady;
+  isAlive(): boolean {
+    return this.state !== CharacterState.Dead;
   }
 
   /**
@@ -391,6 +416,10 @@ export class MeleeCharacter extends Character {
     if (this.model) {
       this.sceneManager.remove(this.model);
     }
+
+    // Remover proyectiles
+    this.activeProjectiles.forEach(proj => this.sceneManager.remove(proj));
+    this.activeProjectiles = [];
   }
 
   /**
@@ -405,7 +434,6 @@ export class MeleeCharacter extends Character {
     const body = BodyFactory.createCharacterBody(this.physicsWorld, position, true);
     this.setPhysicsBody(body);
 
-    // Sincronizar modelo si ya existe
     if (this.model) {
       this.model.position.copy(position);
     }
@@ -416,5 +444,12 @@ export class MeleeCharacter extends Character {
    */
   getModel(): THREE.Group | null {
     return this.model;
+  }
+
+  /**
+   * Establece el cuerpo físico (método público de Character).
+   */
+  setPhysicsBody(body: RigidBodyHandle): void {
+    this.physicsBody = body;
   }
 }

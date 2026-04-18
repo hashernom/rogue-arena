@@ -9,6 +9,7 @@ import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
 import { DebugRenderer } from './physics/DebugRenderer';
 import { EventBus } from './engine/EventBus';
 import { MeleeCharacter } from './characters/MeleeCharacter';
+import { AdcCharacter } from './characters/AdcCharacter';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -61,6 +62,8 @@ sceneManager.add(cubeP2);
 
 // MeleeCharacter (Player 1) - se creará después de inicializar física
 let meleeCharacter: MeleeCharacter | null = null;
+// AdcCharacter (Player 2) - reemplazará el cubo rojo
+let adcCharacter: AdcCharacter | null = null;
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -118,27 +121,22 @@ async function initGameWithPhysics(): Promise<void> {
       meleeCharacter.createPhysicsBody(new THREE.Vector3(-3, 0, 0));
       player1BodyHandle = meleeCharacter.getPhysicsBody() ?? null;
 
-      // Jugador 2: cuerpo dinámico (cubo)
-      const boxCollider2 = RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
-      boxCollider2.setRestitution(0.05);
-      boxCollider2.setFriction(1.2);
-      boxCollider2.setMass(1.0);
-      player2BodyHandle = physicsWorld.createBody({
-        type: 'dynamic',
-        position: new THREE.Vector3(cubeP2.position.x, cubeP2.position.y, cubeP2.position.z),
-        collider: boxCollider2,
-        lockRotations: true,
-        gravityScale: 0,
-      });
+      // Jugador 2: AdcCharacter (Arquero) - reemplaza el cubo rojo
+      adcCharacter = new AdcCharacter(
+        'player2',
+        eventBus,
+        sceneManager,
+        assetLoader,
+        physicsWorld
+      );
+      // Crear cuerpo físico para el arquero en posición inicial (3, 0, 0)
+      adcCharacter.createPhysicsBody(new THREE.Vector3(3, 0, 0));
+      player2BodyHandle = adcCharacter.getPhysicsBody() ?? null;
 
-      // Configurar damping lineal para movimiento más controlado (reducido para respuesta más rápida)
-      // Solo para jugador 2 (cubo), el MeleeCharacter maneja su propio movimiento cinemático
-      const body2 = physicsWorld.getBody(player2BodyHandle);
-      if (body2) body2.setLinearDamping(1.0);
-      // Damping angular no necesario porque las rotaciones están bloqueadas
+      // Remover el cubo rojo de la escena
+      sceneManager.remove(cubeP2);
 
-      // Sincronizar meshes con cuerpos físicos (solo cubo y plano)
-      physicsWorld.syncToThree(cubeP2, player2BodyHandle);
+      // Sincronizar mesh del plano con cuerpo físico
       physicsWorld.syncToThree(plane, planeBodyHandle);
 
       // Crear DebugRenderer para visualizar colliders (solo en desarrollo)
@@ -174,34 +172,13 @@ async function initGameWithPhysics(): Promise<void> {
       meleeCharacter.update(dt, p1State);
     }
 
-    // Aplicar fuerzas al cubo (Player 2) - física dinámica
-    if (physicsWorld && player2BodyHandle) {
-      const body2 = physicsWorld.getBody(player2BodyHandle);
-
-      // Fuerza de movimiento basada en input (fuerza continua)
-      const forceStrength = 120.0; // aumentada para respuesta más rápida (masa 1.0)
-      const maxSpeed = 15.0; // velocidad máxima aumentada
-
-      if (body2) {
-        const force = {
-          x: p2State.moveDir.x * forceStrength,
-          y: 0,
-          z: -p2State.moveDir.y * forceStrength,
-        };
-        body2.addForce(force, true);
-
-        const linVel = body2.linvel();
-        const speed = Math.sqrt(linVel.x * linVel.x + linVel.z * linVel.z);
-        if (speed > maxSpeed) {
-          const scale = maxSpeed / speed;
-          body2.setLinvel({ x: linVel.x * scale, y: 0, z: linVel.z * scale }, true);
-        }
-      }
+    // Actualizar AdcCharacter (Player 2) con input
+    if (adcCharacter) {
+      adcCharacter.update(dt, p2State);
     }
 
     // Rotación básica (solo para visualización) - mantener independiente de física
-    cubeP2.rotation.x += rotationSpeed * dt * 60;
-    cubeP2.rotation.y += rotationSpeed * 0.7 * dt * 60;
+    // cubeP2 ya no existe, se eliminó
 
     // Avanzar simulación física y sincronizar todos los meshes
     if (physicsWorld) {
