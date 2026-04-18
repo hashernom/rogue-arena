@@ -5,7 +5,7 @@ import { PhysicsWorld, RigidBodyHandle } from './PhysicsWorld';
 
 /**
  * Factory para crear cuerpos físicos preconfigurados para cada tipo de entidad del juego.
- * 
+ *
  * Criterios de diseño:
  * - Los personajes no caen por efecto de la gravedad (gravityScale = 0)
  * - Los proyectiles con CCD no atraviesan muros a alta velocidad
@@ -34,7 +34,7 @@ export class BodyFactory {
     // y que no son afectados por fuerzas físicas.
     const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
     bodyDesc.setTranslation(pos.x, pos.y, pos.z);
-    
+
     // Bloquear rotaciones en X y Z, permitir solo rotación en Y
     bodyDesc.lockRotations();
     // Nota: lockRotations() bloquea todas las rotaciones. Para permitir solo Y necesitamos
@@ -50,7 +50,7 @@ export class BodyFactory {
     const radius = 0.3;
     const halfHeight = 0.5;
     const colliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius);
-    
+
     // Configurar grupos de colisión
     const groups = makeCollisionGroups(group, mask);
     colliderDesc.setCollisionGroups(groups);
@@ -70,7 +70,7 @@ export class BodyFactory {
   /**
    * Crea un cuerpo para un enemigo.
    * Similar al character body pero con cápsula más pequeña según el tipo.
-   * 
+   *
    * @param world Instancia de PhysicsWorld
    * @param pos Posición inicial
    * @param enemyType Tipo de enemigo que determina tamaño
@@ -126,7 +126,7 @@ export class BodyFactory {
    * - Collider: Esfera (radio 0.1m)
    * - ccd: true (Continuous Collision Detection para proyectiles rápidos)
    * - Gravedad opcional (por defecto 0 para proyectiles en top-down)
-   * 
+   *
    * @param world Instancia de PhysicsWorld
    * @param pos Posición inicial
    * @param velocity Velocidad inicial (vector 3D)
@@ -167,7 +167,7 @@ export class BodyFactory {
    * - RigidBody tipo Fixed (no se mueve)
    * - Collider: Cuboid con dimensiones personalizadas
    * - No consume CPU en el physics step (es estático)
-   * 
+   *
    * @param world Instancia de PhysicsWorld
    * @param pos Posición del centro del muro
    * @param size Dimensiones del cuboide (ancho, alto, profundidad)

@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import { Groups, Masks, makeCollisionGroups } from './CollisionGroups';
+import { makeCollisionGroups } from './CollisionGroups';
 
 /**
  * Handle opaco para referenciar un cuerpo rígido de Rapier.
@@ -78,7 +78,6 @@ export class PhysicsWorld {
       z: g.z,
     });
 
-    console.log('✅ PhysicsWorld inicializado con Rapier3D (gravedad:', g, ')');
     return instance;
   }
 
@@ -138,7 +137,7 @@ export class PhysicsWorld {
       // Aplicar grupos de colisión si se especifican
       if (options.collisionGroup !== undefined) {
         const membership = options.collisionGroup;
-        const filter = options.collisionMask ?? 0xFFFFFFFF; // por defecto colisiona con todo
+        const filter = options.collisionMask ?? 0xffffffff; // por defecto colisiona con todo
         const groups = makeCollisionGroups(membership, filter);
         options.collider.setCollisionGroups(groups);
       }
@@ -179,7 +178,7 @@ export class PhysicsWorld {
    * Este método debe llamarse desde el fixed update del GameLoop.
    * Rapier maneja internamente la integración con el timestep configurado.
    */
-  step(deltaTime: number): void {
+  step(deltaTime: number /* eslint-disable-line @typescript-eslint/no-unused-vars */): void {
     if (!this.world) {
       throw new Error('PhysicsWorld no inicializado. Llama a init() primero.');
     }
@@ -196,7 +195,7 @@ export class PhysicsWorld {
   syncAll(): void {
     // Optimización: si no hay bodies, salir temprano
     if (this.bodyToMesh.size === 0) return;
-    
+
     for (const [handle, mesh] of this.bodyToMesh) {
       this.syncMesh(handle, mesh);
     }

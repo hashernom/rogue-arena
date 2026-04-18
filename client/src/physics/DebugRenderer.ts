@@ -4,7 +4,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 /**
  * Renderizador de debug para visualizar colliders de Rapier como wireframes en Three.js.
  * Solo se compila en modo desarrollo (import.meta.env.DEV).
- * 
+ *
  * Características:
  * - Wireframes que se alinean con los meshes 3D de Three.js
  * - Colores por tipo de body:
@@ -46,7 +46,7 @@ export class DebugRenderer {
     }
 
     // Configurar listener para tecla F1 (solo en desarrollo)
-    window.addEventListener('keydown', (event) => {
+    window.addEventListener('keydown', event => {
       if (event.code === 'F1') {
         event.preventDefault();
         this.toggle();
@@ -81,7 +81,7 @@ export class DebugRenderer {
    */
   toggle(): void {
     if (!import.meta.env.DEV) return;
-    
+
     this.enabled = !this.enabled;
     this.updateVisibility();
     console.log(`DebugRenderer ${this.enabled ? 'activado' : 'desactivado'}`);

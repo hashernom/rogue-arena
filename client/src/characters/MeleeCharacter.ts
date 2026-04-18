@@ -51,34 +51,26 @@ export class MeleeCharacter extends Character {
     this.assetLoader = assetLoader;
 
     // Cargar modelo asíncronamente
-    this.loadModel();
+    void this.loadModel();
   }
 
   /**
    * Carga el modelo GLTF del caballero y lo agrega a la escena.
    */
   private async loadModel(): Promise<void> {
-    console.log(`[MeleeCharacter ${this.id}] Loading knight GLB model...`);
-    
     try {
       // Cargar modelo GLB desde la carpeta pública
       const gltf = await this.assetLoader.load('/models/Knight.glb');
       const model = this.assetLoader.clone(gltf);
       model.name = `Knight_${this.id}`;
-      
-      // Log de la estructura del modelo para depuración
-      console.log(`[MeleeCharacter ${this.id}] Model loaded, children:`, model.children.length);
-      model.traverse(child => {
-        console.log(`  - ${child.type} ${child.name} pos=${child.position.toArray()} scale=${child.scale.toArray()}`);
-      });
-      
+
       // Ajustar escala y orientación para que coincida con el mundo del juego
       // El modelo de KayKit puede ser demasiado grande; escalar a 0.5
       model.scale.set(0.5, 0.5, 0.5);
       // Rotar para que mire hacia la dirección correcta (depende del modelo)
       model.rotation.y = Math.PI; // 180 grados si es necesario
       model.position.set(0, 0, 0);
-      
+
       // Configurar sombras
       model.traverse(child => {
         if (child instanceof THREE.Mesh) {
@@ -86,18 +78,16 @@ export class MeleeCharacter extends Character {
           child.receiveShadow = true;
         }
       });
-      
+
       this.model = model;
       // Agregar a la escena
       this.sceneManager.add(model);
-      console.log(`[MeleeCharacter ${this.id}] Knight GLB model loaded and added to scene`);
-      
+
       // Si hay cuerpo físico, sincronizar posición inicial
       if (this.physicsBody && this.physicsWorld) {
         const position = this.getBodyPosition();
         if (position) {
           model.position.copy(position);
-          console.log(`[MeleeCharacter ${this.id}] Model positioned at physics body:`, position);
         }
       }
     } catch (error) {
@@ -112,12 +102,12 @@ export class MeleeCharacter extends Character {
    */
   private createFallbackModel(): void {
     const geometry = new THREE.BoxGeometry(1, 2, 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const material = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `Knight_Fallback_${this.id}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    
+
     const group = new THREE.Group();
     group.add(mesh);
     this.model = group;
@@ -129,10 +119,10 @@ export class MeleeCharacter extends Character {
    */
   private getBodyPosition(): THREE.Vector3 | null {
     if (!this.physicsBody || !this.physicsWorld) return null;
-    
+
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return null;
-    
+
     const pos = body.translation();
     return new THREE.Vector3(pos.x, pos.y, pos.z);
   }
@@ -142,10 +132,10 @@ export class MeleeCharacter extends Character {
    */
   private moveBody(displacement: THREE.Vector3): void {
     if (!this.physicsBody || !this.physicsWorld) return;
-    
+
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
-    
+
     // Para cuerpos cinemáticos, usar setNextKinematicTranslation
     const currentPos = body.translation();
     const newPos = {
@@ -153,7 +143,7 @@ export class MeleeCharacter extends Character {
       y: currentPos.y + displacement.y,
       z: currentPos.z + displacement.z,
     };
-    
+
     body.setNextKinematicTranslation(newPos);
   }
 
@@ -164,11 +154,11 @@ export class MeleeCharacter extends Character {
   private inputToIsometric(moveDir: THREE.Vector2): THREE.Vector3 {
     // Crear vector 3D a partir del input 2D
     const inputVector = new THREE.Vector3(moveDir.x, 0, moveDir.y);
-    
+
     // Rotar 45° alrededor del eje Y (perspectiva isométrica)
     const isoMatrix = new THREE.Matrix4().makeRotationY(Math.PI / 4);
     inputVector.applyMatrix4(isoMatrix);
-    
+
     return inputVector.normalize();
   }
 
@@ -199,11 +189,11 @@ export class MeleeCharacter extends Character {
     if (inputState.moveDir.lengthSq() > 0.01) {
       // Convertir input a dirección isométrica
       this.moveDirection = this.inputToIsometric(inputState.moveDir);
-      
+
       // Calcular desplazamiento
       const speed = this.getEffectiveStat('speed');
       const displacement = this.moveDirection.clone().multiplyScalar(speed * dt);
-      
+
       // Aplicar movimiento al cuerpo físico si existe
       if (this.physicsBody && this.physicsWorld) {
         this.moveBody(displacement);
@@ -211,12 +201,11 @@ export class MeleeCharacter extends Character {
         // Movimiento sin física (fallback)
         if (this.model) {
           this.model.position.add(displacement);
-          console.log(`[MeleeCharacter ${this.id}] Moved model by`, displacement, 'new pos', this.model.position);
         } else {
           console.warn(`[MeleeCharacter ${this.id}] No model to move`);
         }
       }
-      
+
       this.setState(CharacterState.Moving);
     } else {
       this.setState(CharacterState.Idle);
@@ -257,24 +246,26 @@ export class MeleeCharacter extends Character {
   /**
    * Actualiza la rotación del modelo suavemente hacia la dirección de movimiento.
    */
-  private updateModelRotation(dt: number): void {
+  private updateModelRotation(
+    _dt: number /* eslint-disable-line @typescript-eslint/no-unused-vars */
+  ): void {
     if (!this.model || this.moveDirection.lengthSq() < 0.01) return;
 
     // Calcular ángulo de rotación hacia la dirección de movimiento
     const targetAngle = Math.atan2(this.moveDirection.x, this.moveDirection.z);
-    
+
     // Rotación actual del modelo
     const currentAngle = this.model.rotation.y;
-    
+
     // Interpolación lineal suave (LERP)
     const angleDiff = targetAngle - currentAngle;
-    
+
     // Normalizar diferencia al rango [-π, π]
     const normalizedDiff = ((angleDiff + Math.PI) % (2 * Math.PI)) - Math.PI;
-    
+
     // Aplicar rotación suave
     const newAngle = currentAngle + normalizedDiff * this.rotationLerpAlpha;
-    
+
     this.model.rotation.y = newAngle;
   }
 
@@ -285,12 +276,11 @@ export class MeleeCharacter extends Character {
    */
   attack(): void {
     if (this.state === CharacterState.Dead) return;
-    
+
     this.setState(CharacterState.Attacking);
-    
+
     // TODO: Implementar lógica de ataque en M5
-    console.log(`Knight ${this.id} attacks!`);
-    
+
     // Volver a Idle después de un tiempo (simulado)
     setTimeout(() => {
       if (this.state === CharacterState.Attacking) {
@@ -305,12 +295,10 @@ export class MeleeCharacter extends Character {
    */
   abilityQ(): void {
     if (!this.furyReady) return;
-    
-    console.log(`Knight ${this.id} uses Charge ability!`);
-    
+
     // Consumir furia
     this.furyReady = false;
-    
+
     // TODO: Implementar movimiento rápido en línea recta en M5
   }
 
@@ -319,14 +307,13 @@ export class MeleeCharacter extends Character {
    */
   incrementKillCount(): void {
     this.killCount++;
-    
+
     if (this.killCount >= 3 && !this.furyReady) {
       this.furyReady = true;
-      console.log(`Knight ${this.id} fury ready!`);
-      
+
       // Emitir evento visual/auditivo (placeholder)
       // Nota: Necesitamos agregar este evento a GameEvents si queremos tipado fuerte
-      this.eventBus.emit('player:furyReady' as any, { playerId: this.id });
+      this.eventBus.emit('player:furyReady' as any, { playerId: this.id }); // eslint-disable-line @typescript-eslint/no-explicit-any
     }
   }
 
@@ -349,7 +336,7 @@ export class MeleeCharacter extends Character {
    */
   die(): void {
     super.die();
-    
+
     // Remover modelo de la escena
     if (this.model) {
       this.sceneManager.remove(this.model);
@@ -367,7 +354,7 @@ export class MeleeCharacter extends Character {
 
     const body = BodyFactory.createCharacterBody(this.physicsWorld, position, true);
     this.setPhysicsBody(body);
-    
+
     // Sincronizar modelo si ya existe
     if (this.model) {
       this.model.position.copy(position);

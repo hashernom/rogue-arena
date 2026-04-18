@@ -9,7 +9,6 @@ import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
 import { DebugRenderer } from './physics/DebugRenderer';
 import { EventBus } from './engine/EventBus';
 import { MeleeCharacter } from './characters/MeleeCharacter';
-import { BodyFactory } from './physics/BodyFactory';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -84,6 +83,7 @@ let physicsWorld: PhysicsWorld | null = null;
 let debugRenderer: DebugRenderer | null = null;
 
 // Handles de cuerpos físicos
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 let player1BodyHandle: RigidBodyHandle | null = null;
 let player2BodyHandle: RigidBodyHandle | null = null;
 let planeBodyHandle: RigidBodyHandle | null = null;

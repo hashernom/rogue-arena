@@ -117,7 +117,13 @@ export abstract class Character {
   /**
    * Aplica un modificador a una estadística.
    */
-  applyModifier(stat: keyof CharacterStats, value: number, type: ModifierType, id?: string, description?: string): void {
+  applyModifier(
+    stat: keyof CharacterStats,
+    value: number,
+    type: ModifierType,
+    id?: string,
+    description?: string
+  ): void {
     this.modifiers.push({ stat, value, type, id, description });
   }
 
