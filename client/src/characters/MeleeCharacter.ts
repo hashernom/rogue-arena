@@ -108,26 +108,31 @@ export class MeleeCharacter extends Character {
     }
   }
 
+  /** Nombre de la animación actualmente en reproducción */
+  private currentAnimationName: string = '';
+
   /**
-   * Reproduce una animación por nombre.
+   * Reproduce una animación por nombre con crossfade suave.
+   * Incluye guarda para evitar resetear la misma animación cada frame.
    */
   private playAnimation(name: string): void {
     if (!this.mixer) return;
-    
-    // Detener todas las animaciones actuales
-    Object.values(this.actions).forEach(action => {
-      action.stop();
-    });
-    
-    // Reproducir la animación solicitada si existe
+    if (name === this.currentAnimationName) return; // ← GUARDA CLAVE
+
     const action = this.actions[name];
-    if (action) {
-      action.reset();
-      action.play();
-      console.log(`[MeleeCharacter ${this.id}] Reproduciendo animación: ${name}`);
-    } else {
+    if (!action) {
       console.warn(`[MeleeCharacter ${this.id}] Animación no encontrada: ${name}`);
+      return;
     }
+
+    // Crossfade suave entre animaciones
+    if (this.currentAction) {
+      this.currentAction.fadeOut(0.2);
+    }
+
+    action.reset().fadeIn(0.2).play();
+    this.currentAction = action;
+    this.currentAnimationName = name;
   }
 
   /**
@@ -293,12 +298,18 @@ export class MeleeCharacter extends Character {
       this.playAnimation('Idle');
     }
 
-    // 4. SINCRONIZACIÓN VISUAL DEL CONTENEDOR
-    if (this.model && this.physicsBody) {
-      const pos = body.translation();
-      // Movemos el contenedor (que no tiene bloqueos de animación) a la caja de físicas
-      this.model.position.set(pos.x, pos.y - 0.5, pos.z);
-    }
+  }
+
+  /**
+   * Sincroniza el modelo visual con la posición física actual.
+   * Debe llamarse DESPUÉS de physicsWorld.stepAll() para evitar desfase de 1 frame.
+   */
+  syncToPhysics(): void {
+    if (!this.model || this.physicsBody === undefined || !this.physicsWorld) return;
+    const body = this.physicsWorld.getBody(this.physicsBody);
+    if (!body) return;
+    const pos = body.translation();
+    this.model.position.set(pos.x, pos.y - 0.5, pos.z);
   }
 
   /**

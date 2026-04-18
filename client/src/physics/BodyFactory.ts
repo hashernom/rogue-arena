@@ -29,26 +29,6 @@ export class BodyFactory {
     const group = isPlayer ? Groups.PLAYER : Groups.ENEMY;
     const mask = isPlayer ? Masks.PLAYER : Masks.ENEMY;
 
-    // Crear descripción del cuerpo cinemático (position-based)
-    // En Rapier, kinematicPositionBased es para cuerpos cuya posición se establece manualmente
-    // y que no son afectados por fuerzas físicas.
-    const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
-    bodyDesc.setTranslation(pos.x, pos.y, pos.z);
-
-    // Bloquear rotaciones en X y Z, permitir solo rotación en Y
-    bodyDesc.lockRotations();
-    // Nota: lockRotations() bloquea todas las rotaciones. Para permitir solo Y necesitamos
-    // usar lockRotations(false) y luego setEnabledRotations? En Rapier no hay API directa.
-    // Para personajes top-down, podemos permitir rotación en Y usando constraints o
-    // simplemente no bloquear rotaciones y controlar la rotación manualmente.
-    // Por ahora, usamos lockRotations() para simplicidad.
-
-    // Sin gravedad
-    bodyDesc.setGravityScale(0);
-
-    // Agregar resistencia al aire (rozamiento) para frenado suave
-    bodyDesc.setLinearDamping(5.0);
-
     // Crear collider de cápsula
     const radius = 0.3;
     const halfHeight = 0.5;
@@ -65,6 +45,7 @@ export class BodyFactory {
       collider: colliderDesc,
       lockRotations: true,
       gravityScale: 0,
+      linearDamping: 5.0, // ← ahora SÍ llega al cuerpo real
       collisionGroup: group,
       collisionMask: mask,
     });

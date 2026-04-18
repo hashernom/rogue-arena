@@ -180,10 +180,14 @@ async function initGameWithPhysics(): Promise<void> {
     // Rotación básica (solo para visualización) - mantener independiente de física
     // cubeP2 ya no existe, se eliminó
 
-    // Avanzar simulación física y sincronizar todos los meshes
+    // Avanzar simulación física
     if (physicsWorld) {
       physicsWorld.stepAll(dt);
     }
+
+    // Sincronizar modelos DESPUÉS del step (mismo frame que el debug)
+    if (meleeCharacter) meleeCharacter.syncToPhysics();
+    if (adcCharacter) adcCharacter.syncToPhysics();
 
     // Actualizar DebugRenderer para visualizar colliders
     if (debugRenderer) {

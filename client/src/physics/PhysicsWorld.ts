@@ -19,6 +19,7 @@ export interface BodyOptions {
   lockRotations?: boolean; // Para personajes top-down
   lockTranslations?: boolean;
   gravityScale?: number;
+  linearDamping?: number; // ← AGREGAR ESTO
   /**
    * Grupo de colisión al que pertenece este cuerpo.
    * Puede ser uno de los grupos predefinidos (Groups.PLAYER, etc.) o una combinación bitwise.
@@ -128,6 +129,11 @@ export class PhysicsWorld {
     // Escala de gravedad
     if (options.gravityScale !== undefined) {
       bodyDesc.setGravityScale(options.gravityScale);
+    }
+
+    // Damping lineal (para freno suave)
+    if (options.linearDamping !== undefined) {
+      bodyDesc.setLinearDamping(options.linearDamping);
     }
 
     const body = world.createRigidBody(bodyDesc);
