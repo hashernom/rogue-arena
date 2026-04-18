@@ -46,6 +46,9 @@ export class BodyFactory {
     // Sin gravedad
     bodyDesc.setGravityScale(0);
 
+    // Agregar resistencia al aire (rozamiento) para frenado suave
+    bodyDesc.setLinearDamping(5.0);
+
     // Crear collider de cápsula
     const radius = 0.3;
     const halfHeight = 0.5;

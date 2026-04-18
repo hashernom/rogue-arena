@@ -13,8 +13,10 @@ import { AnimationController } from './AnimationController';
  * Extiende Character y añade movimiento isométrico, modelo 3D y habilidades especiales.
  */
 export class MeleeCharacter extends Character {
-  /** Modelo 3D del caballero */
+  /** Modelo 3D del caballero (contenedor padre) */
   private model: THREE.Group | null = null;
+  /** Malla interna para animaciones */
+  private innerMesh: THREE.Object3D | null = null;
   /** Referencia al SceneManager para agregar/remover el modelo */
   private sceneManager: SceneManager;
   /** AssetLoader para cargar el modelo */
@@ -29,6 +31,12 @@ export class MeleeCharacter extends Character {
   private moveDirection: THREE.Vector3 = new THREE.Vector3();
   /** Controlador de animaciones */
   private animationController: AnimationController | null = null;
+  /** Mixer de animaciones THREE.js */
+  private mixer: THREE.AnimationMixer | null = null;
+  /** Acciones de animación */
+  private actions: Record<string, THREE.AnimationAction> = {};
+  /** Acción de animación actual */
+  private currentAction: THREE.AnimationAction | null = null;
 
   /** Stats base del Caballero */
   static readonly BASE_STATS: CharacterStats = {
@@ -62,75 +70,93 @@ export class MeleeCharacter extends Character {
    */
   private async loadModel(): Promise<void> {
     try {
-      // Cargar modelo GLB desde la carpeta pública
-      const gltf = await this.assetLoader.load('/models/Knight.glb');
-      const model = this.assetLoader.clone(gltf);
-      model.name = `Knight_${this.id}`;
+      const [modelGltf, movementGltf] = await Promise.all([
+        this.assetLoader.load('/models/Knight.glb'),
+        this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb')
+      ]);
 
-      // Ajustar escala y orientación para que coincida con el mundo del juego
-      // El modelo de KayKit puede ser demasiado grande; escalar a 0.5
-      model.scale.set(0.5, 0.5, 0.5);
-      // Rotar para que mire hacia la dirección correcta (depende del modelo)
-      model.rotation.y = Math.PI; // 180 grados si es necesario
-      model.position.set(0, 0, 0);
+      // 1. EL TRUCO DEL CONTENEDOR (Soluciona que el modelo no siga a la caja)
+      this.innerMesh = this.assetLoader.clone(modelGltf); // El modelo visual real
+      this.model = new THREE.Group();                     // La "caja de cartón" vacía
+      this.model.add(this.innerMesh!);                    // Metemos el modelo en la caja (usamos ! porque sabemos que no es null)
+      this.sceneManager.add(this.model);                  // Añadimos la caja al mundo
 
-      // Configurar sombras
-      model.traverse(child => {
-        if (child instanceof THREE.Mesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
+      // 2. EL MIXER SE CONECTA AL MODELO INTERNO, NO AL CONTENEDOR
+      this.mixer = new THREE.AnimationMixer(this.innerMesh!);
+
+      // 3. MAPEO INTELIGENTE DE NOMBRES (Soluciona el error de "Animación no encontrada")
+      const allAnimations = [...modelGltf.animations, ...movementGltf.animations];
+      allAnimations.forEach((clip) => {
+        const action = this.mixer!.clipAction(clip);
+        this.actions[clip.name] = action; // Guardamos el nombre original por si acaso
+        
+        const lowerName = clip.name.toLowerCase();
+        if (lowerName.includes('idle')) this.actions['Idle'] = action;
+        if (lowerName.includes('run') || lowerName.includes('walk')) this.actions['Run'] = action;
       });
 
-      this.model = model;
-      // Agregar a la escena
-      this.sceneManager.add(model);
-
-      // Crear AnimationController con los clips del GLTF
-      if (gltf.animations && gltf.animations.length > 0) {
-        console.log(`[MeleeCharacter ${this.id}] GLTF tiene ${gltf.animations.length} animaciones:`, gltf.animations.map(a => a.name));
-        this.animationController = new AnimationController(model, gltf.animations);
-        console.log(`[MeleeCharacter ${this.id}] AnimationController creado con ${gltf.animations.length} clips`);
-      } else {
-        console.warn(`[MeleeCharacter ${this.id}] GLTF no tiene animaciones, usando fallback`);
-        this.animationController = new AnimationController(model, []);
+      // Si no encuentra 'Idle', usa la primera animación disponible para no crashear
+      if (!this.actions['Idle'] && allAnimations.length > 0) {
+          this.actions['Idle'] = this.mixer!.clipAction(allAnimations[0]);
       }
 
-      // Si hay cuerpo físico, sincronizar posición inicial y registrar para actualización automática
-      if (this.physicsBody && this.physicsWorld) {
-        const position = this.getBodyPosition();
-        if (position) {
-          model.position.copy(position);
-        }
-        // REGISTRO CRÍTICO: Sincronizar modelo con cuerpo físico para actualización automática
-        console.log(`[MeleeCharacter ${this.id}] Sincronizando modelo con cuerpo físico`);
-        this.physicsWorld.syncToThree(model, this.physicsBody);
-      }
+      this.playAnimation('Idle');
+
     } catch (error) {
-      console.error(`[MeleeCharacter ${this.id}] Failed to load knight GLB:`, error);
-      // Fallback a modelo procedural
+      console.error('Error cargando modelo:', error);
       this.createFallbackModel();
     }
   }
 
   /**
+   * Reproduce una animación por nombre.
+   */
+  private playAnimation(name: string): void {
+    if (!this.mixer) return;
+    
+    // Detener todas las animaciones actuales
+    Object.values(this.actions).forEach(action => {
+      action.stop();
+    });
+    
+    // Reproducir la animación solicitada si existe
+    const action = this.actions[name];
+    if (action) {
+      action.reset();
+      action.play();
+      console.log(`[MeleeCharacter ${this.id}] Reproduciendo animación: ${name}`);
+    } else {
+      console.warn(`[MeleeCharacter ${this.id}] Animación no encontrada: ${name}`);
+    }
+  }
+
+  /**
    * Crea un modelo de fallback (cubo) si el GLTF no carga.
+   * Mantiene la misma estructura de contenedor y malla interna.
    */
   private createFallbackModel(): void {
     const geometry = new THREE.BoxGeometry(1, 2, 1);
     const material = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = `Knight_Fallback_${this.id}`;
+    mesh.name = `Knight_Fallback_Inner_${this.id}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
-    const group = new THREE.Group();
-    group.add(mesh);
-    this.model = group;
-    this.sceneManager.add(group);
+    // 1. La malla interna es el cubo
+    this.innerMesh = mesh;
+    
+    // 2. Crear contenedor Group
+    this.model = new THREE.Group();
+    this.model.name = `Knight_Fallback_Container_${this.id}`;
+    
+    // 3. Meter el cubo dentro del contenedor
+    this.model.add(this.innerMesh);
+    
+    // 4. Añadir contenedor a la escena
+    this.sceneManager.add(this.model);
 
     // Crear AnimationController con animaciones procedurales
-    this.animationController = new AnimationController(group, []);
+    this.animationController = new AnimationController(this.model, []);
     console.log(`[MeleeCharacter ${this.id}] AnimationController de fallback creado`);
   }
 
@@ -148,27 +174,54 @@ export class MeleeCharacter extends Character {
   }
 
   /**
-   * Mueve el cuerpo físico a una nueva posición.
+   * Mueve el cuerpo físico usando velocidad lineal (setLinvel).
+   * Solución definitiva para el problema de movimiento.
    */
-  private moveBody(displacement: THREE.Vector3): void {
-    if (!this.physicsBody || !this.physicsWorld) return;
+  private moveBody(input: InputState): void {
+    // Si no hay cuerpo físico o el personaje está muerto, no hacer nada
+    if (!this.physicsBody || !this.physicsWorld || !this.isAlive()) return;
 
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
 
-    // Para cuerpos cinemáticos, usar setNextKinematicTranslation
-    const currentPos = body.translation();
-    const newPos = {
-      x: currentPos.x + displacement.x,
-      y: currentPos.y + displacement.y,
-      z: currentPos.z + displacement.z,
-    };
+    // 1. Usar moveDir del InputState (ya está normalizado)
+    const moveDir = input.moveDir;
+    
+    // 2. Convertir Vector2 a Vector3 para movimiento isométrico
+    const direction = this.inputToIsometric(moveDir);
 
-    if (import.meta.env.DEV) {
-      console.log(`[MeleeCharacter ${this.id}] moveBody: displ=(${displacement.x.toFixed(2)}, ${displacement.z.toFixed(2)}), newPos=(${newPos.x.toFixed(2)}, ${newPos.z.toFixed(2)})`);
+    // 3. Definir la velocidad (ajusta este número a tu gusto)
+    const SPEED = 8.0;
+
+    // 4. LA MAGIA: Aplicar Velocidad Lineal o Frenar en Seco
+    const currentVel = body.linvel();
+    
+    // Si el jugador no está oprimiendo nada (el vector dirección es 0)
+    if (direction.lengthSq() === 0) {
+      // FRENAR EN SECO (manteniendo la gravedad en Y)
+      body.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
+    } else {
+      // APLICAR VELOCIDAD
+      body.setLinvel({
+        x: direction.x * SPEED,
+        y: currentVel.y, // Respetar la gravedad original en el eje Y
+        z: direction.z * SPEED
+      }, true); // ¡ESTE 'TRUE' ES VITAL! Despierta el cuerpo físico inmediatamente
     }
 
-    body.setNextKinematicTranslation(newPos);
+    // 5. (Opcional) Rotar el modelo hacia donde está caminando
+    if (direction.lengthSq() > 0 && this.model) {
+      const targetAngle = Math.atan2(direction.x, direction.z);
+      this.model.rotation.y = targetAngle;
+    }
+
+    if (import.meta.env.DEV) {
+      if (direction.lengthSq() > 0) {
+        console.log(`[MeleeCharacter ${this.id}] moveBody: moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), dir=(${direction.x.toFixed(2)}, ${direction.z.toFixed(2)}), vel=(${(direction.x * SPEED).toFixed(2)}, ${(direction.z * SPEED).toFixed(2)})`);
+      } else {
+        console.log(`[MeleeCharacter ${this.id}] moveBody: FRENANDO, vel=(0, ${currentVel.y.toFixed(2)}, 0)`);
+      }
+    }
   }
 
   /**
@@ -188,25 +241,64 @@ export class MeleeCharacter extends Character {
 
   /**
    * Actualiza el movimiento del personaje basado en input y tiempo delta.
+   * Versión consolidada "a prueba de balas" con sincronización directa.
    */
   update(dt: number, inputState?: InputState): void {
-    if (!this.isAlive()) return;
+    if (this.mixer) this.mixer.update(dt);
+    if (!this.physicsBody || !this.physicsWorld || this.state === CharacterState.Dead) return;
 
-    // Actualizar estado según input
+    // Obtener el cuerpo físico real
+    const body = this.physicsWorld.getBody(this.physicsBody);
+    if (!body) return;
+
+    let isMoving = false;
+    const direction = new THREE.Vector3(0, 0, 0);
+
     if (inputState) {
-      this.handleMovement(dt, inputState);
+      // Convertir inputState.moveDir a dirección 3D
+      if (inputState.moveDir.lengthSq() > 0.01) {
+        direction.copy(this.inputToIsometric(inputState.moveDir));
+      }
+
+      // Manejar ataque y habilidad
       this.handleAttack(inputState);
       this.handleAbility(inputState);
     }
 
-    // Sincronizar modelo con cuerpo físico
-    this.syncModelWithPhysics();
+    const currentVel = body.linvel();
 
-    // Actualizar rotación suave del modelo
-    this.updateModelRotation(dt);
+    if (direction.lengthSq() > 0) {
+      direction.normalize();
+      const SPEED = this.getEffectiveStat('speed');
+      
+      body.setLinvel({
+        x: direction.x * SPEED,
+        y: currentVel.y,
+        z: direction.z * SPEED
+      }, true);
 
-    // Actualizar animaciones
-    this.updateAnimations(dt);
+      // Rotar el CONTENEDOR hacia donde caminamos
+      if (this.model) {
+        this.model.rotation.y = Math.atan2(direction.x, direction.z);
+      }
+      
+      this.playAnimation('Run');
+      isMoving = true;
+
+    } else {
+      // FRENO
+      if (Math.abs(currentVel.x) > 0.1 || Math.abs(currentVel.z) > 0.1) {
+        body.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
+      }
+      this.playAnimation('Idle');
+    }
+
+    // 4. SINCRONIZACIÓN VISUAL DEL CONTENEDOR
+    if (this.model && this.physicsBody) {
+      const pos = body.translation();
+      // Movemos el contenedor (que no tiene bloqueos de animación) a la caja de físicas
+      this.model.position.set(pos.x, pos.y - 0.5, pos.z);
+    }
   }
 
   /**
@@ -223,9 +315,11 @@ export class MeleeCharacter extends Character {
 
       // Aplicar movimiento al cuerpo físico si existe
       if (this.physicsBody && this.physicsWorld) {
-        this.moveBody(displacement);
+        this.moveBody(inputState);
       } else {
-        // Movimiento sin física (fallback)
+        // Movimiento sin física (fallback) - mantener compatibilidad
+        const speed = this.getEffectiveStat('speed');
+        const displacement = this.moveDirection.clone().multiplyScalar(speed * dt);
         if (this.model) {
           this.model.position.add(displacement);
         } else {
@@ -411,8 +505,7 @@ export class MeleeCharacter extends Character {
     // Sincronizar modelo si ya existe
     if (this.model) {
       this.model.position.copy(position);
-      // REGISTRO CRÍTICO: Sincronizar modelo con cuerpo físico para actualización automática
-      this.physicsWorld.syncToThree(this.model, body);
+      // NOTA: Ya no usamos syncToThree. La sincronización se hace directamente en update()
     }
   }
 
