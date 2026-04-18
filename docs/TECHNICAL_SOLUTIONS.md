@@ -75,6 +75,33 @@ private playAnimation(name: string): void {
 
 **Solución**: Implementar **Patrón Contenedor + SkeletonUtils**.
 
+### Problema 5: Direcciones de Movimiento Invertidas (W/S)
+**Síntoma**: Las teclas W (arriba) y S (abajo) producían movimiento en dirección opuesta a la esperada.
+
+**Causa Raíz**: Transformación incorrecta de coordenadas 2D a 3D isométricas en el método `inputToIsometric()`. El eje Z no estaba invertido para coincidir con la orientación de la cámara isométrica.
+
+**Solución**: Invertir el eje Z en la transformación:
+```typescript
+private inputToIsometric(moveDir: THREE.Vector2): THREE.Vector3 {
+  // Crear vector 3D a partir del input 2D
+  // NOTA: Invertir Z porque en la vista isométrica, "arriba" en pantalla
+  // corresponde a movimiento en -Z (hacia la cámara)
+  const inputVector = new THREE.Vector3(moveDir.x, 0, -moveDir.y);
+
+  // Rotar 45° alrededor del eje Y (perspectiva isométrica)
+  const isoMatrix = new THREE.Matrix4().makeRotationY(Math.PI / 4);
+  inputVector.applyMatrix4(isoMatrix);
+
+  return inputVector.normalize();
+}
+```
+
+**Explicación**:
+- En una vista isométrica con cámara en (15, 15, 15) mirando hacia (0, 0, 0)
+- El movimiento "hacia arriba" en pantalla corresponde a movimiento en dirección -Z en el mundo 3D
+- Sin la inversión, W (moveDir.y = 1) se convertía en +Z, moviendo al personaje en dirección opuesta
+- La inversión `-moveDir.y` corrige esta discrepancia entre coordenadas de pantalla y mundo 3D
+
 ## 🏗️ Patrón Contenedor + SkeletonUtils
 
 ### Arquitectura del Patrón

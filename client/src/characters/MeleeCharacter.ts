@@ -236,7 +236,14 @@ export class MeleeCharacter extends Character {
 
     if (import.meta.env.DEV) {
       if (direction.lengthSq() > 0) {
-        console.log(`[MeleeCharacter ${this.id}] moveBody: moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), dir=(${direction.x.toFixed(2)}, ${direction.z.toFixed(2)}), vel=(${(direction.x * SPEED).toFixed(2)}, ${(direction.z * SPEED).toFixed(2)})`);
+        // Mostrar información detallada de direcciones
+        const keyPressed = [];
+        if (moveDir.y > 0) keyPressed.push('W (up)');
+        if (moveDir.y < 0) keyPressed.push('S (down)');
+        if (moveDir.x > 0) keyPressed.push('D (right)');
+        if (moveDir.x < 0) keyPressed.push('A (left)');
+        
+        console.log(`[MeleeCharacter ${this.id}] moveBody: keys=[${keyPressed.join(', ') || 'none'}], moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), dir3D=(${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)}), vel=(${(direction.x * SPEED).toFixed(2)}, ${(direction.z * SPEED).toFixed(2)})`);
       } else {
         console.log(`[MeleeCharacter ${this.id}] moveBody: FRENANDO, vel=(0, ${currentVel.y.toFixed(2)}, 0)`);
       }
@@ -249,11 +256,24 @@ export class MeleeCharacter extends Character {
    */
   private inputToIsometric(moveDir: THREE.Vector2): THREE.Vector3 {
     // Crear vector 3D a partir del input 2D
-    const inputVector = new THREE.Vector3(moveDir.x, 0, moveDir.y);
+    // NOTA: Invertir Z porque en la vista isométrica, "arriba" en pantalla
+    // corresponde a movimiento en -Z (hacia la cámara) o similar
+    const inputVector = new THREE.Vector3(moveDir.x, 0, -moveDir.y);
+
+    // DEBUG: Mostrar input original
+    if (import.meta.env.DEV && moveDir.lengthSq() > 0) {
+      console.log(`[MeleeCharacter ${this.id}] inputToIsometric: moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), inputVector=(${inputVector.x.toFixed(2)}, ${inputVector.y.toFixed(2)}, ${inputVector.z.toFixed(2)})`);
+    }
 
     // Rotar 45° alrededor del eje Y (perspectiva isométrica)
+    // Volver a usar rotación positiva pero con Z invertido
     const isoMatrix = new THREE.Matrix4().makeRotationY(Math.PI / 4);
     inputVector.applyMatrix4(isoMatrix);
+
+    // DEBUG: Mostrar resultado
+    if (import.meta.env.DEV && moveDir.lengthSq() > 0) {
+      console.log(`[MeleeCharacter ${this.id}] inputToIsometric: result=(${inputVector.x.toFixed(2)}, ${inputVector.y.toFixed(2)}, ${inputVector.z.toFixed(2)})`);
+    }
 
     return inputVector.normalize();
   }

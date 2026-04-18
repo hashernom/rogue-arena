@@ -94,7 +94,49 @@ console.log('playAnimation called:', name, 'current:', this.currentAnimationName
    action.fadeIn(0.2);  // 0.2 segundos de fade in
    ```
 
-### Problema 3: Movimiento con sliding (sin freno)
+### Problema 3: Direcciones de movimiento invertidas (W/S)
+
+**Síntomas**:
+- Presionar W (arriba) mueve al personaje hacia abajo en la pantalla
+- Presionar S (abajo) mueve al personaje hacia arriba en la pantalla
+- Las direcciones verticales están invertidas pero las horizontales (A/D) funcionan correctamente
+
+**Diagnóstico**:
+```typescript
+// Verificar el método inputToIsometric en la consola
+> window.meleeCharacter?.inputToIsometric(new THREE.Vector2(0, 1)) // W presionado
+// Debe devolver vector con componente Z negativa (o positiva dependiendo de cámara)
+```
+
+**Soluciones**:
+
+1. **Invertir eje Z en inputToIsometric**:
+   ```typescript
+   // En MeleeCharacter.ts y AdcCharacter.ts
+   private inputToIsometric(moveDir: THREE.Vector2): THREE.Vector3 {
+     // Cambiar moveDir.y por -moveDir.y
+     const inputVector = new THREE.Vector3(moveDir.x, 0, -moveDir.y);
+     
+     const isoMatrix = new THREE.Matrix4().makeRotationY(Math.PI / 4);
+     inputVector.applyMatrix4(isoMatrix);
+     
+     return inputVector.normalize();
+   }
+   ```
+
+2. **Verificar orientación de cámara**:
+   ```typescript
+   // La cámara isométrica en (15, 15, 15) mirando a (0, 0, 0)
+   // requiere inversión de Z para que W sea "hacia arriba" en pantalla
+   ```
+
+3. **Usar logging para debug**:
+   ```typescript
+   // Agregar en moveBody()
+   console.log(`Keys: ${keyPressed}, moveDir: (${moveDir.x}, ${moveDir.y}), direction: (${direction.x}, ${direction.z})`);
+   ```
+
+### Problema 4: Movimiento con sliding (sin freno)
 
 **Síntomas**:
 - El personaje continúa deslizándose después de soltar controles
