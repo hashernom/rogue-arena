@@ -95,12 +95,15 @@ export class AdcCharacter extends Character {
         this.animationController = new AnimationController(model, []);
       }
 
-      // Sincronizar posición con cuerpo físico si existe
+      // Sincronizar posición con cuerpo físico si existe y registrar para actualización automática
       if (this.physicsBody && this.physicsWorld) {
         const position = this.getBodyPosition();
         if (position) {
           model.position.copy(position);
         }
+        // REGISTRO CRÍTICO: Sincronizar modelo con cuerpo físico para actualización automática
+        console.log(`[AdcCharacter ${this.id}] Sincronizando modelo con cuerpo físico`);
+        this.physicsWorld.syncToThree(model, this.physicsBody);
       }
     } catch (error) {
       console.error(`[AdcCharacter ${this.id}] Failed to load ranger GLB:`, error);
@@ -436,6 +439,8 @@ export class AdcCharacter extends Character {
 
     if (this.model) {
       this.model.position.copy(position);
+      // REGISTRO CRÍTICO: Sincronizar modelo con cuerpo físico para actualización automática
+      this.physicsWorld.syncToThree(this.model, body);
     }
   }
 

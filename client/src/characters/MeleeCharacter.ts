@@ -96,12 +96,15 @@ export class MeleeCharacter extends Character {
         this.animationController = new AnimationController(model, []);
       }
 
-      // Si hay cuerpo físico, sincronizar posición inicial
+      // Si hay cuerpo físico, sincronizar posición inicial y registrar para actualización automática
       if (this.physicsBody && this.physicsWorld) {
         const position = this.getBodyPosition();
         if (position) {
           model.position.copy(position);
         }
+        // REGISTRO CRÍTICO: Sincronizar modelo con cuerpo físico para actualización automática
+        console.log(`[MeleeCharacter ${this.id}] Sincronizando modelo con cuerpo físico`);
+        this.physicsWorld.syncToThree(model, this.physicsBody);
       }
     } catch (error) {
       console.error(`[MeleeCharacter ${this.id}] Failed to load knight GLB:`, error);
@@ -408,6 +411,8 @@ export class MeleeCharacter extends Character {
     // Sincronizar modelo si ya existe
     if (this.model) {
       this.model.position.copy(position);
+      // REGISTRO CRÍTICO: Sincronizar modelo con cuerpo físico para actualización automática
+      this.physicsWorld.syncToThree(this.model, body);
     }
   }
 
