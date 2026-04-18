@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Character, type CharacterStats, CharacterState, ModifierType } from './Character';
 import type { InputState } from '../engine/InputManager';
 import type { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
@@ -39,6 +41,8 @@ export class AdcCharacter extends Character {
   private actions: Record<string, THREE.AnimationAction> = {};
   /** Acción de animación actual */
   private currentAction: THREE.AnimationAction | null = null;
+  /** Nombre de la animación actualmente en reproducción */
+  private currentAnimationName: string = '';
 
   /** Stats base del ADC según M4-03 */
   static readonly BASE_STATS: CharacterStats = {
@@ -73,52 +77,56 @@ export class AdcCharacter extends Character {
    */
   private async loadModel(): Promise<void> {
     try {
-      const [modelGltf, movementGltf] = await Promise.all([
+      const assets = await Promise.all([
         this.assetLoader.load('/models/Rogue_Hooded.glb'),
         this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb')
       ]);
+      const modelGltf = assets[0] as GLTF;
+      const movementGltf = assets[1] as GLTF;
 
-      // 1. EL TRUCO DEL CONTENEDOR (Soluciona que el modelo no siga a la caja)
-      this.innerMesh = this.assetLoader.clone(modelGltf); // El modelo visual real
+      // 1. Clonado de esqueleto independiente
+      this.innerMesh = SkeletonUtils.clone(modelGltf.scene); 
       
-      this.model = new THREE.Group();                     // La "caja de cartón" vacía
-      this.model.add(this.innerMesh!);                    // Metemos el modelo en la caja (usamos ! porque sabemos que no es null)
-      this.sceneManager.add(this.model);                  // Añadimos la caja al mundo
-
-      // Ajustar escala y orientación
-      this.model.scale.set(0.5, 0.5, 0.5);
-      this.model.rotation.y = Math.PI;
-
-      // 2. EL MIXER SE CONECTA AL MODELO INTERNO, NO AL CONTENEDOR
-      this.mixer = new THREE.AnimationMixer(this.innerMesh!);
-
-      // 3. MAPEO INTELIGENTE DE NOMBRES (Soluciona el error de "Animación no encontrada")
-      const allAnimations = [...modelGltf.animations, ...movementGltf.animations];
-      allAnimations.forEach((clip) => {
-        const action = this.mixer!.clipAction(clip);
-        this.actions[clip.name] = action; // Guardamos el nombre original por si acaso
-        
-        const lowerName = clip.name.toLowerCase();
-        if (lowerName.includes('idle')) this.actions['Idle'] = action;
-        if (lowerName.includes('run') || lowerName.includes('walk')) this.actions['Run'] = action;
+      // 2. Configuración de sombras y visibilidad
+      this.innerMesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+        if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
+          child.frustumCulled = false;
+        }
       });
 
-      // Si no encuentra 'Idle', usa la primera animación disponible para no crashear
-      if (!this.actions['Idle'] && allAnimations.length > 0) {
-          this.actions['Idle'] = this.mixer!.clipAction(allAnimations[0]);
+      // 3. Jerarquía: Contenedor -> Malla
+      this.model = new THREE.Group();
+      this.innerMesh.position.set(0, 0, 0); 
+      this.model.add(this.innerMesh);
+      this.sceneManager.add(this.model);
+
+      // 4. Inicialización del Mixer
+      this.mixer = new THREE.AnimationMixer(this.innerMesh);
+
+      // 5. Mapeo Inteligente
+      const allClips = [...modelGltf.animations, ...movementGltf.animations];
+      allClips.forEach((clip) => {
+        const action = this.mixer!.clipAction(clip);
+        this.actions[clip.name] = action;
+        
+        const name = clip.name.toLowerCase();
+        if (name.includes('idle')) this.actions['Idle'] = action;
+        if (name.includes('run') || name.includes('walk')) this.actions['Run'] = action;
+        if (name.includes('shoot') || name.includes('attack')) this.actions['Attack'] = action;
+      });
+
+      if (!this.actions['Idle'] && allClips.length > 0) {
+        this.actions['Idle'] = this.mixer!.clipAction(allClips[0]);
       }
 
       this.playAnimation('Idle');
 
-      // Crear AnimationController para compatibilidad (opcional)
-      if (modelGltf.animations && modelGltf.animations.length > 0) {
-        this.animationController = new AnimationController(this.model, modelGltf.animations);
-      } else {
-        this.animationController = new AnimationController(this.model, []);
-      }
-
     } catch (error) {
-      console.error(`[AdcCharacter ${this.id}] Failed to load ranger GLB:`, error);
+      console.error('Error cargando ADC:', error);
       this.createFallbackModel();
     }
   }
@@ -127,19 +135,14 @@ export class AdcCharacter extends Character {
    * Reproduce una animación por nombre.
    */
   /** Nombre de la animación actualmente en reproducción */
-  private currentAnimationName: string = '';
 
   private playAnimation(name: string): void {
     if (!this.mixer) return;
-    if (name === this.currentAnimationName) return; // ← GUARDA CLAVE
+    if (name === this.currentAnimationName) return;
 
     const action = this.actions[name];
-    if (!action) {
-      console.warn(`[AdcCharacter ${this.id}] Animación no encontrada: ${name}`);
-      return;
-    }
+    if (!action) return;
 
-    // Crossfade suave entre animaciones
     if (this.currentAction) {
       this.currentAction.fadeOut(0.2);
     }
@@ -318,12 +321,14 @@ export class AdcCharacter extends Character {
    * Sincroniza el modelo visual con la posición física actual.
    * Debe llamarse DESPUÉS de physicsWorld.stepAll() para evitar desfase de 1 frame.
    */
-  syncToPhysics(): void {
+ public syncToPhysics(): void {
     if (!this.model || this.physicsBody === undefined || !this.physicsWorld) return;
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
     const pos = body.translation();
+    
     this.model.position.set(pos.x, pos.y - 0.5, pos.z);
+    this.model.updateMatrixWorld(true); // Fuerza la actualización de la jerarquía
   }
 
   /**

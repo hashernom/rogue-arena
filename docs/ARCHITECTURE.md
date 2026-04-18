@@ -233,3 +233,33 @@ Cada 5 rondas → Boss wave (mini-boss + oleada reducida)
 | Eventos | `dominio:accion` | `player:died` |
 | Branches | `feature/M{n}-descripcion` | `feature/M4-melee-character` |
 | Commits | Conventional Commits | `feat(M4): add MeleeCharacter` |
+
+---
+
+## 10. Documentación Técnica Adicional
+
+Para soluciones técnicas detalladas y guías de implementación, consultar:
+
+| Documento | Propósito | Enlace |
+|-----------|-----------|--------|
+| **TECHNICAL_SOLUTIONS.md** | Soluciones implementadas para problemas críticos | [`docs/TECHNICAL_SOLUTIONS.md`](docs/TECHNICAL_SOLUTIONS.md) |
+| **CONTAINER_SKELETONUTILS_PATTERN.md** | Patrón arquitectónico para modelos animados | [`docs/CONTAINER_SKELETONUTILS_PATTERN.md`](docs/CONTAINER_SKELETONUTILS_PATTERN.md) |
+| **TROUBLESHOOTING_CHARACTERS.md** | Guía de resolución de problemas para personajes | [`docs/TROUBLESHOOTING_CHARACTERS.md`](docs/TROUBLESHOOTING_CHARACTERS.md) |
+| **PROJECT_CONTEXT_SUMMARY.md** | Contexto completo del proyecto | [`docs/PROJECT_CONTEXT_SUMMARY.md`](docs/PROJECT_CONTEXT_SUMMARY.md) |
+| **GAME_DESIGN.md** | Diseño de juego y balance | [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) |
+
+### Temas Cubiertos en Documentación Adicional
+
+1. **Patrón Contenedor + SkeletonUtils**: Solución para modelos 3D animados con esqueletos independientes
+2. **Sincronización física-renderizado**: Timing crítico en game loop
+3. **Sistema de animaciones**: AnimationController y crossfade
+4. **Debugging y profiling**: Herramientas para diagnóstico
+5. **Optimización de performance**: Zero-garbage, object pooling, instancing
+6. **Troubleshooting común**: Soluciones para problemas frecuentes
+
+### Referencias de Código Clave
+
+- [`client/src/characters/MeleeCharacter.ts`](../client/src/characters/MeleeCharacter.ts): Implementación del patrón contenedor
+- [`client/src/characters/AnimationController.ts`](../client/src/characters/AnimationController.ts): Sistema de animaciones
+- [`client/src/main.ts`](../client/src/main.ts): Game loop y sincronización
+- [`client/src/physics/PhysicsWorld.ts`](../client/src/physics/PhysicsWorld.ts): Sistema de física con damping

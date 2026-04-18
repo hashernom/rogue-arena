@@ -1,3 +1,5 @@
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as THREE from 'three';
 import { Character, type CharacterStats, CharacterState } from './Character';
 import type { InputState } from '../engine/InputManager';
@@ -68,46 +70,58 @@ export class MeleeCharacter extends Character {
   /**
    * Carga el modelo GLTF del caballero y lo agrega a la escena.
    */
+ /**
+   * Carga los assets 3D y configura la jerarquía de mallas y animaciones.
+   * Implementa SkeletonUtils y el patrón contenedor para resolver el bloqueo en el origen (0,0,0).
+   */
   private async loadModel(): Promise<void> {
     try {
-      const [modelGltf, movementGltf] = await Promise.all([
+      // 1. Cargamos y forzamos el tipo para que TS reconozca '.scene'
+      const assets = await Promise.all([
         this.assetLoader.load('/models/Knight.glb'),
         this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb')
       ]);
+      
+      const modelGltf = assets[0] as GLTF;
+      const movementGltf = assets[1] as GLTF;
 
-      // 1. EL TRUCO DEL CONTENEDOR (Soluciona que el modelo no siga a la caja)
-      this.innerMesh = this.assetLoader.clone(modelGltf); // El modelo visual real
-      this.model = new THREE.Group();                     // La "caja de cartón" vacía
-      this.model.add(this.innerMesh!);                    // Metemos el modelo en la caja (usamos ! porque sabemos que no es null)
-      this.sceneManager.add(this.model);                  // Añadimos la caja al mundo
-
-      // 2. EL MIXER SE CONECTA AL MODELO INTERNO, NO AL CONTENEDOR
-      this.mixer = new THREE.AnimationMixer(this.innerMesh!);
-
-      // 3. MAPEO INTELIGENTE DE NOMBRES (Soluciona el error de "Animación no encontrada")
-      const allAnimations = [...modelGltf.animations, ...movementGltf.animations];
-      allAnimations.forEach((clip) => {
-        const action = this.mixer!.clipAction(clip);
-        this.actions[clip.name] = action; // Guardamos el nombre original por si acaso
-        
-        const lowerName = clip.name.toLowerCase();
-        if (lowerName.includes('idle')) this.actions['Idle'] = action;
-        if (lowerName.includes('run') || lowerName.includes('walk')) this.actions['Run'] = action;
+      // 2. CLONACIÓN (Ahora SkeletonUtils.clone funcionará porque importamos con *)
+      this.innerMesh = SkeletonUtils.clone(modelGltf.scene); 
+      
+      // 3. CONFIGURACIÓN DE MALLA
+      this.innerMesh.traverse((child) => {
+        if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
+          child.frustumCulled = false; // Evita que desaparezca al moverse
+        }
       });
 
-      // Si no encuentra 'Idle', usa la primera animación disponible para no crashear
-      if (!this.actions['Idle'] && allAnimations.length > 0) {
-          this.actions['Idle'] = this.mixer!.clipAction(allAnimations[0]);
-      }
+      // 4. JERARQUÍA (Contenedor -> Malla)
+      this.model = new THREE.Group();
+      this.innerMesh.position.set(0, 0, 0); 
+      this.model.add(this.innerMesh);
+      this.sceneManager.add(this.model);
 
+      // 5. ANIMACIONES
+      this.mixer = new THREE.AnimationMixer(this.innerMesh);
+
+      const allClips = [...modelGltf.animations, ...movementGltf.animations];
+      allClips.forEach((clip) => {
+        const action = this.mixer!.clipAction(clip);
+        this.actions[clip.name] = action;
+        
+        const name = clip.name.toLowerCase();
+        if (name.includes('idle')) this.actions['Idle'] = action;
+        if (name.includes('run') || name.includes('walk')) this.actions['Run'] = action;
+      });
+
+      // Iniciamos
       this.playAnimation('Idle');
 
     } catch (error) {
-      console.error('Error cargando modelo:', error);
+      console.error('Error cargando el caballero:', error);
       this.createFallbackModel();
     }
   }
-
   /** Nombre de la animación actualmente en reproducción */
   private currentAnimationName: string = '';
 
