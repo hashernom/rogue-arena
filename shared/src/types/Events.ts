@@ -12,8 +12,11 @@ export interface GameEvents {
   // Jugador
   'player:died': { playerId: string };
   'player:damaged': { playerId: string; amount: number };
+  'player:attack': { playerId: string; damage: number; position: Vector3Like };
+  'player:attack:start': { playerId: string };
   // Enemigos
   'enemy:died': { enemyId: string; position: Vector3Like; reward: number };
+  'enemy:damage': { enemyId: string; damage: number; attackerId: string; position: Vector3Like };
   // Oleadas
   'wave:started': { round: number; enemyCount: number };
   'wave:ended': { round: number };
