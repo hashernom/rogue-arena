@@ -79,14 +79,18 @@ export class MeleeCharacter extends Character {
       // 1. Cargamos y forzamos el tipo para que TS reconozca '.scene'
       const assets = await Promise.all([
         this.assetLoader.load('/models/Knight.glb'),
-        this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb')
+        this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
+        this.assetLoader.load('/models/Rig_Medium_CombatMelee.glb'),
+        this.assetLoader.load('/models/Rig_Medium_General.glb')
       ]);
       
       const modelGltf = assets[0] as GLTF;
       const movementGltf = assets[1] as GLTF;
+      const combatGltf = assets[2] as GLTF;
+      const generalGltf = assets[3] as GLTF;
 
       // 2. CLONACIÓN (Ahora SkeletonUtils.clone funcionará porque importamos con *)
-      this.innerMesh = SkeletonUtils.clone(modelGltf.scene); 
+      this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
       
       // 3. CONFIGURACIÓN DE MALLA
       this.innerMesh.traverse((child) => {
@@ -97,14 +101,19 @@ export class MeleeCharacter extends Character {
 
       // 4. JERARQUÍA (Contenedor -> Malla)
       this.model = new THREE.Group();
-      this.innerMesh.position.set(0, 0, 0); 
+      this.innerMesh.position.set(0, 0, 0);
       this.model.add(this.innerMesh);
       this.sceneManager.add(this.model);
 
       // 5. ANIMACIONES
       this.mixer = new THREE.AnimationMixer(this.innerMesh);
 
-      const allClips = [...modelGltf.animations, ...movementGltf.animations];
+      const allClips = [
+        ...modelGltf.animations,
+        ...movementGltf.animations,
+        ...combatGltf.animations,
+        ...generalGltf.animations
+      ];
       allClips.forEach((clip) => {
         const action = this.mixer!.clipAction(clip);
         this.actions[clip.name] = action;
@@ -112,6 +121,8 @@ export class MeleeCharacter extends Character {
         const name = clip.name.toLowerCase();
         if (name.includes('idle')) this.actions['Idle'] = action;
         if (name.includes('run') || name.includes('walk')) this.actions['Run'] = action;
+        if (name.includes('attack') || name.includes('melee')) this.actions['Attack'] = action;
+        if (name.includes('death') || name.includes('die')) this.actions['Death'] = action;
       });
 
       // Iniciamos
