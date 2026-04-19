@@ -1,4 +1,4 @@
-# 🔧 Troubleshooting - Sistema de Personajes y Animaciones
+z|# 🔧 Troubleshooting - Sistema de Personajes y Animaciones
 
 ## 📋 Introducción
 
