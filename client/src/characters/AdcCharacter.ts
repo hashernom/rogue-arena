@@ -160,6 +160,15 @@ export class AdcCharacter extends Character {
     action.reset().fadeIn(0.2).play();
     this.currentAction = action;
     this.currentAnimationName = name;
+
+    // Configuración estricta para ataque
+    if (name.toLowerCase().includes('attack') || name.toLowerCase().includes('shoot')) {
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true; // El modelo se queda en el frame final del impacto
+    } else {
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.clampWhenFinished = false;
+    }
   }
 
   /**
@@ -470,6 +479,10 @@ export class AdcCharacter extends Character {
     this.setState(CharacterState.Attacking);
     this.consecutiveShots++;
 
+    // Reproducir animación de ataque
+    this.playAnimation('Attack'); // O 'CombatRanged' según tu mapeo
+
+    // Instanciar la flecha (puede tener un setTimeout si quieres que salga a mitad de animación)
     // Crear geometría de flecha
     const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
     const material = new THREE.MeshStandardMaterial({ color: 0xffff00 });
@@ -483,6 +496,16 @@ export class AdcCharacter extends Character {
       arrow.position.copy(this.model.position).add(direction.multiplyScalar(1.5));
       arrow.rotation.copy(this.model.rotation);
       arrow.rotateX(Math.PI / 2);
+
+    // Escuchar cuando el AnimationMixer termine el clip de ataque
+    const onFinished = (e: THREE.Event) => {
+      const action = (e as any).action as THREE.AnimationAction;
+      if (action?.getClip().name.toLowerCase().includes('shoot') || action?.getClip().name.toLowerCase().includes('attack')) {
+        this.setState(CharacterState.Idle);
+        this.mixer?.removeEventListener('finished', onFinished);
+      }
+    };
+    this.mixer?.addEventListener('finished', onFinished);
     } else {
       arrow.position.set(0, 1, 0);
     }

@@ -21,7 +21,7 @@ export class InputManager {
     p1_down: 'KeyS',
     p1_left: 'KeyA',
     p1_right: 'KeyD',
-    p1_attack: 'Space',
+    p1_attack: 'Mouse0',
     p1_abilityQ: 'KeyQ',
     p1_abilityE: 'KeyE',
 
@@ -30,7 +30,7 @@ export class InputManager {
     p2_down: 'ArrowDown',
     p2_left: 'ArrowLeft',
     p2_right: 'ArrowRight',
-    p2_attack: 'ShiftRight',
+    p2_attack: 'KeyJ',
     p2_abilityQ: 'KeyP',
     p2_abilityE: 'BracketLeft',
   } as const;
@@ -73,7 +73,6 @@ export class InputManager {
    */
   private setupEventListeners(): void {
     window.addEventListener('keydown', e => {
-      // Prevenir comportamiento por defecto de teclas de juego (flechas, espacio, etc.)
       if (this.isGameKey(e.code)) {
         e.preventDefault();
       }
@@ -85,6 +84,15 @@ export class InputManager {
         e.preventDefault();
       }
       this.keys.delete(e.code);
+    });
+
+    // Captura estricta para el clic izquierdo
+    window.addEventListener('mousedown', e => {
+      if (e.button === 0) this.keys.add('Mouse0');
+    });
+
+    window.addEventListener('mouseup', e => {
+      if (e.button === 0) this.keys.delete('Mouse0');
     });
 
     // Resetear todos los inputs al perder foco

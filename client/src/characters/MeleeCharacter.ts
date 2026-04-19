@@ -141,23 +141,30 @@ export class MeleeCharacter extends Character {
    * Incluye guarda para evitar resetear la misma animación cada frame.
    */
   private playAnimation(name: string): void {
-    if (!this.mixer) return;
-    if (name === this.currentAnimationName) return; // ← GUARDA CLAVE
+    if (this.currentAnimationName === name) return;
 
+    // "name" debe ser exacto, ej: 'Attack', 'Idle', 'Run'
     const action = this.actions[name];
-    if (!action) {
-      console.warn(`[MeleeCharacter ${this.id}] Animación no encontrada: ${name}`);
-      return;
-    }
+    if (action) {
+      if (this.currentAction) {
+        this.currentAction.fadeOut(0.2);
+      }
 
-    // Crossfade suave entre animaciones
-    if (this.currentAction) {
-      this.currentAction.fadeOut(0.2);
-    }
+      action.reset().fadeIn(0.2);
+      
+      // Prevenir el bucle infinito del ataque
+      if (name === 'Attack') {
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      } else {
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        action.clampWhenFinished = false;
+      }
 
-    action.reset().fadeIn(0.2).play();
-    this.currentAction = action;
-    this.currentAnimationName = name;
+      action.play();
+      this.currentAction = action;
+      this.currentAnimationName = name;
+    }
   }
 
   /**
@@ -477,19 +484,43 @@ export class MeleeCharacter extends Character {
    * Por ahora es un placeholder que cambiará el estado.
    * En M5 se implementará el swing con daño.
    */
-  attack(): void {
+    
+  
+  /**
+   * Ataque melee básico.
+   * Por ahora es un placeholder que cambiará el estado.
+   * En M5 se implementará el swing con daño.
+   */
+  public attack(): void {
     if (this.state === CharacterState.Dead) return;
 
+    // Bloquear el estado del personaje
     this.setState(CharacterState.Attacking);
+    
+    // Llamar a la animación exacta (asegúrate de que sea con mayúscula)
+    this.playAnimation('Attack');
 
-    // TODO: Implementar lógica de ataque en M5
+    // Listener para saber cuándo termina el golpe
+    const onFinished = (e: any) => {
+      const action = e.action as THREE.AnimationAction;
+      
+      if (action && this.currentAnimationName === 'Attack') {
+        this.setState(CharacterState.Idle);
+        this.playAnimation('Idle');
+        this.mixer?.removeEventListener('finished', onFinished);
+      }
+    };
+    
+    this.mixer?.addEventListener('finished', onFinished);
 
-    // Volver a Idle después de un tiempo (simulado)
+    // Fail-safe: Destrabar al personaje en 800ms por si el evento se pierde
     setTimeout(() => {
       if (this.state === CharacterState.Attacking) {
         this.setState(CharacterState.Idle);
+        this.playAnimation('Idle');
+        this.mixer?.removeEventListener('finished', onFinished);
       }
-    }, 500);
+    }, 800);
   }
 
   /**
@@ -572,3 +603,4 @@ export class MeleeCharacter extends Character {
     return this.model;
   }
 }
+
