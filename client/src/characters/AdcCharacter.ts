@@ -9,6 +9,8 @@ import { AssetLoader } from '../engine/AssetLoader';
 import { SceneManager } from '../engine/SceneManager';
 import { BodyFactory } from '../physics/BodyFactory';
 import { AnimationController } from './AnimationController';
+import { PiercePassive } from './abilities/PiercePassive';
+import { SalvoAbility } from './abilities/SalvoAbility';
 
 /**
  * ADC (Attack Damage Carry) - Personaje de daño a distancia.
@@ -44,6 +46,12 @@ export class AdcCharacter extends Character {
   /** Nombre de la animación actualmente en reproducción */
   private currentAnimationName: string = '';
 
+  /** Habilidad pasiva Perforación */
+  private piercePassive: PiercePassive | null = null;
+
+  /** Habilidad activa Salva */
+  private salvoAbility: SalvoAbility | null = null;
+
   /** Stats base del ADC según M4-03 */
   static readonly BASE_STATS: CharacterStats = {
     hp: 80,
@@ -66,6 +74,10 @@ export class AdcCharacter extends Character {
     super(id, AdcCharacter.BASE_STATS, eventBus, physicsWorld, physicsBody);
     this.sceneManager = sceneManager;
     this.assetLoader = assetLoader;
+
+    // Inicializar habilidades
+    this.piercePassive = new PiercePassive(eventBus, id);
+    this.salvoAbility = new SalvoAbility(eventBus, this, id, sceneManager);
 
     // Cargar modelo asíncronamente
     void this.loadModel();
@@ -306,6 +318,11 @@ export class AdcCharacter extends Character {
   update(dt: number, inputState?: InputState): void {
     // Actualizar mixer de animaciones THREE.js
     if (this.mixer) this.mixer.update(dt);
+    
+    // Actualizar habilidades
+    if (this.salvoAbility) {
+      this.salvoAbility.update(dt);
+    }
     
     // Actualizar proyectiles
     this.updateProjectiles(dt);
@@ -554,37 +571,13 @@ export class AdcCharacter extends Character {
 
   /**
    * Habilidad Q: Lluvia de flechas.
-   * Dispara 5 flechas en un arco frontal.
+   * Activa la habilidad de salva si está disponible.
    */
   private abilityQ(): void {
-    if (this.state === CharacterState.Dead) return;
-
-    const count = 5;
-    const spread = Math.PI / 6;
-
-    for (let i = 0; i < count; i++) {
-      setTimeout(() => {
-        if (!this.isAlive()) return;
-
-        // Crear flecha con rotación variada
-        const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
-        const material = new THREE.MeshStandardMaterial({ color: 0xff4500 });
-        const arrow = new THREE.Mesh(geometry, material);
-        arrow.castShadow = true;
-
-        if (this.model) {
-          const angle = (i - (count - 1) / 2) * spread;
-          const direction = new THREE.Vector3(Math.sin(angle), 0, -Math.cos(angle));
-          direction.applyQuaternion(this.model.quaternion);
-          arrow.position.copy(this.model.position).add(direction.multiplyScalar(2));
-          arrow.lookAt(arrow.position.clone().add(direction));
-          arrow.rotateX(Math.PI / 2);
-        }
-
-        this.sceneManager.add(arrow);
-        this.activeProjectiles.push(arrow);
-      }, i * 100);
-    }
+    if (!this.salvoAbility) return;
+    
+    // Activar la habilidad de salva
+    this.salvoAbility.activate();
   }
 
   /**

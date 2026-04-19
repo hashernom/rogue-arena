@@ -9,6 +9,8 @@ import { AssetLoader } from '../engine/AssetLoader';
 import { SceneManager } from '../engine/SceneManager';
 import { BodyFactory } from '../physics/BodyFactory';
 import { AnimationController } from './AnimationController';
+import { FuryPassive } from './abilities/FuryPassive';
+import { ChargeAbility } from './abilities/ChargeAbility';
 
 /**
  * Caballero melee, primer personaje jugable.
@@ -40,6 +42,12 @@ export class MeleeCharacter extends Character {
   /** Acción de animación actual */
   private currentAction: THREE.AnimationAction | null = null;
 
+  /** Habilidad pasiva Furia */
+  private furyPassive: FuryPassive | null = null;
+
+  /** Habilidad activa Carga */
+  private chargeAbility: ChargeAbility | null = null;
+
   /** Stats base del Caballero */
   static readonly BASE_STATS: CharacterStats = {
     hp: 150,
@@ -62,6 +70,10 @@ export class MeleeCharacter extends Character {
     super(id, MeleeCharacter.BASE_STATS, eventBus, physicsWorld, physicsBody);
     this.sceneManager = sceneManager;
     this.assetLoader = assetLoader;
+
+    // Inicializar habilidades
+    this.furyPassive = new FuryPassive(eventBus, id);
+    this.chargeAbility = new ChargeAbility(eventBus, this, id);
 
     // Cargar modelo asíncronamente
     void this.loadModel();
@@ -304,6 +316,11 @@ export class MeleeCharacter extends Character {
     if (this.mixer) this.mixer.update(dt);
     if (!this.physicsBody || !this.physicsWorld || this.state === CharacterState.Dead) return;
 
+    // Actualizar habilidades
+    if (this.chargeAbility) {
+      this.chargeAbility.update(dt);
+    }
+
     // Obtener el cuerpo físico real
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
@@ -525,15 +542,13 @@ export class MeleeCharacter extends Character {
 
   /**
    * Habilidad Q: Embestida.
-   * Placeholder que se conectará en M5.
+   * Activa la habilidad de carga si está disponible.
    */
   abilityQ(): void {
-    if (!this.furyReady) return;
-
-    // Consumir furia
-    this.furyReady = false;
-
-    // TODO: Implementar movimiento rápido en línea recta en M5
+    if (!this.chargeAbility) return;
+    
+    // Activar la habilidad de carga
+    this.chargeAbility.activate();
   }
 
   /**
