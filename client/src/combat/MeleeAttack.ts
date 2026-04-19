@@ -96,15 +96,12 @@ export class MeleeAttack {
    */
   private notifyAttackAnimation(): void {
     // Emitir evento para AnimationController
-    (this.eventBus as any).emit('player:attack:start', {
-      playerId: this.playerId,
-      timestamp: Date.now()
+    this.eventBus.emit('player:attack:start', {
+      playerId: this.playerId
     });
     
-    // También podemos llamar directamente al método attack del personaje si existe
-    if (typeof (this.character as any).attack === 'function') {
-      (this.character as any).attack();
-    }
+    // NOTA: No llamamos a character.attack() aquí para evitar recursión infinita
+    // El AnimationController escuchará el evento 'player:attack:start' y manejará la animación
   }
 
   /**
@@ -389,6 +386,25 @@ export class MeleeAttack {
     if (this.debugMesh) {
       this.debugMesh.visible = visible;
     }
+  }
+
+  /**
+   * Alterna la visualización del debug mesh.
+   * @returns El nuevo estado de visibilidad
+   */
+  toggleDebugVisible(): boolean {
+    if (this.debugMesh) {
+      this.debugMesh.visible = !this.debugMesh.visible;
+      return this.debugMesh.visible;
+    }
+    return false;
+  }
+
+  /**
+   * Obtiene el estado actual de visibilidad del debug mesh.
+   */
+  getDebugVisible(): boolean {
+    return this.debugMesh ? this.debugMesh.visible : false;
   }
 
   /**

@@ -621,6 +621,13 @@ export class MeleeCharacter extends Character {
   }
 
   /**
+   * Obtiene el sistema de ataque melee (para debugging).
+   */
+  getMeleeAttack(): MeleeAttack | null {
+    return this.meleeAttack;
+  }
+
+  /**
    * Obtiene el modelo 3D (para debugging).
    */
   getModel(): THREE.Group | null {

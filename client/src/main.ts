@@ -159,6 +159,8 @@ async function initGameWithPhysics(): Promise<void> {
   const gameLoop = new GameLoop();
 
   // Fixed Update: física a 60Hz
+  let meleeDebugKeyPressed = false; // Para debounce de tecla 'M'
+  
   gameLoop.setFixedUpdate((dt: number) => {
     // Actualizar estado de input (una vez por tick)
     inputManager.update();
@@ -198,6 +200,24 @@ async function initGameWithPhysics(): Promise<void> {
     if (import.meta.env.DEV) {
       displayInputState(p1State, 1);
       displayInputState(p2State, 2);
+
+      // Toggle debug mesh del ataque melee con tecla 'M'
+      if (inputManager.isKeyPressed('KeyM')) {
+        // Solo activar una vez por presión (debounce simple)
+        if (!meleeDebugKeyPressed) {
+          meleeDebugKeyPressed = true;
+          
+          if (meleeCharacter) {
+            const meleeAttack = meleeCharacter.getMeleeAttack();
+            if (meleeAttack) {
+              const newState = meleeAttack.toggleDebugVisible();
+              console.log(`🔧 Debug mesh del ataque melee: ${newState ? 'ACTIVADO' : 'DESACTIVADO'}`);
+            }
+          }
+        }
+      } else {
+        meleeDebugKeyPressed = false;
+      }
     }
   });
 

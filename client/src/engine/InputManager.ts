@@ -33,6 +33,9 @@ export class InputManager {
     p2_attack: 'KeyJ',
     p2_abilityQ: 'KeyP',
     p2_abilityE: 'BracketLeft',
+
+    // Debug keys (solo en modo desarrollo)
+    debug_toggle_melee: 'KeyM',
   } as const;
 
   /** Tipo de todas las teclas de juego posibles */
@@ -219,6 +222,16 @@ export class InputManager {
   public reset(): void {
     this.states[1] = this.createEmptyState();
     this.states[2] = this.createEmptyState();
+  }
+
+  /**
+   * Verifica si una tecla específica está presionada.
+   * Útil para teclas de debug que no están mapeadas a jugadores.
+   * @param keyCode Código de la tecla (ej: 'KeyM')
+   * @returns true si la tecla está presionada
+   */
+  public isKeyPressed(keyCode: string): boolean {
+    return this.keys.has(keyCode);
   }
 
   /**
