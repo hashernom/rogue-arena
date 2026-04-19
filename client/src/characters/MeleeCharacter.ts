@@ -11,6 +11,7 @@ import { BodyFactory } from '../physics/BodyFactory';
 import { AnimationController } from './AnimationController';
 import { FuryPassive } from './abilities/FuryPassive';
 import { ChargeAbility } from './abilities/ChargeAbility';
+import { MeleeAttack } from '../combat/MeleeAttack';
 
 /**
  * Caballero melee, primer personaje jugable.
@@ -48,6 +49,9 @@ export class MeleeCharacter extends Character {
   /** Habilidad activa Carga */
   private chargeAbility: ChargeAbility | null = null;
 
+  /** Sistema de ataque melee */
+  private meleeAttack: MeleeAttack | null = null;
+
   /** Stats base del Caballero */
   static readonly BASE_STATS: CharacterStats = {
     hp: 150,
@@ -74,6 +78,20 @@ export class MeleeCharacter extends Character {
     // Inicializar habilidades
     this.furyPassive = new FuryPassive(eventBus, id);
     this.chargeAbility = new ChargeAbility(eventBus, this, id);
+
+    // Inicializar sistema de ataque melee
+    this.meleeAttack = new MeleeAttack(eventBus, this, id, {
+      range: this.getEffectiveStat('range'),
+      width: 1.5,
+      height: 1.0,
+      arcAngle: 120,
+      baseDamage: 10
+    });
+
+    // Pasar PhysicsWorld si está disponible
+    if (physicsWorld) {
+      this.meleeAttack.setPhysicsWorld(physicsWorld);
+    }
 
     // Cargar modelo asíncronamente
     void this.loadModel();
@@ -321,6 +339,11 @@ export class MeleeCharacter extends Character {
       this.chargeAbility.update(dt);
     }
 
+    // Actualizar sistema de ataque melee
+    if (this.meleeAttack) {
+      this.meleeAttack.update(dt);
+    }
+
     // Obtener el cuerpo físico real
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
@@ -505,39 +528,25 @@ export class MeleeCharacter extends Character {
   
   /**
    * Ataque melee básico.
-   * Por ahora es un placeholder que cambiará el estado.
-   * En M5 se implementará el swing con daño.
+   * Usa el sistema MeleeAttack para detección de golpes con Rapier.
    */
   public attack(): void {
     if (this.state === CharacterState.Dead) return;
 
-    // Bloquear el estado del personaje
-    this.setState(CharacterState.Attacking);
-    
-    // Llamar a la animación exacta (asegúrate de que sea con mayúscula)
-    this.playAnimation('Attack');
-
-    // Listener para saber cuándo termina el golpe
-    const onFinished = (e: any) => {
-      const action = e.action as THREE.AnimationAction;
+    // Usar el sistema MeleeAttack para detección de golpes
+    if (this.meleeAttack && this.meleeAttack.tryAttack()) {
+      // El sistema MeleeAttack ya maneja la animación a través del evento
+      // y la detección de golpes con Rapier
+      this.setState(CharacterState.Attacking);
       
-      if (action && this.currentAnimationName === 'Attack') {
-        this.setState(CharacterState.Idle);
-        this.playAnimation('Idle');
-        this.mixer?.removeEventListener('finished', onFinished);
-      }
-    };
-    
-    this.mixer?.addEventListener('finished', onFinished);
-
-    // Fail-safe: Destrabar al personaje en 800ms por si el evento se pierde
-    setTimeout(() => {
-      if (this.state === CharacterState.Attacking) {
-        this.setState(CharacterState.Idle);
-        this.playAnimation('Idle');
-        this.mixer?.removeEventListener('finished', onFinished);
-      }
-    }, 800);
+      // Fail-safe: Destrabar al personaje en 800ms por si el evento se pierde
+      setTimeout(() => {
+        if (this.state === CharacterState.Attacking) {
+          this.setState(CharacterState.Idle);
+          this.playAnimation('Idle');
+        }
+      }, 800);
+    }
   }
 
   /**
