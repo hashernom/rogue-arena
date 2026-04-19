@@ -155,7 +155,7 @@ export class MeleeCharacter extends Character {
         if (name.includes('death') || name.includes('die')) this.actions['Death'] = action;
       });
 
-      // Iniciamos
+      // Iniciamos con animación idle
       this.playAnimation('Idle');
 
     } catch (error) {
@@ -222,9 +222,8 @@ export class MeleeCharacter extends Character {
     // 4. Añadir contenedor a la escena
     this.sceneManager.add(this.model);
 
-    // Crear AnimationController con animaciones procedurales
-    this.animationController = new AnimationController(this.model, []);
-    console.log(`[MeleeCharacter ${this.id}] AnimationController de fallback creado`);
+    // Iniciar con animación idle
+    this.playAnimation('Idle');
   }
 
   /**
@@ -348,7 +347,6 @@ export class MeleeCharacter extends Character {
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
 
-    let isMoving = false;
     const direction = new THREE.Vector3(0, 0, 0);
 
     if (inputState) {
@@ -364,32 +362,54 @@ export class MeleeCharacter extends Character {
 
     const currentVel = body.linvel();
 
-    if (direction.lengthSq() > 0) {
-      direction.normalize();
-      const SPEED = this.getEffectiveStat('speed');
-      
-      body.setLinvel({
-        x: direction.x * SPEED,
-        y: currentVel.y,
-        z: direction.z * SPEED
-      }, true);
+    // Solo actualizar estado de movimiento si no está atacando
+    if (this.state !== CharacterState.Attacking) {
+      if (direction.lengthSq() > 0) {
+        direction.normalize();
+        const SPEED = this.getEffectiveStat('speed');
+        
+        body.setLinvel({
+          x: direction.x * SPEED,
+          y: currentVel.y,
+          z: direction.z * SPEED
+        }, true);
 
-      // Rotar el CONTENEDOR hacia donde caminamos
-      if (this.model) {
-        this.model.rotation.y = Math.atan2(direction.x, direction.z);
+        // Rotar el CONTENEDOR hacia donde caminamos
+        if (this.model) {
+          this.model.rotation.y = Math.atan2(direction.x, direction.z);
+        }
+        
+        if (this.state !== CharacterState.Moving) {
+          if (import.meta.env.DEV) {
+            console.log(`[MeleeCharacter ${this.id}] Cambiando estado a Moving`);
+          }
+          this.setState(CharacterState.Moving);
+        }
+      } else {
+        // FRENO
+        if (Math.abs(currentVel.x) > 0.1 || Math.abs(currentVel.z) > 0.1) {
+          body.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
+        }
+        if (this.state !== CharacterState.Idle) {
+          if (import.meta.env.DEV) {
+            console.log(`[MeleeCharacter ${this.id}] Cambiando estado a Idle`);
+          }
+          this.setState(CharacterState.Idle);
+        }
       }
-      
-      this.playAnimation('Run');
-      isMoving = true;
-
     } else {
-      // FRENO
-      if (Math.abs(currentVel.x) > 0.1 || Math.abs(currentVel.z) > 0.1) {
-        body.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
+      if (import.meta.env.DEV) {
+        console.log(`[MeleeCharacter ${this.id}] Estado Attacking, ignorando movimiento`);
       }
-      this.playAnimation('Idle');
     }
 
+    // Actualizar animaciones basadas en el estado actual (sistema legacy)
+    if (this.state === CharacterState.Moving) {
+      this.playAnimation('Run');
+    } else if (this.state === CharacterState.Idle) {
+      this.playAnimation('Idle');
+    }
+    // Nota: El estado Attacking se maneja en el método attack()
   }
 
   /**
@@ -496,28 +516,6 @@ export class MeleeCharacter extends Character {
     this.model.rotation.y = newAngle;
   }
 
-  /**
-   * Actualiza las animaciones según el estado del personaje.
-   */
-  private updateAnimations(dt: number): void {
-    if (!this.animationController) return;
-
-    // Convertir CharacterState a string y flags
-    const stateStr = this.state === CharacterState.Moving ? 'moving' : 'idle';
-    const isAttacking = this.state === CharacterState.Attacking;
-    const isDead = this.state === CharacterState.Dead;
-
-    // Log para depuración
-    if (import.meta.env.DEV && this.state !== CharacterState.Idle) {
-      console.log(`[MeleeCharacter ${this.id}] Estado: ${this.state}, isAttacking: ${isAttacking}, isDead: ${isDead}`);
-    }
-
-    // Sincronizar estado del personaje con animaciones
-    this.animationController.syncWithCharacterState(stateStr, isAttacking, isDead);
-
-    // Actualizar mixer del AnimationController
-    this.animationController.update(dt);
-  }
 
   /**
    * Ataque melee básico.
@@ -539,13 +537,24 @@ export class MeleeCharacter extends Character {
       // y la detección de golpes con Rapier
       this.setState(CharacterState.Attacking);
       
-      // Fail-safe: Destrabar al personaje en 800ms por si el evento se pierde
+      if (import.meta.env.DEV) {
+        console.log(`[MeleeCharacter ${this.id}] Ataque iniciado, estado: Attacking`);
+      }
+      
+      // Reproducir animación de ataque
+      this.playAnimation('Attack');
+      
+      // Fail-safe: Destrabar al personaje en 1200ms por si la animación falla
+      // (la animación de ataque suele durar ~1 segundo)
       setTimeout(() => {
         if (this.state === CharacterState.Attacking) {
+          if (import.meta.env.DEV) {
+            console.log(`[MeleeCharacter ${this.id}] Fail-safe: volviendo a Idle después de timeout`);
+          }
           this.setState(CharacterState.Idle);
           this.playAnimation('Idle');
         }
-      }, 800);
+      }, 1200);
     }
   }
 
