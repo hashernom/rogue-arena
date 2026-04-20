@@ -8,6 +8,7 @@ export type InputState = {
   attacking: boolean;
   abilityQ: boolean;
   abilityE: boolean;
+  mouseNDC: THREE.Vector2; // posición del mouse en coordenadas normalizadas de dispositivo
 };
 
 /**
@@ -47,6 +48,8 @@ export class InputManager {
     1: InputState;
     2: InputState;
   };
+  /** Posición del mouse en coordenadas normalizadas de dispositivo (NDC) */
+  public mouseNDC: THREE.Vector2 = new THREE.Vector2();
 
   constructor() {
     this.keys = new Set();
@@ -68,6 +71,7 @@ export class InputManager {
       attacking: false,
       abilityQ: false,
       abilityE: false,
+      mouseNDC: new THREE.Vector2(0, 0),
     };
   }
 
@@ -96,6 +100,29 @@ export class InputManager {
 
     window.addEventListener('mouseup', e => {
       if (e.button === 0) this.keys.delete('Mouse0');
+    });
+
+    // Rastrear posición del mouse en NDC (Normalized Device Coordinates)
+    window.addEventListener('mousemove', (event) => {
+      // Buscar el canvas activo del juego
+      const canvas = document.querySelector('canvas');
+      
+      if (canvas) {
+        // Obtenemos las dimensiones y posición real del canvas en la pantalla
+        const rect = canvas.getBoundingClientRect();
+        
+        // Calculamos la posición del ratón relativa AL CANVAS, no a la ventana
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        // Normalizamos a NDC (-1 a +1)
+        this.mouseNDC.x = (x / rect.width) * 2 - 1;
+        this.mouseNDC.y = -(y / rect.height) * 2 + 1;
+      } else {
+        // Fallback si por alguna razón el canvas no está en el DOM
+        this.mouseNDC.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouseNDC.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      }
     });
 
     // Resetear todos los inputs al perder foco
@@ -213,7 +240,10 @@ export class InputManager {
    * Obtiene el estado de input para un jugador en el frame actual.
    */
   public getState(playerId: 1 | 2): InputState {
-    return this.states[playerId];
+    const state = this.states[playerId];
+    // Incluir mouseNDC actualizado (compartido entre ambos jugadores)
+    state.mouseNDC = this.mouseNDC.clone();
+    return state;
   }
 
   /**

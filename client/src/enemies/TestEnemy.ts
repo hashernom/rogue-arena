@@ -74,7 +74,11 @@ export class TestEnemy extends Character {
       shininess: 30,
     });
 
-    this.model = new THREE.Mesh(geometry, material);
+    // Clonar el material para que cada enemigo tenga su propia instancia
+    // Esto permite cambiar el color individualmente sin afectar a otros enemigos
+    const clonedMaterial = material.clone();
+    
+    this.model = new THREE.Mesh(geometry, clonedMaterial);
     this.model.castShadow = true;
     this.model.receiveShadow = true;
     this.model.name = `TestEnemy_${this.id}`;
@@ -85,6 +89,7 @@ export class TestEnemy extends Character {
     }
 
     this.sceneManager.add(this.model);
+    console.log(`[TestEnemy ${this.id}] Modelo creado con material clonado`);
   }
 
   /**
@@ -95,16 +100,18 @@ export class TestEnemy extends Character {
 
     try {
       // Crear cuerpo físico usando BodyFactory.createEnemyBody
+      // Pasamos tanto ID como referencia a la entidad (this) para acceso directo
       const bodyHandle = BodyFactory.createEnemyBody(
         this.physicsWorld,
         new THREE.Vector3(this.model.position.x, this.model.position.y, this.model.position.z),
         'medium', // Tamaño medio para testing
-        this.id   // Pasar ID para userData
+        this.id,  // Pasar ID para userData
+        this      // Pasar referencia a la entidad para acceso directo
       );
 
       this.physicsBody = bodyHandle;
 
-      console.log(`[TestEnemy ${this.id}] Cuerpo físico creado con userData.id`);
+      console.log(`[TestEnemy ${this.id}] Cuerpo físico creado con userData.id y userData.entity`);
     } catch (error) {
       console.error(`[TestEnemy ${this.id}] Error creando cuerpo físico:`, error);
     }
