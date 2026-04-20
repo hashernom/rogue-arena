@@ -297,20 +297,27 @@ export class SalvoAbility {
 
   /**
    * Anima el movimiento del proyectil.
+   * Usa deltaTime real para ser independiente del framerate.
    */
   private animateProjectile(projectile: THREE.Mesh, direction: THREE.Vector3): void {
-    const speed = 15; // Velocidad del proyectil
-    const maxDistance = 20; // Distancia máxima antes de desaparecer
+    const speed = 50; // Velocidad aumentada para que el proyectil sea más rápido
+    const maxDistance = 40; // Distancia máxima aumentada
     
     let distanceTraveled = 0;
     const startPosition = projectile.position.clone();
+    let lastTime: number | null = null;
     
     // Función de animación por frame
-    const animate = () => {
+    const animate = (timestamp: number) => {
       if (!projectile.parent) return; // Si el proyectil fue removido
       
-      // Mover proyectil
-      const moveDistance = speed * 0.016; // Asumiendo 60 FPS
+      // Calcular deltaTime en segundos
+      if (lastTime === null) lastTime = timestamp;
+      const deltaTime = (timestamp - lastTime) / 1000;
+      lastTime = timestamp;
+      
+      // Mover proyectil con deltaTime real
+      const moveDistance = speed * deltaTime;
       projectile.position.add(direction.clone().multiplyScalar(moveDistance));
       distanceTraveled = startPosition.distanceTo(projectile.position);
       
@@ -325,7 +332,7 @@ export class SalvoAbility {
     };
     
     // Iniciar animación
-    animate();
+    requestAnimationFrame(animate);
   }
 
   /**

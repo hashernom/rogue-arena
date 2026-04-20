@@ -571,14 +571,22 @@ export class AdcCharacter extends Character {
     const lookTarget = spawnPos.clone().add(forwardDir);
     arrowGroup.lookAt(lookTarget);
     
+    // Depuración: verificar dirección
+    const groupForward = new THREE.Vector3();
+    arrowGroup.getWorldDirection(groupForward);
+    console.log(`[AdcCharacter] forwardDir: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)}), groupForward: (${groupForward.x.toFixed(2)}, ${groupForward.y.toFixed(2)}, ${groupForward.z.toFixed(2)})`);
+    
+    // Almacenar dirección en userData para uso en updateProjectiles
+    arrowGroup.userData = { direction: forwardDir.clone() };
+    
     this.sceneManager.add(arrowGroup);
     this.activeProjectiles.push(arrowGroup);
 
     // 5. Detectar colisiones con raycast (disparo instantáneo)
     this.detectHitsWithRay(spawnPos, forwardDir, this.getEffectiveStat('damage'));
 
-    // 6. Animación visual del proyectil (movimiento lineal)
-    this.animateProjectile(arrowGroup, forwardDir);
+    // 6. Animación visual del proyectil (movimiento lineal) - ahora se maneja en updateProjectiles()
+    // this.animateProjectile(arrowGroup, forwardDir);
 
     // Escuchar cuando el AnimationMixer termine el clip de ataque
     const onFinished = (e: THREE.Event) => {
@@ -811,13 +819,32 @@ export class AdcCharacter extends Character {
    * Actualiza la posición de todos los proyectiles activos.
    */
   private updateProjectiles(dt: number): void {
-    const speed = 15;
-    const maxDistance = 30;
+    const speed = 50; // Velocidad aumentada para que el proyectil sea más rápido
+    const maxDistance = 40; // Distancia máxima aumentada
 
     for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.activeProjectiles[i];
-      const direction = new THREE.Vector3(0, 0, -1);
-      direction.applyQuaternion(projectile.quaternion);
+      // Usar dirección almacenada en userData o calcular a partir de la orientación
+      let direction = projectile.userData?.direction;
+      if (direction && direction instanceof THREE.Vector3) {
+        direction = direction.clone(); // Clonar para no modificar el original
+        direction.y = 0;
+        if (direction.lengthSq() > 0.0001) {
+          direction.normalize();
+        } else {
+          direction.set(0, 0, -1);
+        }
+      } else {
+        direction = new THREE.Vector3();
+        projectile.getWorldDirection(direction);
+        direction.y = 0;
+        if (direction.lengthSq() > 0.0001) {
+          direction.normalize();
+        } else {
+          direction.set(0, 0, -1);
+        }
+      }
+      console.log(`[AdcCharacter] updateProjectiles: direction (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`);
       projectile.position.add(direction.multiplyScalar(speed * dt));
 
       // Verificar colisión (placeholder)
