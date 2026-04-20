@@ -10,6 +10,7 @@ import { DebugRenderer } from './physics/DebugRenderer';
 import { EventBus } from './engine/EventBus';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
+import { TestEnemy } from './enemies/TestEnemy';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -64,6 +65,8 @@ sceneManager.add(cubeP2);
 let meleeCharacter: MeleeCharacter | null = null;
 // AdcCharacter (Player 2) - reemplazará el cubo rojo
 let adcCharacter: AdcCharacter | null = null;
+// Enemigos de prueba para testing de colisiones y piercing
+let testEnemies: TestEnemy[] = [];
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -148,6 +151,19 @@ async function initGameWithPhysics(): Promise<void> {
       }
 
       console.log('📦 Cuerpos físicos creados y sincronizados (damping aplicado)');
+
+      // Crear fila de 3 enemigos para testing de piercing del ADC
+      // Posición: frente al ADC (player2) en Z=5, espaciados en X
+      testEnemies = TestEnemy.createEnemyRow(
+        3, // count
+        0, // startX (centrado)
+        5, // startZ (5 metros frente al ADC)
+        2, // spacing (2 metros entre enemigos)
+        eventBus,
+        sceneManager,
+        physicsWorld
+      );
+      console.log('🎯 3 enemigos de prueba creados para testing de piercing');
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -177,6 +193,11 @@ async function initGameWithPhysics(): Promise<void> {
     // Actualizar AdcCharacter (Player 2) con input
     if (adcCharacter) {
       adcCharacter.update(dt, p2State);
+    }
+
+    // Actualizar enemigos de prueba
+    for (const enemy of testEnemies) {
+      enemy.update(dt);
     }
 
     // Rotación básica (solo para visualización) - mantener independiente de física

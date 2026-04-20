@@ -32,6 +32,11 @@ export interface BodyOptions {
    * Por defecto se usa la máscara correspondiente al grupo (Masks).
    */
   collisionMask?: number;
+  /**
+   * Datos personalizados para asociar con el cuerpo físico.
+   * Útil para almacenar identificadores (id) u otra información de la entidad.
+   */
+  userData?: Record<string, any>;
 }
 
 /**
@@ -137,6 +142,11 @@ export class PhysicsWorld {
     }
 
     const body = world.createRigidBody(bodyDesc);
+
+    // Asignar userData si se proporciona
+    if (options.userData) {
+      body.userData = options.userData;
+    }
 
     // Colisionador (opcional)
     if (options.collider) {

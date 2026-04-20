@@ -80,7 +80,9 @@ export class MeleeAttack {
    * @returns true si el ataque se ejecutó, false si está en cooldown
    */
   tryAttack(): boolean {
+    console.log(`[MeleeAttack] tryAttack() llamado, cooldownTimer=${this.cooldownTimer}, isAttacking=${this.isAttacking}`);
     if (this.cooldownTimer > 0 || this.isAttacking) {
+      console.log(`[MeleeAttack] tryAttack() bloqueado por cooldown o ataque en progreso`);
       return false;
     }
 
@@ -108,10 +110,12 @@ export class MeleeAttack {
    * Ejecuta el ataque melee: realiza overlap query y aplica daño a enemigos en el arco.
    */
   private executeAttack(): void {
+    console.log('[MeleeAttack] executeAttack() llamado');
     if (!this.physicsWorld) {
       console.warn('[MeleeAttack] PhysicsWorld no disponible, no se puede ejecutar ataque');
       return;
     }
+    console.log('[MeleeAttack] PhysicsWorld disponible');
 
     this.isAttacking = true;
     this.damagedEnemies.clear();
@@ -121,9 +125,13 @@ export class MeleeAttack {
     const direction = this.getCharacterFacingDirection();
     
     if (!position || !direction) {
+      console.warn('[MeleeAttack DEBUG] Posición o dirección del personaje no disponible');
       this.isAttacking = false;
       return;
     }
+
+    // DEBUG: Log de posición y dirección (solo información crítica)
+    console.log(`[MeleeAttack] Posición: (${position.x.toFixed(1)}, ${position.z.toFixed(1)}), Dirección: (${direction.x.toFixed(2)}, ${direction.z.toFixed(2)})`);
 
     // Calcular posición frontal para el shape
     const forwardOffset = direction.clone().multiplyScalar(this.options.range / 2);
@@ -171,6 +179,9 @@ export class MeleeAttack {
     // Procesar intersecciones y aplicar filtro de arco
     const enemiesInArc = this.filterEnemiesByArc(position, direction, intersections);
     
+    // Log resumido
+    console.log(`[MeleeAttack] Intersecciones: ${intersections.length}, Enemigos en arco: ${enemiesInArc.length}`);
+
     // Aplicar daño a cada enemigo en el arco
     enemiesInArc.forEach(enemy => {
       this.applyDamageToEnemy(enemy);
@@ -287,17 +298,65 @@ export class MeleeAttack {
    * Obtiene la dirección hacia la que mira el personaje.
    */
   private getCharacterFacingDirection(): THREE.Vector3 | null {
-    // Para personajes top-down, asumimos que miran en la dirección de movimiento
-    // o en la dirección de su rotación actual
-    const model = (this.character as any).model;
+    // Primero intentar usar la dirección de movimiento del personaje si está disponible
+    const meleeChar = this.character as any;
+    
+    // Opción 1: Usar moveDirection si existe y no es cero
+    if (meleeChar.moveDirection && meleeChar.moveDirection.lengthSq() > 0.01) {
+      const moveDir = meleeChar.moveDirection.clone();
+      moveDir.y = 0; // Mantener en plano horizontal
+      if (moveDir.lengthSq() > 0.01) {
+        console.log(`[MeleeAttack DEBUG] Usando moveDirection: (${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}, ${moveDir.z.toFixed(2)})`);
+        return moveDir.normalize();
+      }
+    }
+    
+    // Opción 2: Usar la rotación del modelo
+    const model = meleeChar.model;
     if (model) {
-      const direction = new THREE.Vector3(0, 0, 1);
-      direction.applyQuaternion(model.quaternion);
-      direction.y = 0; // Mantener en plano horizontal
-      return direction.normalize();
+      // DEBUG: Información completa del modelo
+      console.log(`[MeleeAttack DEBUG] Modelo rotación Y: ${model.rotation.y.toFixed(2)} rad (${(model.rotation.y * 180 / Math.PI).toFixed(1)}°)`);
+      console.log(`[MeleeAttack DEBUG] Modelo quaternion: (${model.quaternion.x.toFixed(2)}, ${model.quaternion.y.toFixed(2)}, ${model.quaternion.z.toFixed(2)}, ${model.quaternion.w.toFixed(2)})`);
+      
+      // Calcular dirección basada en quaternion
+      const directionFromQuat = new THREE.Vector3(0, 0, 1);
+      directionFromQuat.applyQuaternion(model.quaternion);
+      directionFromQuat.y = 0;
+      
+      console.log(`[MeleeAttack DEBUG] Dirección desde quaternion: (${directionFromQuat.x.toFixed(2)}, ${directionFromQuat.y.toFixed(2)}, ${directionFromQuat.z.toFixed(2)})`);
+      
+      // También calcular dirección basada en rotación Y (más simple)
+      const directionFromRotation = new THREE.Vector3(
+        Math.sin(model.rotation.y),
+        0,
+        Math.cos(model.rotation.y)
+      );
+      
+      console.log(`[MeleeAttack DEBUG] Dirección desde rotación Y: (${directionFromRotation.x.toFixed(2)}, ${directionFromRotation.y.toFixed(2)}, ${directionFromRotation.z.toFixed(2)})`);
+      
+      // Comparar ambas y elegir la que tenga Z positivo (hacia adelante)
+      // Si ambas apuntan hacia atrás (Z negativo), invertir
+      let chosenDirection = directionFromQuat;
+      
+      // Si la dirección desde quaternion apunta hacia atrás (Z negativo significativo)
+      // pero la dirección desde rotación Y apunta hacia adelante, usar la de rotación Y
+      if (directionFromQuat.z < -0.5 && directionFromRotation.z > 0.5) {
+        console.log(`[MeleeAttack DEBUG] Quaternion apunta hacia atrás, usando dirección desde rotación Y`);
+        chosenDirection = directionFromRotation;
+      }
+      
+      // Si la dirección elegida aún apunta hacia atrás, invertirla
+      if (chosenDirection.z < -0.5) {
+        console.log(`[MeleeAttack DEBUG] ¡ADVERTENCIA! Dirección apunta hacia atrás (Z negativo). Invirtiendo.`);
+        chosenDirection.multiplyScalar(-1);
+      }
+      
+      console.log(`[MeleeAttack DEBUG] Dirección final: (${chosenDirection.x.toFixed(2)}, ${chosenDirection.y.toFixed(2)}, ${chosenDirection.z.toFixed(2)})`);
+      return chosenDirection.normalize();
     }
     
     // Fallback: dirección por defecto (hacia adelante en Z)
+    console.log(`[MeleeAttack DEBUG] No hay modelo ni moveDirection, usando dirección por defecto (0,0,1)`);
     return new THREE.Vector3(0, 0, 1);
   }
 

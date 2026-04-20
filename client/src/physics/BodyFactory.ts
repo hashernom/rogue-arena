@@ -63,7 +63,8 @@ export class BodyFactory {
   static createEnemyBody(
     world: PhysicsWorld,
     pos: THREE.Vector3,
-    enemyType: 'small' | 'medium' | 'large' = 'medium'
+    enemyType: 'small' | 'medium' | 'large' = 'medium',
+    id?: string
   ): RigidBodyHandle {
     // Determinar tamaño según tipo
     let radius: number;
@@ -93,6 +94,8 @@ export class BodyFactory {
     const groups = makeCollisionGroups(Groups.ENEMY, Masks.ENEMY);
     colliderDesc.setCollisionGroups(groups);
 
+    const userData = id ? { id } : undefined;
+
     return world.createBody({
       type: 'kinematic',
       position: pos,
@@ -101,6 +104,7 @@ export class BodyFactory {
       gravityScale: 0,
       collisionGroup: Groups.ENEMY,
       collisionMask: Masks.ENEMY,
+      userData,
     });
   }
 
