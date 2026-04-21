@@ -179,10 +179,11 @@ export class TestEnemy extends Character {
       position: { x: position.x, y: position.y, z: position.z } as THREE.Vector3,
     });
 
-    // Si el enemigo muere, emitir evento de muerte
+    // Si el enemigo muere, emitir evento de muerte con killerId
     if (!this.isAlive()) {
-      this.eventBus.emit('enemy:died', {
+      (this.eventBus as any).emit('enemy:died', {
         enemyId: this.id,
+        killerId: 'player', // Por defecto, asumir que el jugador mató
         position: { x: position.x, y: position.y, z: position.z } as THREE.Vector3,
         reward: 0, // Sin recompensa para testing
       });

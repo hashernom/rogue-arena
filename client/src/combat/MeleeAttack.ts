@@ -389,11 +389,23 @@ export class MeleeAttack {
   }
 
   /**
-   * Calcula el daño del ataque considerando stats del personaje.
+   * Calcula el daño del ataque considerando stats del personaje y la pasiva de furia.
    */
   private getAttackDamage(): number {
     const baseDamage = this.character.getEffectiveStat('damage');
-    return baseDamage * (this.options.baseDamage / 10); // Escalar según daño base configurado
+    let damage = baseDamage * (this.options.baseDamage / 10); // Escalar según daño base configurado
+    
+    // Aplicar multiplicador de furia si está disponible
+    const meleeChar = this.character as any;
+    if (meleeChar.furyPassive && typeof meleeChar.furyPassive.applyFuryToAttack === 'function') {
+      const furyMultiplier = meleeChar.furyPassive.applyFuryToAttack();
+      if (furyMultiplier > 1) {
+        console.log(`[MeleeAttack] Aplicando multiplicador de furia: ×${furyMultiplier}`);
+        damage *= furyMultiplier;
+      }
+    }
+    
+    return damage;
   }
 
   /**
