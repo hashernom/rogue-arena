@@ -152,10 +152,10 @@ async function initGameWithPhysics(): Promise<void> {
 
       console.log('📦 Cuerpos físicos creados y sincronizados (damping aplicado)');
 
-      // Crear fila de 3 enemigos para testing de piercing del ADC
+      // Crear fila de 5 enemigos para testing de piercing del ADC y furia del Caballero
       // Posición: frente al ADC (player2) en Z=5, espaciados en X
       testEnemies = TestEnemy.createEnemyRow(
-        3, // count
+        5, // count (aumentado de 3 a 5)
         0, // startX (centrado)
         5, // startZ (5 metros frente al ADC)
         2, // spacing (2 metros entre enemigos)
@@ -163,7 +163,7 @@ async function initGameWithPhysics(): Promise<void> {
         sceneManager,
         physicsWorld
       );
-      console.log('🎯 3 enemigos de prueba creados para testing de piercing');
+      console.log('🎯 5 enemigos de prueba creados para testing de piercing y furia');
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
