@@ -364,36 +364,87 @@ export class SalvoAbility {
 
     // Determinar si este proyectil tiene piercing (consultar pasiva)
     const canPierce = this.checkPiercePassive();
+    
+    // 1. Recolectar todos los impactos del rayo
+    const hits: { id: number; entity: any; toi: number }[] = [];
 
     world.intersectionsWithRay(
       ray, maxRange, solid,
-      (handle: number) => {
-        const collider = world.getCollider(handle);
-        const userData = collider.parent()?.userData;
+      (intersection: RAPIER.RayColliderIntersection) => {
+        const collider = intersection.collider;
         
-        // Verificación de daño idéntica a la del Melee
-        if (userData && userData.entity && typeof userData.entity.takeDamage === 'function') {
-          userData.entity.takeDamage(damage);
-          console.log(`🎯 Proyectil conectó con el enemigo! Daño: ${damage}`);
+        // Filtrar por grupo ENEMY (igual que en MeleeAttack)
+        const groups = collider.collisionGroups();
+        const membership = (groups >> 16) & 0xffff; // Extraer bits de membership
+        if ((membership & Groups.ENEMY) === 0) {
+          // No es un enemigo, ignorar
+          return true; // Continuar buscando
         }
         
-        // 🔥 EL SECRETO DEL PIERCING 🔥
-        // Si el ADC tiene la habilidad PiercePassive activa, retornamos TRUE.
-        // true = Atraviesa al enemigo y sigue escaneando la trayectoria.
-        // false = La bala se destruye/detiene en este enemigo.
-        return canPierce;
-      },
-      null, null, null, Groups.ENEMY // Usar el grupo de colisión correcto
+        const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
+        
+        if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
+          const enemyId = userData.id;
+          if (enemyId !== undefined) {
+            // Extraer distancia (time of impact) del objeto intersection
+            // Rapier puede usar 'toi', 'timeOfImpact', 'distance' o 't'
+            const intersectionAny = intersection as any;
+            const toi = intersectionAny.toi ?? intersectionAny.timeOfImpact ?? intersectionAny.distance ?? intersectionAny.t ?? 0;
+            console.log('[SalvoAbility] Intersection props:', Object.keys(intersectionAny), 'toi:', toi);
+            
+            hits.push({
+              id: enemyId,
+              entity: userData.entity,
+              toi
+            });
+          }
+        }
+        
+        // Retornar TRUE obligatoriamente para que Rapier siga buscando más objetivos en la línea
+        return true;
+      }
     );
+
+    console.log(`[SalvoAbility] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}`);
+    if (hits.length > 0) {
+      console.log(`[SalvoAbility] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
+    }
+
+    // 2. ORDENAR MATEMÁTICAMENTE: Del más cercano (menor toi) al más lejano (mayor toi)
+    hits.sort((a, b) => a.toi - b.toi);
+
+    // 3. APLICAR DAÑO Y LÓGICA DE PIERCING
+    const enemiesHit = new Set<number>();
+    for (const hit of hits) {
+      if (!enemiesHit.has(hit.id)) {
+        hit.entity.takeDamage(damage);
+        enemiesHit.add(hit.id);
+        console.log(`🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`);
+
+        // Si NO hay piercing, la bala se destruye al golpear al PRIMER enemigo (el más cercano)
+        if (!canPierce) {
+          break;
+        }
+        // Si SÍ hay piercing, el 'break' se ignora y el ciclo continúa golpeando al 2do, 3ro, etc.
+      }
+    }
   }
 
   /**
    * Verifica si la pasiva de piercing está activa para este jugador.
-   * Esto es un placeholder; en una implementación real se consultaría el estado de PiercePassive.
+   * Consulta el estado de PiercePassive y consume el efecto si está activo.
    */
   private checkPiercePassive(): boolean {
-    // Por ahora, siempre false. Deberíamos integrar con PiercePassive.
-    return false;
+    const characterAny = this.character as any;
+    if (!characterAny.piercePassive) {
+      return false;
+    }
+    // consumePierce() devuelve true si el próximo proyectil tiene piercing y lo consume
+    const hasPierce = characterAny.piercePassive.consumePierce();
+    if (hasPierce) {
+      console.log(`[SalvoAbility] Proyectil con piercing activado!`);
+    }
+    return hasPierce;
   }
 
   /**

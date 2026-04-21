@@ -22,8 +22,8 @@ export class TestEnemy extends Character {
 
   /** Stats base del enemigo de prueba */
   static readonly BASE_STATS: CharacterStats = {
-    hp: 50,
-    maxHp: 50,
+    hp: 1000,
+    maxHp: 1000,
     speed: 0, // No se mueve
     damage: 0, // No ataca
     attackSpeed: 0,

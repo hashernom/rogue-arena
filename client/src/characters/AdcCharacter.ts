@@ -582,6 +582,11 @@ export class AdcCharacter extends Character {
     this.sceneManager.add(arrowGroup);
     this.activeProjectiles.push(arrowGroup);
 
+    // Notificar a la pasiva de piercing que se ha disparado un proyectil
+    if (this.piercePassive) {
+      this.piercePassive.notifyProjectileShot();
+    }
+
     // 5. Detectar colisiones con raycast (disparo instantáneo)
     this.detectHitsWithRay(spawnPos, forwardDir, this.getEffectiveStat('damage'));
 
@@ -643,7 +648,9 @@ export class AdcCharacter extends Character {
 
     // Determinar si este proyectil tiene piercing (consultar pasiva)
     const canPierce = this.checkPiercePassive();
-    const enemiesHit = new Set<number>(); // Para evitar daño múltiple al mismo enemigo en un solo tiro
+    
+    // 1. Recolectar todos los impactos del rayo
+    const hits: { id: number; entity: any; toi: number }[] = [];
 
     world.intersectionsWithRay(
       ray, maxRange, solid,
@@ -660,23 +667,51 @@ export class AdcCharacter extends Character {
         
         const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
         
-        // Verificación de daño idéntica a la del Melee
         if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
           const enemyId = userData.id;
-          if (enemyId !== undefined && !enemiesHit.has(enemyId)) {
-            userData.entity.takeDamage(damage);
-            enemiesHit.add(enemyId);
-            console.log(`🎯 Tiro conectó con enemigo ID: ${enemyId}`);
+          if (enemyId !== undefined) {
+            // Extraer distancia (time of impact) del objeto intersection
+            // Rapier puede usar 'toi', 'timeOfImpact', 'distance' o 't'
+            const intersectionAny = intersection as any;
+            const toi = intersectionAny.toi ?? intersectionAny.timeOfImpact ?? intersectionAny.distance ?? intersectionAny.t ?? 0;
+            console.log('[AdcCharacter] Intersection props:', Object.keys(intersectionAny), 'toi:', toi);
+            
+            hits.push({
+              id: enemyId,
+              entity: userData.entity,
+              toi
+            });
           }
         }
         
-        // 🔥 EL SECRETO DEL PIERCING 🔥
-        // Si el ADC tiene la habilidad PiercePassive activa, retornamos TRUE.
-        // true = Atraviesa al enemigo y sigue escaneando la trayectoria.
-        // false = La bala se destruye/detiene en este enemigo.
-        return canPierce;
+        // Retornar TRUE obligatoriamente para que Rapier siga buscando más objetivos en la línea
+        return true;
       }
     );
+
+    console.log(`[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}`);
+    if (hits.length > 0) {
+      console.log(`[AdcCharacter] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
+    }
+
+    // 2. ORDENAR MATEMÁTICAMENTE: Del más cercano (menor toi) al más lejano (mayor toi)
+    hits.sort((a, b) => a.toi - b.toi);
+
+    // 3. APLICAR DAÑO Y LÓGICA DE PIERCING
+    const enemiesHit = new Set<number>();
+    for (const hit of hits) {
+      if (!enemiesHit.has(hit.id)) {
+        hit.entity.takeDamage(damage);
+        enemiesHit.add(hit.id);
+        console.log(`🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`);
+
+        // Si NO hay piercing, la bala se destruye al golpear al PRIMER enemigo (el más cercano)
+        if (!canPierce) {
+          break;
+        }
+        // Si SÍ hay piercing, el 'break' se ignora y el ciclo continúa golpeando al 2do, 3ro, etc.
+      }
+    }
   }
 
   /**
