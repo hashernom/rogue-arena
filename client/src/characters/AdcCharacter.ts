@@ -47,6 +47,9 @@ export class AdcCharacter extends Character {
   private currentAction: THREE.AnimationAction | null = null;
   /** Nombre de la animación actualmente en reproducción */
   private currentAnimationName: string = '';
+  
+  /** Flag para evitar spam de warnings de animaciones */
+  private hasShownAnimationWarning: boolean = false;
 
   /** Arma del personaje (arco) */
   private weapon: THREE.Object3D | null = null;
@@ -168,6 +171,16 @@ export class AdcCharacter extends Character {
   /** Nombre de la animación actualmente en reproducción */
 
   private playAnimation(name: string): void {
+    // Si no hay acciones cargadas, simplemente retornar sin error
+    if (Object.keys(this.actions).length === 0) {
+      // Solo mostrar warning una vez para evitar spam en consola
+      if (!this.hasShownAnimationWarning) {
+        console.warn(`[AdcCharacter ${this.id}] No hay animaciones cargadas. Saltando playAnimation('${name}')`);
+        this.hasShownAnimationWarning = true;
+      }
+      return;
+    }
+    
     if (!this.mixer) return;
     if (name === this.currentAnimationName) return;
 
