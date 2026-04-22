@@ -48,12 +48,16 @@ export class TestEnemy extends Character {
     physicsWorld?: PhysicsWorld,
     physicsBody?: RigidBodyHandle,
     color: number = 0xff0000,
-    size: number = 1.0
+    size: number = 1.0,
+    knockbackResistance: number = 0.0
   ) {
     super(id, TestEnemy.BASE_STATS, eventBus, physicsWorld, physicsBody);
     this.sceneManager = sceneManager;
     this.color = color;
     this.size = size;
+
+    // Establecer resistencia al knockback
+    this.setKnockbackResistance(knockbackResistance);
 
     // Crear modelo visual inmediatamente
     this.createModel();

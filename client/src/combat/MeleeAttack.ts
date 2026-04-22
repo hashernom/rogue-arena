@@ -5,6 +5,7 @@ import type { EventBus } from '../engine/EventBus';
 import type { Character } from '../characters/Character';
 import { Groups } from '../physics/CollisionGroups';
 import { DamagePipeline } from './DamagePipeline';
+import { KnockbackSystem, KnockbackPresets } from './Knockback';
 
 /**
  * Opciones para configurar un ataque melee.
@@ -46,6 +47,8 @@ export class MeleeAttack {
   private debugMaterial: THREE.MeshBasicMaterial | null = null;
   /** Pipeline centralizado de daño */
   private damagePipeline: DamagePipeline;
+  /** Sistema de knockback */
+  private knockbackSystem: KnockbackSystem;
 
   constructor(
     eventBus: EventBus,
@@ -70,6 +73,9 @@ export class MeleeAttack {
     // Pipeline centralizado de daño
     this.damagePipeline = new DamagePipeline(eventBus);
     
+    // Sistema de knockback
+    this.knockbackSystem = new KnockbackSystem();
+    
     // Configurar debug renderer si estamos en modo desarrollo
     this.setupDebugRenderer();
   }
@@ -79,6 +85,7 @@ export class MeleeAttack {
    */
   setPhysicsWorld(world: PhysicsWorld): void {
     this.physicsWorld = world;
+    this.knockbackSystem.setPhysicsWorld(world);
   }
 
   /**
@@ -390,6 +397,31 @@ export class MeleeAttack {
     );
 
     console.log(`[MeleeAttack] ${this.playerId} - Daño a enemigo ${enemyId || 'sin ID'}: ${result.finalDamage.toFixed(1)} ${result.isCrit ? 'CRIT!' : ''}`);
+
+    // Aplicar knockback si el sistema está configurado
+    if (this.knockbackSystem && this.physicsWorld) {
+      const attackerPos = this.getCharacterPosition();
+      if (attackerPos) {
+        // Obtener resistencia al knockback del enemigo (por defecto 0)
+        const knockbackResistance = (enemyEntity as any).knockbackResistance ?? 0;
+        // Configuración de knockback (usar preset MEDIUM)
+        const knockbackConfig = {
+          baseStrength: 12,
+          duration: 0.4,
+          scaleWithDamage: true,
+          damageScaleFactor: 0.05
+        };
+        // Aplicar knockback
+        this.knockbackSystem.applyKnockback(
+          enemyEntity,
+          attackerPos,
+          knockbackConfig,
+          result.finalDamage,
+          knockbackResistance
+        );
+        console.log(`[MeleeAttack] Knockback aplicado a ${enemyId} (resistencia: ${knockbackResistance})`);
+      }
+    }
 
     if (enemyId) {
       this.damagedEnemies.add(enemyId);

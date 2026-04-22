@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { EventBus } from '../engine/EventBus';
 import type { InputState } from '../engine/InputManager';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
@@ -70,6 +71,10 @@ export abstract class Character {
   protected physicsWorld?: PhysicsWorld;
   /** Cuerpo de física asociado (opcional) */
   protected physicsBody?: RigidBodyHandle;
+  /** Resistencia al knockback (0-1) donde 1 es inmune */
+  protected knockbackResistance: number = 0;
+  /** Indica si el steering está habilitado (para enemigos) */
+  protected steeringEnabled: boolean = true;
   /** Identificador único del personaje */
   public readonly id: string;
   /** EventBus para emitir eventos de personaje */
@@ -274,5 +279,54 @@ export abstract class Character {
    */
   getEffectiveStats(): CharacterStats {
     return this.statsSystem.getAllStats();
+  }
+
+  /**
+   * Aplica knockback al personaje.
+   * @param force Vector de fuerza (dirección * magnitud)
+   * @param duration Duración en segundos
+   */
+  applyKnockback(force: THREE.Vector3, duration: number): void {
+    // Implementación básica: aplicar impulso al cuerpo físico
+    if (this.physicsBody && this.physicsWorld) {
+      const body = this.physicsWorld.getBody(this.physicsBody);
+      if (body) {
+        body.applyImpulse({ x: force.x, y: force.y, z: force.z }, true);
+      }
+    }
+    // Deshabilitar steering durante la duración
+    this.disableSteering();
+    // Restaurar steering después de la duración
+    setTimeout(() => {
+      this.enableSteering();
+    }, duration * 1000);
+  }
+
+  /**
+   * Deshabilita el steering (movimiento controlado por IA).
+   */
+  disableSteering(): void {
+    this.steeringEnabled = false;
+  }
+
+  /**
+   * Habilita el steering.
+   */
+  enableSteering(): void {
+    this.steeringEnabled = true;
+  }
+
+  /**
+   * Obtiene la resistencia al knockback.
+   */
+  getKnockbackResistance(): number {
+    return this.knockbackResistance;
+  }
+
+  /**
+   * Establece la resistencia al knockback.
+   */
+  setKnockbackResistance(resistance: number): void {
+    this.knockbackResistance = Math.max(0, Math.min(1, resistance));
   }
 }

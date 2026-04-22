@@ -107,6 +107,7 @@ export class BodyFactory {
       collider: colliderDesc,
       lockRotations: true,
       gravityScale: 0,
+      ccdEnabled: true, // Habilitar CCD para prevenir que atraviesen muros con knockback
       collisionGroup: Groups.ENEMY,
       collisionMask: Masks.ENEMY,
       userData: Object.keys(userData).length > 0 ? userData : undefined,
