@@ -21,6 +21,11 @@ export interface BodyOptions {
   gravityScale?: number;
   linearDamping?: number; // ← AGREGAR ESTO
   /**
+   * Habilita Continuous Collision Detection para cuerpos que se mueven a alta velocidad.
+   * Útil para proyectiles.
+   */
+  ccdEnabled?: boolean;
+  /**
    * Grupo de colisión al que pertenece este cuerpo.
    * Puede ser uno de los grupos predefinidos (Groups.PLAYER, etc.) o una combinación bitwise.
    * Si se proporciona, se aplicará automáticamente al collider.
@@ -139,6 +144,11 @@ export class PhysicsWorld {
     // Damping lineal (para freno suave)
     if (options.linearDamping !== undefined) {
       bodyDesc.setLinearDamping(options.linearDamping);
+    }
+
+    // Continuous Collision Detection (para proyectiles de alta velocidad)
+    if (options.ccdEnabled) {
+      bodyDesc.setCcdEnabled(true);
     }
 
     const body = world.createRigidBody(bodyDesc);
