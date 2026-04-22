@@ -4,6 +4,7 @@ import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { EventBus } from '../engine/EventBus';
 import type { Character } from '../characters/Character';
 import { Groups } from '../physics/CollisionGroups';
+import { DamagePipeline } from './DamagePipeline';
 
 /**
  * Opciones para configurar un ataque melee.
@@ -43,6 +44,8 @@ export class MeleeAttack {
   /** Debug: mesh para visualizar el área de ataque (solo en modo DEV) */
   private debugMesh: THREE.Mesh | null = null;
   private debugMaterial: THREE.MeshBasicMaterial | null = null;
+  /** Pipeline centralizado de daño */
+  private damagePipeline: DamagePipeline;
 
   constructor(
     eventBus: EventBus,
@@ -63,6 +66,9 @@ export class MeleeAttack {
       baseDamage: 10,
       ...options
     };
+    
+    // Pipeline centralizado de daño
+    this.damagePipeline = new DamagePipeline(eventBus);
     
     // Configurar debug renderer si estamos en modo desarrollo
     this.setupDebugRenderer();
@@ -336,7 +342,7 @@ export class MeleeAttack {
   }
 
   /**
-   * Aplica daño a un enemigo.
+   * Aplica daño a un enemigo usando el DamagePipeline centralizado.
    */
   private applyDamageToEnemy(enemyCollider: RAPIER.Collider): void {
     // Obtener referencia al cuerpo y userData
@@ -352,23 +358,38 @@ export class MeleeAttack {
       return; // Ya dañado en este ataque
     }
 
-    const damage = this.getAttackDamage();
-    
-    // Intentar llamar directamente a takeDamage si tenemos referencia a la entidad
+    const baseDamage = this.getAttackDamage();
     const enemyEntity = userData.entity;
-    if (enemyEntity && typeof enemyEntity.takeDamage === 'function') {
-      try {
-        enemyEntity.takeDamage(damage);
-        console.log(`[MeleeAttack] ${this.playerId} - Daño directo a enemigo ${enemyId || 'sin ID'}: ${damage}`);
-      } catch (error) {
-        console.error(`[MeleeAttack] Error al llamar takeDamage:`, error);
-        // Fallback: emitir evento
-        this.emitDamageEvent(enemyId, damage);
+    
+    if (!enemyEntity || typeof enemyEntity.takeDamage !== 'function') {
+      // Fallback: emitir evento de daño (para compatibilidad)
+      this.emitDamageEvent(enemyId, baseDamage);
+      if (enemyId) {
+        this.damagedEnemies.add(enemyId);
       }
-    } else {
-      // Fallback: emitir evento de daño
-      this.emitDamageEvent(enemyId, damage);
+      return;
     }
+
+    // Obtener posición del enemigo (aproximada desde el collider)
+    const enemyPos = enemyBody.translation();
+    const position = new THREE.Vector3(enemyPos.x, enemyPos.y, enemyPos.z);
+
+    // Aplicar daño a través del pipeline
+    const result = this.damagePipeline.applyDamage(
+      { id: this.playerId }, // attacker
+      enemyEntity, // target (debe tener takeDamage e id)
+      baseDamage,
+      {
+        position,
+        source: 'melee',
+        attackerId: this.playerId,
+        canCrit: true,
+        critChance: 0.1, // 10% base
+        critMultiplier: 1.5,
+      }
+    );
+
+    console.log(`[MeleeAttack] ${this.playerId} - Daño a enemigo ${enemyId || 'sin ID'}: ${result.finalDamage.toFixed(1)} ${result.isCrit ? 'CRIT!' : ''}`);
 
     if (enemyId) {
       this.damagedEnemies.add(enemyId);

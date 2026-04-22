@@ -48,6 +48,9 @@ export class AdcCharacter extends Character {
   /** Nombre de la animación actualmente en reproducción */
   private currentAnimationName: string = '';
 
+  /** Arma del personaje (arco) */
+  private weapon: THREE.Object3D | null = null;
+
   /** Habilidad pasiva Perforación */
   private piercePassive: PiercePassive | null = null;
 
@@ -122,7 +125,11 @@ export class AdcCharacter extends Character {
       this.model.add(this.innerMesh);
       this.sceneManager.add(this.model);
 
-      // 4. Inicialización del Mixer
+      // 4. CREAR ARMA SIMPLE (omitir carga GLTF problemática)
+      // Nota: Los archivos GLTF están corruptos/incompatibles, así que usamos arma geométrica
+      this.createSimpleWeapon();
+
+      // 5. Inicialización del Mixer
       this.mixer = new THREE.AnimationMixer(this.innerMesh);
 
       // 5. Mapeo Inteligente
@@ -502,11 +509,15 @@ export class AdcCharacter extends Character {
     // Reproducir animación de ataque
     this.playAnimation('Attack'); // O 'CombatRanged' según tu mapeo
 
-    // 1. Obtener posición mundial del personaje (altura del pecho/arma)
+    // 1. Obtener posición mundial del arma (arco) si existe, sino usar pecho
     const spawnPos = new THREE.Vector3();
-    if (this.model) {
+    if (this.weapon) {
+      this.weapon.getWorldPosition(spawnPos);
+      console.log(`[AdcCharacter ${this.id}] Disparando desde arma en posición:`, spawnPos);
+    } else if (this.model) {
       this.model.getWorldPosition(spawnPos);
       spawnPos.y += 1.2; // Altura del pecho
+      console.log(`[AdcCharacter ${this.id}] Disparando desde pecho (no hay arma) en posición:`, spawnPos);
     } else {
       spawnPos.set(0, 1.2, 0);
     }
@@ -941,6 +952,175 @@ export class AdcCharacter extends Character {
     if (this.model) {
       this.model.position.copy(position);
       // NOTA: Ya no usamos syncToThree. La sincronización se hace directamente en update()
+    }
+  }
+
+  /**
+   * Carga y asigna un arma al personaje
+   * @param weaponGltf - Modelo GLTF del arma
+   */
+  private async loadWeapon(weaponGltf: GLTF): Promise<void> {
+    try {
+      // Clonar el modelo del arma
+      const weaponModel = SkeletonUtils.clone(weaponGltf.scene);
+      
+      // Buscar el hueso de la mano derecha en el esqueleto del personaje
+      let handBone: any = null;
+      this.innerMesh!.traverse((child: any) => {
+        if (child.isBone) {
+          // Buscar huesos de la mano (puede variar según el modelo)
+          if (child.name.toLowerCase().includes('hand') &&
+              (child.name.toLowerCase().includes('right') || child.name.toLowerCase().includes('r_'))) {
+            handBone = child;
+          }
+        }
+      });
+
+      // Si no encontramos un hueso específico, buscar cualquier hueso de mano
+      if (!handBone) {
+        this.innerMesh!.traverse((child: any) => {
+          if (child.isBone && child.name.toLowerCase().includes('hand')) {
+            handBone = child;
+          }
+        });
+      }
+
+      // Si encontramos un hueso de mano, adjuntar el arma
+      if (handBone) {
+        // Ajustar posición y rotación del arma relativa a la mano
+        weaponModel.position.set(0.1, 0, 0.1);
+        weaponModel.rotation.set(0, Math.PI / 2, 0);
+        weaponModel.scale.set(1.5, 1.5, 1.5);
+        
+        // Añadir el arma como hijo del hueso de la mano
+        handBone.add(weaponModel);
+        this.weapon = weaponModel;
+        
+        console.log(`[AdcCharacter ${this.id}] Arma asignada a la mano: ${handBone.name}`);
+      } else {
+        // Si no encontramos hueso, adjuntar al modelo general
+        weaponModel.position.set(0.5, 1, 0);
+        weaponModel.rotation.set(0, Math.PI / 2, 0);
+        weaponModel.scale.set(1.5, 1.5, 1.5);
+        this.innerMesh!.add(weaponModel);
+        this.weapon = weaponModel;
+        console.log(`[AdcCharacter ${this.id}] Arma asignada al modelo general (no se encontró hueso de mano)`);
+      }
+
+      // Configurar sombras y propiedades del arma
+      weaponModel.traverse((child: any) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          console.log(`[AdcCharacter ${this.id}] Mesh del arma: ${child.name}`);
+        }
+      });
+      
+      console.log(`[AdcCharacter ${this.id}] Arma cargada y asignada exitosamente`);
+
+    } catch (error) {
+      console.error(`[AdcCharacter ${this.id}] Error cargando el arma:`, error);
+    }
+  }
+
+  /**
+   * Crea un arma simple programáticamente (fallback cuando no se puede cargar el GLTF)
+   */
+  private createSimpleWeapon(): void {
+    try {
+      // Crear un arco curvo usando un torus segmentado (medio anillo)
+      const bowRadius = 0.8;
+      const tubeRadius = 0.03;
+      const bowGeometry = new THREE.TorusGeometry(bowRadius, tubeRadius, 8, 24, Math.PI); // Media circunferencia (180 grados)
+      
+      // Cuerda del arco (línea recta entre los extremos del arco)
+      const stringGeometry = new THREE.CylinderGeometry(0.01, 0.01, bowRadius * 2, 6);
+      
+      // Empuñadura (cilindro corto en el centro)
+      const gripGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.2, 8);
+      
+      // Materiales
+      const bowMaterial = new THREE.MeshStandardMaterial({
+        color: 0x8b4513, // Marrón madera
+        metalness: 0.1,
+        roughness: 0.9
+      });
+      const stringMaterial = new THREE.MeshStandardMaterial({
+        color: 0xf5f5f5, // Blanco hueso
+        metalness: 0.0,
+        roughness: 0.5,
+        emissive: 0x111111
+      });
+      const gripMaterial = new THREE.MeshStandardMaterial({
+        color: 0x4e342e, // Marrón oscuro
+        metalness: 0.2,
+        roughness: 0.8
+      });
+      
+      // Crear mallas
+      const bow = new THREE.Mesh(bowGeometry, bowMaterial);
+      const string = new THREE.Mesh(stringGeometry, stringMaterial);
+      const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+      
+      // Posicionar y rotar las partes para formar un arco vertical
+      // El torus por defecto está en el plano XY, lo rotamos para que esté vertical
+      bow.rotation.x = Math.PI / 2; // Rotar 90 grados para que el anillo quede vertical
+      bow.rotation.z = Math.PI / 2; // Rotar para que la apertura quede hacia el jugador
+      bow.position.set(0, 0, 0);
+      
+      // Cuerda: línea recta entre los extremos del arco (en el plano YZ)
+      string.position.set(0, 0, 0);
+      string.rotation.x = Math.PI / 2; // Horizontal
+      string.rotation.z = Math.PI / 2; // Alineada con la apertura del arco
+      
+      // Empuñadura: en el centro del arco, ligeramente desplazada
+      grip.position.set(0, 0, -0.1);
+      grip.rotation.x = Math.PI / 2;
+      
+      // Crear un grupo para el arma
+      const weaponGroup = new THREE.Group();
+      weaponGroup.add(bow);
+      weaponGroup.add(string);
+      weaponGroup.add(grip);
+      
+      // Escala general del arma (más grande)
+      weaponGroup.scale.set(0.4, 0.4, 0.4);
+      
+      // Buscar hueso de la mano derecha (o cualquier mano)
+      let handBone: any = null;
+      this.innerMesh!.traverse((child: any) => {
+        if (child.isBone) {
+          const name = child.name.toLowerCase();
+          if (name.includes('hand') || name.includes('wrist')) {
+            handBone = child;
+          }
+        }
+      });
+      
+      if (handBone) {
+        // Ajustar posición y orientación para que se sostenga naturalmente
+        weaponGroup.position.set(0.15, 0.05, 0.1);
+        weaponGroup.rotation.set(-Math.PI / 6, Math.PI / 4, Math.PI / 12);
+        
+        handBone.add(weaponGroup);
+        this.weapon = weaponGroup;
+        console.log(`[AdcCharacter ${this.id}] Arco curvo creado y asignado a la mano`);
+      } else {
+        // Adjuntar al modelo general como fallback
+        weaponGroup.position.set(0.5, 1.2, 0.3);
+        this.innerMesh!.add(weaponGroup);
+        this.weapon = weaponGroup;
+        console.log(`[AdcCharacter ${this.id}] Arco curvo creado (sin hueso de mano)`);
+      }
+      
+      // Configurar sombras para todas las partes
+      [bow, string, grip].forEach(part => {
+        part.castShadow = true;
+        part.receiveShadow = true;
+      });
+      
+    } catch (error) {
+      console.error(`[AdcCharacter ${this.id}] Error creando arma simple:`, error);
     }
   }
 

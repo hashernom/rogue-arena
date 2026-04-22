@@ -52,6 +52,9 @@ export class MeleeCharacter extends Character {
   /** Sistema de ataque melee */
   private meleeAttack: MeleeAttack | null = null;
 
+  /** Arma del personaje (espada) */
+  private weapon: THREE.Object3D | null = null;
+
   /** Stats base del Caballero */
   static readonly BASE_STATS: CharacterStats = {
     hp: 150,
@@ -100,24 +103,24 @@ export class MeleeCharacter extends Character {
   /**
    * Carga el modelo GLTF del caballero y lo agrega a la escena.
    */
- /**
+  /**
    * Carga los assets 3D y configura la jerarquía de mallas y animaciones.
    * Implementa SkeletonUtils y el patrón contenedor para resolver el bloqueo en el origen (0,0,0).
    */
   private async loadModel(): Promise<void> {
     try {
-      // 1. Cargamos y forzamos el tipo para que TS reconozca '.scene'
-      const assets = await Promise.all([
+      // 1. Cargamos los modelos esenciales primero
+      const essentialAssets = await Promise.all([
         this.assetLoader.load('/models/Knight.glb'),
         this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
         this.assetLoader.load('/models/Rig_Medium_CombatMelee.glb'),
         this.assetLoader.load('/models/Rig_Medium_General.glb')
       ]);
       
-      const modelGltf = assets[0] as GLTF;
-      const movementGltf = assets[1] as GLTF;
-      const combatGltf = assets[2] as GLTF;
-      const generalGltf = assets[3] as GLTF;
+      const modelGltf = essentialAssets[0] as GLTF;
+      const movementGltf = essentialAssets[1] as GLTF;
+      const combatGltf = essentialAssets[2] as GLTF;
+      const generalGltf = essentialAssets[3] as GLTF;
 
       // 2. CLONACIÓN (Ahora SkeletonUtils.clone funcionará porque importamos con *)
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
@@ -135,7 +138,11 @@ export class MeleeCharacter extends Character {
       this.model.add(this.innerMesh);
       this.sceneManager.add(this.model);
 
-      // 5. ANIMACIONES
+      // 5. CREAR ARMA SIMPLE (omitir carga GLTF problemática)
+      // Nota: Los archivos GLTF están corruptos/incompatibles, así que usamos arma geométrica
+      this.createSimpleWeapon();
+
+      // 6. ANIMACIONES
       this.mixer = new THREE.AnimationMixer(this.innerMesh);
 
       const allClips = [
@@ -144,6 +151,7 @@ export class MeleeCharacter extends Character {
         ...combatGltf.animations,
         ...generalGltf.animations
       ];
+      console.log(`[MeleeCharacter ${this.id}] Animaciones cargadas:`, allClips.map(clip => clip.name));
       allClips.forEach((clip) => {
         const action = this.mixer!.clipAction(clip);
         this.actions[clip.name] = action;
@@ -151,9 +159,44 @@ export class MeleeCharacter extends Character {
         const name = clip.name.toLowerCase();
         if (name.includes('idle')) this.actions['Idle'] = action;
         if (name.includes('run') || name.includes('walk')) this.actions['Run'] = action;
-        if (name.includes('attack') || name.includes('melee')) this.actions['Attack'] = action;
         if (name.includes('death') || name.includes('die')) this.actions['Death'] = action;
       });
+
+      // Seleccionar animación de ataque más visualmente impactante
+      // Priorizar animaciones con swing amplio
+      const attackClipNames = allClips
+        .map(clip => clip.name)
+        .filter(name => name.toLowerCase().includes('attack'));
+      
+      console.log(`[MeleeCharacter ${this.id}] Animaciones de ataque disponibles:`, attackClipNames);
+      
+      // Preferir animaciones de ataque con chop o slice (más movimiento visual)
+      let selectedAttackClip = null;
+      const preferredNames = ['Melee_1H_Attack_Chop', 'Melee_1H_Attack_Slice_Diagonal',
+                             'Melee_1H_Attack_Slice_Horizontal', 'Melee_2H_Attack_Chop'];
+      
+      for (const prefName of preferredNames) {
+        const clip = allClips.find(c => c.name === prefName);
+        if (clip) {
+          selectedAttackClip = clip;
+          console.log(`[MeleeCharacter ${this.id}] Seleccionada animación de ataque: ${prefName}`);
+          break;
+        }
+      }
+      
+      // Fallback: usar la primera animación de ataque disponible
+      if (!selectedAttackClip && attackClipNames.length > 0) {
+        selectedAttackClip = allClips.find(c => c.name === attackClipNames[0]);
+        console.log(`[MeleeCharacter ${this.id}] Usando animación de ataque fallback: ${attackClipNames[0]}`);
+      }
+      
+      if (selectedAttackClip) {
+        const attackAction = this.mixer!.clipAction(selectedAttackClip);
+        this.actions['Attack'] = attackAction;
+        console.log(`[MeleeCharacter ${this.id}] Animación 'Attack' asignada a: ${selectedAttackClip.name}`);
+      } else {
+        console.warn(`[MeleeCharacter ${this.id}] No se encontró ninguna animación de ataque adecuada`);
+      }
 
       // Iniciamos con animación idle
       this.playAnimation('Idle');
@@ -163,6 +206,178 @@ export class MeleeCharacter extends Character {
       this.createFallbackModel();
     }
   }
+
+  /**
+   * Carga y asigna un arma al personaje
+   * @param weaponGltf - Modelo GLTF del arma
+   */
+  private async loadWeapon(weaponGltf: GLTF): Promise<void> {
+    try {
+      // Clonar el modelo del arma
+      const weaponModel = SkeletonUtils.clone(weaponGltf.scene);
+      
+      // Buscar el hueso de la mano derecha en el esqueleto del personaje
+      let handBone: any = null;
+      const boneNames: string[] = [];
+      this.innerMesh!.traverse((child: any) => {
+        if (child.isBone) {
+          boneNames.push(child.name);
+          // Buscar huesos de la mano (puede variar según el modelo)
+          if (child.name.toLowerCase().includes('hand') &&
+              (child.name.toLowerCase().includes('right') || child.name.toLowerCase().includes('r_'))) {
+            handBone = child;
+          }
+        }
+      });
+      console.log(`[MeleeCharacter ${this.id}] Huesos encontrados:`, boneNames);
+
+      // Si no encontramos un hueso específico, buscar cualquier hueso de mano
+      if (!handBone) {
+        this.innerMesh!.traverse((child: any) => {
+          if (child.isBone && child.name.toLowerCase().includes('hand')) {
+            handBone = child;
+          }
+        });
+      }
+
+      // Si encontramos un hueso de mano, adjuntar el arma
+      if (handBone) {
+        // Ajustar posición y rotación del arma relativa a la mano
+        weaponModel.position.set(0.1, 0, 0.1);
+        weaponModel.rotation.set(0, Math.PI / 2, 0);
+        weaponModel.scale.set(1.5, 1.5, 1.5);
+        
+        // Añadir el arma como hijo del hueso de la mano
+        handBone.add(weaponModel);
+        this.weapon = weaponModel;
+        
+        console.log(`[MeleeCharacter ${this.id}] Arma asignada a la mano: ${handBone.name}`);
+      } else {
+        // Si no encontramos hueso, adjuntar al modelo general
+        weaponModel.position.set(0.5, 1, 0);
+        weaponModel.rotation.set(0, Math.PI / 2, 0);
+        weaponModel.scale.set(1.5, 1.5, 1.5);
+        this.innerMesh!.add(weaponModel);
+        this.weapon = weaponModel;
+        console.log(`[MeleeCharacter ${this.id}] Arma asignada al modelo general (no se encontró hueso de mano)`);
+      }
+
+      // Configurar sombras y propiedades del arma
+      weaponModel.traverse((child: any) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          console.log(`[MeleeCharacter ${this.id}] Mesh del arma: ${child.name}`);
+        }
+      });
+      
+      console.log(`[MeleeCharacter ${this.id}] Arma cargada y asignada exitosamente`);
+
+    } catch (error) {
+      console.error(`[MeleeCharacter ${this.id}] Error cargando el arma:`, error);
+    }
+  }
+
+  /**
+   * Crea un arma simple programáticamente (fallback cuando no se puede cargar el GLTF)
+   */
+  private createSimpleWeapon(): void {
+    try {
+      // Crear una espada más detallada con múltiples partes
+      // Hoja (blade) - forma de prisma alargado
+      const bladeGeometry = new THREE.BoxGeometry(0.08, 1.2, 0.03);
+      // Guarda (guard) - cruz que protege la mano
+      const guardGeometry = new THREE.BoxGeometry(0.25, 0.05, 0.05);
+      // Mango (hilt) - cilindro para agarre
+      const hiltGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.3, 8);
+      // Pomo (pommel) - esfera en el extremo
+      const pommelGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+      
+      // Materiales con apariencia metálica y de madera
+      const bladeMaterial = new THREE.MeshStandardMaterial({
+        color: 0xaaaaaa,
+        metalness: 0.9,
+        roughness: 0.1,
+        emissive: 0x111111
+      });
+      const guardMaterial = new THREE.MeshStandardMaterial({
+        color: 0x888888,
+        metalness: 0.7,
+        roughness: 0.3
+      });
+      const hiltMaterial = new THREE.MeshStandardMaterial({
+        color: 0x5d4037,
+        metalness: 0.2,
+        roughness: 0.8
+      });
+      const pommelMaterial = new THREE.MeshStandardMaterial({
+        color: 0xaaaaaa,
+        metalness: 0.8,
+        roughness: 0.2
+      });
+      
+      // Crear mallas
+      const blade = new THREE.Mesh(bladeGeometry, bladeMaterial);
+      const guard = new THREE.Mesh(guardGeometry, guardMaterial);
+      const hilt = new THREE.Mesh(hiltGeometry, hiltMaterial);
+      const pommel = new THREE.Mesh(pommelGeometry, pommelMaterial);
+      
+      // Posicionar las partes relativas al centro del grupo
+      blade.position.set(0, 0.6, 0);          // Hoja centrada, extendiéndose hacia arriba
+      guard.position.set(0, 0.1, 0);          // Guarda justo debajo de la hoja
+      hilt.position.set(0, -0.15, 0);         // Mango debajo de la guarda
+      pommel.position.set(0, -0.35, 0);       // Pomo en el extremo inferior
+      
+      // Rotar el mango para que sea vertical
+      hilt.rotation.x = Math.PI / 2;
+      
+      // Crear un grupo para el arma
+      const weaponGroup = new THREE.Group();
+      weaponGroup.add(blade);
+      weaponGroup.add(guard);
+      weaponGroup.add(hilt);
+      weaponGroup.add(pommel);
+      
+      // Buscar hueso de la mano derecha (generalmente "hand_r" o "hand")
+      let handBone: any = null;
+      this.innerMesh!.traverse((child: any) => {
+        if (child.isBone) {
+          const name = child.name.toLowerCase();
+          if (name.includes('hand') || name.includes('wrist')) {
+            handBone = child;
+          }
+        }
+      });
+      
+      if (handBone) {
+        // Ajustar posición y orientación para que se sostenga naturalmente
+        weaponGroup.position.set(0.15, 0.05, 0.1);
+        weaponGroup.rotation.set(-Math.PI / 8, Math.PI / 4, Math.PI / 8);
+        weaponGroup.scale.set(0.9, 0.9, 0.9); // Escala aumentada
+        
+        handBone.add(weaponGroup);
+        this.weapon = weaponGroup;
+        console.log(`[MeleeCharacter ${this.id}] Espada detallada creada y asignada a la mano (escala: 0.9)`);
+      } else {
+        // Adjuntar al modelo general como fallback
+        weaponGroup.position.set(0.5, 1.2, 0.3);
+        weaponGroup.scale.set(1.0, 1.0, 1.0); // Escala aumentada
+        this.innerMesh!.add(weaponGroup);
+        this.weapon = weaponGroup;
+        console.log(`[MeleeCharacter ${this.id}] Espada detallada creada (sin hueso de mano, escala: 1.0)`);
+      }
+      
+      // Configurar sombras para todas las partes
+      [blade, guard, hilt, pommel].forEach(part => {
+        part.castShadow = true;
+        part.receiveShadow = true;
+      });
+      
+    } catch (error) {
+      console.error(`[MeleeCharacter ${this.id}] Error creando arma simple:`, error);
+    }
+  }
+
   /** Nombre de la animación actualmente en reproducción */
   private currentAnimationName: string = '';
 
@@ -171,12 +386,18 @@ export class MeleeCharacter extends Character {
    * Incluye guarda para evitar resetear la misma animación cada frame.
    */
   private playAnimation(name: string): void {
-    if (this.currentAnimationName === name) return;
+    if (this.currentAnimationName === name) {
+      console.log(`[MeleeCharacter ${this.id}] Ya está reproduciendo '${name}', omitiendo`);
+      return;
+    }
 
     // "name" debe ser exacto, ej: 'Attack', 'Idle', 'Run'
     const action = this.actions[name];
     if (action) {
+      console.log(`[MeleeCharacter ${this.id}] playAnimation: '${name}' encontrada, clip: ${action.getClip().name}, duración: ${action.getClip().duration.toFixed(2)}s`);
+      
       if (this.currentAction) {
+        console.log(`[MeleeCharacter ${this.id}] Desvaneciendo animación anterior: ${this.currentAnimationName}`);
         this.currentAction.fadeOut(0.2);
       }
 
@@ -186,6 +407,14 @@ export class MeleeCharacter extends Character {
       if (name === 'Attack') {
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
+        console.log(`[MeleeCharacter ${this.id}] Configurando animación de ataque: LoopOnce, clampWhenFinished=true`);
+        
+        // Agregar listener para cuando termine la animación
+        action.getMixer().addEventListener('finished', (e) => {
+          if (e.action === action) {
+            console.log(`[MeleeCharacter ${this.id}] Animación de ataque terminada naturalmente`);
+          }
+        });
       } else {
         action.setLoop(THREE.LoopRepeat, Infinity);
         action.clampWhenFinished = false;
@@ -194,6 +423,14 @@ export class MeleeCharacter extends Character {
       action.play();
       this.currentAction = action;
       this.currentAnimationName = name;
+      console.log(`[MeleeCharacter ${this.id}] Animación '${name}' iniciada (clip: ${action.getClip().name})`);
+      
+      // Log del estado actual del mixer
+      if (this.mixer) {
+        console.log(`[MeleeCharacter ${this.id}] Mixer time: ${this.mixer.time.toFixed(2)}`);
+      }
+    } else {
+      console.warn(`[MeleeCharacter ${this.id}] No se encontró acción para '${name}'. Acciones disponibles:`, Object.keys(this.actions));
     }
   }
 
@@ -527,35 +764,52 @@ export class MeleeCharacter extends Character {
   /**
    * Ataque melee básico.
    * Usa el sistema MeleeAttack para detección de golpes con Rapier.
+   * El daño se aplica cuando la espada está en la parte más baja del swing (~250ms).
    */
   public attack(): void {
     if (this.state === CharacterState.Dead) return;
 
-    // Usar el sistema MeleeAttack para detección de golpes
-    if (this.meleeAttack && this.meleeAttack.tryAttack()) {
-      // El sistema MeleeAttack ya maneja la animación a través del evento
-      // y la detección de golpes con Rapier
-      this.setState(CharacterState.Attacking);
-      
-      if (import.meta.env.DEV) {
-        console.log(`[MeleeCharacter ${this.id}] Ataque iniciado, estado: Attacking`);
-      }
-      
-      // Reproducir animación de ataque
-      this.playAnimation('Attack');
-      
-      // Fail-safe: Destrabar al personaje en 1200ms por si la animación falla
-      // (la animación de ataque suele durar ~1 segundo)
-      setTimeout(() => {
-        if (this.state === CharacterState.Attacking) {
-          if (import.meta.env.DEV) {
-            console.log(`[MeleeCharacter ${this.id}] Fail-safe: volviendo a Idle después de timeout`);
-          }
-          this.setState(CharacterState.Idle);
-          this.playAnimation('Idle');
-        }
-      }, 1200);
+    // Verificar que tenemos el sistema de ataque
+    if (!this.meleeAttack) {
+      console.warn(`[MeleeCharacter ${this.id}] MeleeAttack no existe`);
+      return;
     }
+
+    // Iniciar estado de ataque y animación
+    this.setState(CharacterState.Attacking);
+    
+    console.log(`[MeleeCharacter ${this.id}] Ataque iniciado, estado: Attacking`);
+    console.log(`[MeleeCharacter ${this.id}] Arma presente: ${this.weapon ? 'Sí' : 'No'}`);
+    if (this.weapon) {
+      console.log(`[MeleeCharacter ${this.id}] Posición inicial del arma:`, this.weapon.position);
+    }
+    
+    // Reproducir animación de ataque
+    console.log(`[MeleeCharacter ${this.id}] Llamando playAnimation('Attack')`);
+    this.playAnimation('Attack');
+    
+    // Programar el daño para cuando la espada esté en la parte más baja del swing
+    // Esto ocurre aproximadamente a los 250ms (40% de la animación de 600ms)
+    setTimeout(() => {
+      if (this.state === CharacterState.Attacking && this.meleeAttack) {
+        console.log(`[MeleeCharacter ${this.id}] Aplicando daño (punto más bajo del swing)`);
+        if (this.meleeAttack.tryAttack()) {
+          console.log(`[MeleeCharacter ${this.id}] Golpe exitoso`);
+        } else {
+          console.log(`[MeleeCharacter ${this.id}] Golpe falló (sin objetivos)`);
+        }
+      }
+    }, 250);
+    
+    // Fail-safe: Destrabar al personaje en 600ms por si la animación falla
+    // (la animación de ataque ahora es más rápida, ~0.6 segundos)
+    setTimeout(() => {
+      if (this.state === CharacterState.Attacking) {
+        console.log(`[MeleeCharacter ${this.id}] Fail-safe: volviendo a Idle después de timeout`);
+        this.setState(CharacterState.Idle);
+        this.playAnimation('Idle');
+      }
+    }, 600);
   }
 
   /**

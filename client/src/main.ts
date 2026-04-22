@@ -30,12 +30,6 @@ sceneManager.setCamera(cameraController.getCamera());
 // Crear AssetLoader para gestión centralizada de modelos
 const assetLoader = new AssetLoader();
 
-// Precargar assets críticos antes del primer tick (ejemplo: modelo de prueba)
-// Usamos un modelo público de Three.js para demostración.
-// Si falla, el loader manejará el error y podemos usar un fallback.
-const demoModelUrl = 'https://threejs.org/examples/models/gltf/Duck/glTF/Duck.gltf';
-assetLoader.preload([demoModelUrl]);
-
 // Crear InputManager para controles desacoplados
 const inputManager = new InputManager();
 
