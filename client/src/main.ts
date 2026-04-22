@@ -11,6 +11,9 @@ import { EventBus } from './engine/EventBus';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
 import { TestEnemy } from './enemies/TestEnemy';
+import { EnemyPool } from './enemies/EnemyPool';
+import { EnemyType } from './enemies/Enemy';
+import { SkeletonEnemy, SKELETON_MINION_STATS } from './enemies/SkeletonEnemy';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -61,6 +64,8 @@ let meleeCharacter: MeleeCharacter | null = null;
 let adcCharacter: AdcCharacter | null = null;
 // Enemigos de prueba para testing de colisiones y piercing
 let testEnemies: TestEnemy[] = [];
+// Pool de enemigos para gestión eficiente de instancias
+let enemyPool: EnemyPool | null = null;
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -146,6 +151,18 @@ async function initGameWithPhysics(): Promise<void> {
 
       console.log('📦 Cuerpos físicos creados y sincronizados (damping aplicado)');
 
+      // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
+      enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
+      
+      // Registrar tipo de enemigo skeleton minion
+      enemyPool.registerEnemyType({
+        type: EnemyType.SkeletonMinion,
+        stats: SKELETON_MINION_STATS,
+        initialCount: 5,
+        maxSize: 20
+      });
+      console.log('🧟 EnemyPool inicializado con tipo skeleton minion');
+
       // Crear fila de 5 enemigos para testing de piercing del ADC y furia del Caballero
       // Posición: frente al ADC (player2) en Z=5, espaciados en X
       testEnemies = TestEnemy.createEnemyRow(
@@ -158,6 +175,23 @@ async function initGameWithPhysics(): Promise<void> {
         physicsWorld
       );
       console.log('🎯 5 enemigos de prueba creados para testing de piercing y furia');
+
+      // Spawnear algunos skeleton minions usando el pool
+      if (enemyPool) {
+        // Spawnear 3 skeleton minions en diferentes posiciones
+        const spawnPositions = [
+          { position: new THREE.Vector3(-5, 0, 8) },
+          { position: new THREE.Vector3(0, 0, 8) },
+          { position: new THREE.Vector3(5, 0, 8) }
+        ];
+        
+        spawnPositions.forEach((spawnOptions, index) => {
+          const enemy = enemyPool!.acquire(EnemyType.SkeletonMinion, spawnOptions);
+          if (enemy) {
+            console.log(`🧟 Skeleton minion ${index + 1} spawn en ${spawnOptions.position.x}, ${spawnOptions.position.z}`);
+          }
+        });
+      }
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -192,6 +226,14 @@ async function initGameWithPhysics(): Promise<void> {
     // Actualizar enemigos de prueba
     for (const enemy of testEnemies) {
       enemy.update(dt);
+    }
+
+    // Actualizar enemigos del pool
+    if (enemyPool) {
+      const players = [];
+      if (meleeCharacter) players.push(meleeCharacter);
+      if (adcCharacter) players.push(adcCharacter);
+      enemyPool.update(dt, players);
     }
 
     // Rotación básica (solo para visualización) - mantener independiente de física
