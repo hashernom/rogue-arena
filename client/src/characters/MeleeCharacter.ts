@@ -125,8 +125,12 @@ export class MeleeCharacter extends Character {
       // 2. CLONACIÓN (Ahora SkeletonUtils.clone funcionará porque importamos con *)
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
       
-      // 3. CONFIGURACIÓN DE MALLA
+      // 3. CONFIGURACIÓN DE MALLA (sombras + frustum)
       this.innerMesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
         if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
           child.frustumCulled = false; // Evita que desaparezca al moverse
         }

@@ -10,10 +10,8 @@ import { DebugRenderer } from './physics/DebugRenderer';
 import { EventBus } from './engine/EventBus';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
-import { TestEnemy } from './enemies/TestEnemy';
 import { EnemyPool } from './enemies/EnemyPool';
-import { EnemyType } from './enemies/Enemy';
-import { SkeletonEnemy, SKELETON_MINION_STATS } from './enemies/SkeletonEnemy';
+import { Enemy, EnemyType, SKELETON_MINION_STATS } from './enemies/Enemy';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -62,10 +60,10 @@ sceneManager.add(cubeP2);
 let meleeCharacter: MeleeCharacter | null = null;
 // AdcCharacter (Player 2) - reemplazará el cubo rojo
 let adcCharacter: AdcCharacter | null = null;
-// Enemigos de prueba para testing de colisiones y piercing
-let testEnemies: TestEnemy[] = [];
 // Pool de enemigos para gestión eficiente de instancias
 let enemyPool: EnemyPool | null = null;
+// Enemigos de prueba (fila para testing de piercing)
+let testEnemies: Enemy[] = [];
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -163,35 +161,29 @@ async function initGameWithPhysics(): Promise<void> {
       });
       console.log('🧟 EnemyPool inicializado con tipo skeleton minion');
 
-      // Crear fila de 5 enemigos para testing de piercing del ADC y furia del Caballero
-      // Posición: frente al ADC (player2) en Z=5, espaciados en X
-      testEnemies = TestEnemy.createEnemyRow(
-        5, // count (aumentado de 3 a 5)
-        0, // startX (centrado)
-        5, // startZ (5 metros frente al ADC)
-        2, // spacing (2 metros entre enemigos)
+      // Crear enemigos en formación escalonada (sin superposición)
+      // Primera fila (3 enemigos)
+      testEnemies = await Enemy.createEnemyRow(
+        3,            // 3 enemigos
+        -3,           // startX
+        5,            // startZ
+        3,            // spacing
         eventBus,
         sceneManager,
         physicsWorld
       );
-      console.log('🎯 5 enemigos de prueba creados para testing de piercing y furia');
-
-      // Spawnear algunos skeleton minions usando el pool
-      if (enemyPool) {
-        // Spawnear 3 skeleton minions en diferentes posiciones
-        const spawnPositions = [
-          { position: new THREE.Vector3(-5, 0, 8) },
-          { position: new THREE.Vector3(0, 0, 8) },
-          { position: new THREE.Vector3(5, 0, 8) }
-        ];
-        
-        spawnPositions.forEach((spawnOptions, index) => {
-          const enemy = enemyPool!.acquire(EnemyType.SkeletonMinion, spawnOptions);
-          if (enemy) {
-            console.log(`🧟 Skeleton minion ${index + 1} spawn en ${spawnOptions.position.x}, ${spawnOptions.position.z}`);
-          }
-        });
-      }
+      // Segunda fila (2 enemigos, escalonados)
+      const secondRow = await Enemy.createEnemyRow(
+        2,            // 2 enemigos
+        -1.5,         // startX (centrado entre los de la primera fila)
+        8,            // startZ (más atrás)
+        3,            // spacing
+        eventBus,
+        sceneManager,
+        physicsWorld
+      );
+      testEnemies.push(...secondRow);
+      console.log(`🧪 Creados ${testEnemies.length} enemigos en formación escalonada`);
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -223,18 +215,21 @@ async function initGameWithPhysics(): Promise<void> {
       adcCharacter.update(dt, p2State);
     }
 
-    // Actualizar enemigos de prueba
-    for (const enemy of testEnemies) {
-      enemy.update(dt);
-    }
+    // Construir array de jugadores para IA de enemigos
+    const players: any[] = [];
+    if (meleeCharacter) players.push(meleeCharacter);
+    if (adcCharacter) players.push(adcCharacter);
 
     // Actualizar enemigos del pool
     if (enemyPool) {
-      const players = [];
-      if (meleeCharacter) players.push(meleeCharacter);
-      if (adcCharacter) players.push(adcCharacter);
       enemyPool.update(dt, players);
     }
+
+    // Actualizar enemigos de prueba (fila de testing) - incluir AI para animaciones
+    testEnemies.forEach(enemy => {
+      enemy.update(dt);
+      enemy.updateAI(dt, players);
+    });
 
     // Rotación básica (solo para visualización) - mantener independiente de física
     // cubeP2 ya no existe, se eliminó

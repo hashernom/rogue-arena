@@ -2,9 +2,7 @@ import * as THREE from 'three';
 import { EventBus } from '../engine/EventBus';
 import { SceneManager } from '../engine/SceneManager';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
-import { Enemy, type EnemyStats, type SpawnOptions } from './Enemy';
-import { EnemyType } from './Enemy';
-import { SkeletonEnemy } from './SkeletonEnemy';
+import { Enemy, type EnemyStats, type SpawnOptions, EnemyType, SKELETON_MINION_STATS } from './Enemy';
 
 /**
  * Configuración para un tipo de enemigo en el pool
@@ -103,12 +101,17 @@ export class EnemyPool {
 
     switch (type) {
       case EnemyType.SkeletonMinion:
-        return new SkeletonEnemy(
+        return new Enemy(
           enemyId,
-          stats,
           this.eventBus,
           this.sceneManager,
-          this.physicsWorld
+          this.physicsWorld,
+          undefined, // Sin body handle (se creará automáticamente)
+          0xff0000,  // Color rojo por defecto
+          1.0,       // Tamaño estándar
+          stats.knockbackResistance,
+          type,
+          stats
         );
       // Futuros tipos de enemigos pueden agregarse aquí
       default:
@@ -217,9 +220,10 @@ export class EnemyPool {
   update(dt: number, players: any[], world?: any): void {
     for (const [type, enemies] of this.inUse) {
       for (const enemy of enemies) {
-        if (enemy.getEnemyState() === 'active' || enemy.getEnemyState() === 'spawning') {
+        // Incluir 'dying' para que la animación de muerte y partículas avancen
+        if (enemy.getEnemyState() === 'active' || enemy.getEnemyState() === 'spawning' || enemy.getEnemyState() === 'dying') {
           enemy.update(dt);
-          enemy.updateAI(dt, players, world);
+          enemy.updateAI(dt, players);
         }
       }
     }
