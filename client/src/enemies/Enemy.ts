@@ -480,7 +480,7 @@ export class Enemy extends Character {
   /**
    * IA básica: perseguir al jugador más cercano
    */
-  updateAI(dt: number, players: any[]): void {
+  updateAI(dt: number, players: any[], world?: any): void {
     if (!this.model || players.length === 0) return;
     if (this.enemyState !== EnemyState.Active) return;
 
@@ -538,6 +538,11 @@ export class Enemy extends Character {
     // Actualizar animaciones — dt ya está en segundos (ej: 0.016)
     if (this.mixer) {
       this.mixer.update(dt);
+    }
+
+    // Actualizar partículas de impacto (se autodestruyen solas)
+    if (this.hitParticles.length > 0) {
+      this.updateHitParticles();
     }
 
     // Manejar lógica de spawn
@@ -601,6 +606,11 @@ export class Enemy extends Character {
     // Efecto visual de hit flash
     this.startHitFlash();
 
+    // Partículas de impacto (donde sea que pegue el proyectil)
+    if (this.model) {
+      this.spawnHitParticles(this.model.position);
+    }
+
     // Mostrar barra de HP
     this.showHpBar();
 
@@ -623,6 +633,98 @@ export class Enemy extends Character {
 
       this.die();
     }
+  }
+
+  // =================================================================
+  // PARTÍCULAS DE IMPACTO (proyectil)
+  // =================================================================
+
+  private hitParticles: THREE.Mesh[] = [];
+
+  /**
+   * Crea pequeñas partículas en el punto de impacto (proyectil ADC, melee, etc.)
+   * Se autodestruyen después de ~300ms
+   */
+  private spawnHitParticles(position: THREE.Vector3): void {
+    if (!this.sceneManager) return;
+
+    const count = 5;
+    const colors = [0xffff44, 0xffaa00, 0xffffff, 0xff6600, 0xffcc00];
+
+    for (let i = 0; i < count; i++) {
+      const size = 0.12 + Math.random() * 0.15;
+      const geometry = new THREE.BoxGeometry(size, size, size);
+      const material = new THREE.MeshBasicMaterial({
+        color: colors[i % colors.length],
+        transparent: true,
+        opacity: 1,
+      });
+      const particle = new THREE.Mesh(geometry, material);
+
+      particle.position.set(
+        position.x + (Math.random() - 0.5) * 0.6,
+        position.y + 0.5 + (Math.random() - 0.5) * 0.6,
+        position.z + (Math.random() - 0.5) * 0.6
+      );
+
+      particle.userData = {
+        velocityY: 2.0 + Math.random() * 2.5,
+        velocityX: (Math.random() - 0.5) * 2.0,
+        velocityZ: (Math.random() - 0.5) * 2.0,
+        birth: Date.now(),
+        lifespan: 400,
+      };
+
+      this.sceneManager.add(particle);
+      this.hitParticles.push(particle);
+    }
+  }
+
+  /**
+   * Actualiza las partículas de impacto (animación + cleanup automático)
+   */
+  private updateHitParticles(): void {
+    const now = Date.now();
+    for (let i = this.hitParticles.length - 1; i >= 0; i--) {
+      const particle = this.hitParticles[i];
+      const data = particle.userData;
+      const age = now - data.birth;
+      const progress = age / data.lifespan;
+
+      if (progress >= 1) {
+        // Eliminar partícula expirada
+        this.sceneManager.remove(particle);
+        particle.geometry.dispose();
+        (particle.material as THREE.Material).dispose();
+        this.hitParticles.splice(i, 1);
+        continue;
+      }
+
+      // Mover hacia arriba con velocidad
+      particle.position.y += data.velocityY * 0.016;
+      particle.position.x += data.velocityX * 0.016;
+      particle.position.z += data.velocityZ * 0.016;
+
+      // Desvanecer
+      const material = particle.material as THREE.MeshBasicMaterial;
+      material.opacity = 1 - progress;
+
+      // Rotar
+      particle.rotation.x += 0.2;
+      particle.rotation.y += 0.3;
+    }
+  }
+
+  /**
+   * Limpia todas las partículas de impacto (al liberar al pool)
+   */
+  private cleanupHitParticles(): void {
+    this.hitParticles.forEach(particle => {
+      this.sceneManager.remove(particle);
+      particle.geometry.dispose();
+      (particle.material as THREE.Material).dispose();
+    });
+    this.hitParticles = [];
   }
 
   // =================================================================
@@ -1009,6 +1111,11 @@ export class Enemy extends Character {
       this.model.scale.set(0.0001, 0.0001, 0.0001);
     }
 
+    // Recrear cuerpo físico si fue destruido en release()
+    if (!this.physicsBody && this.physicsWorld && this.model) {
+      this.createPhysicsBody();
+    }
+
     // Establecer posición física
     if (this.physicsBody && this.physicsWorld) {
       const body = this.physicsWorld.getBody(this.physicsBody);
@@ -1040,17 +1147,20 @@ export class Enemy extends Character {
     // Limpiar partículas de muerte
     this.cleanupDeathParticles();
 
+    // Limpiar partículas de impacto
+    if (this.hitParticles.length > 0) {
+      this.cleanupHitParticles();
+    }
+
     // Ocultar modelo
     if (this.model) {
       this.model.visible = false;
     }
 
-    // Desactivar cuerpo físico
+    // Destruir cuerpo físico (no acumular bodies desactivados en el mundo Rapier)
     if (this.physicsBody && this.physicsWorld) {
-      const body = this.physicsWorld.getBody(this.physicsBody);
-      if (body) {
-        body.setEnabled(false);
-      }
+      this.physicsWorld.removeBody(this.physicsBody);
+      this.physicsBody = undefined;
     }
 
     this.enemyState = EnemyState.Dead;

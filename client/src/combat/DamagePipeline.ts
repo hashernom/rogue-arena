@@ -1,12 +1,17 @@
 import * as THREE from 'three';
 import { EventBus } from '../engine/EventBus';
 import { Character } from '../characters/Character';
+import { DamageNumberSystem } from './DamageNumber';
 
-// Interfaz mínima para enemigos
+// Interfaz mínima para entidades que pueden recibir daño
 interface Damageable {
   id: string;
   takeDamage(amount: number): void;
   isAlive?(): boolean;
+  /** Recompensa en monedas al morir (para enemigos) */
+  reward?: number;
+  /** Tipo de entidad (para calcular reward dinámico) */
+  type?: string;
 }
 
 export interface DamageOptions {
@@ -42,9 +47,41 @@ export interface DamageResult {
 /**
  * Pipeline centralizado de cálculo de daño.
  * Aplica fórmulas de reducción por armadura, críticos y emite eventos.
+ * Es la ÚNICA forma de aplicar daño en el juego.
  */
 export class DamagePipeline {
+  private damageNumberSystem: DamageNumberSystem | null = null;
+
   constructor(private readonly eventBus: EventBus) {}
+
+  /**
+   * Establece el sistema de números de daño flotantes.
+   * Debe llamarse después de crear la escena.
+   */
+  setDamageNumberSystem(system: DamageNumberSystem): void {
+    this.damageNumberSystem = system;
+  }
+
+  /**
+   * Calcula la recompensa según el tipo de enemigo.
+   */
+  private static getRewardForType(type?: string): number {
+    switch (type) {
+      case 'basic':
+      case 'skeleton_minion':
+        return 3;
+      case 'fast':
+        return 2;
+      case 'tank':
+        return 8;
+      case 'ranged':
+        return 4;
+      case 'boss':
+        return 20;
+      default:
+        return 10; // Valor base por defecto
+    }
+  }
 
   /**
    * Aplica daño a un objetivo (jugador o enemigo).
@@ -132,22 +169,21 @@ export class DamagePipeline {
       this.eventBus.emit('player:damaged', {
         playerId: target.id,
         amount: damage,
-        // Nota: el evento player:damaged no tiene campo isCritical, lo omitimos
       });
     } else {
-      // Daño a enemigo
+      // Daño a enemigo — incluir isCritical
       this.eventBus.emit('enemy:damage', {
         enemyId: target.id,
         damage,
         attackerId,
         position: { x: position.x, y: position.y, z: position.z },
-        // Nota: el evento enemy:damage no tiene campo isCritical, lo omitimos
+        isCritical: isCrit,
       });
     }
   }
 
   /**
-   * Emite evento de muerte.
+   * Emite evento de muerte con reward calculado según tipo de enemigo.
    */
   private emitDeathEvent(
     target: Damageable,
@@ -157,20 +193,18 @@ export class DamagePipeline {
     if (target instanceof Character) {
       this.eventBus.emit('player:died', { playerId: target.id });
     } else {
-      // Calcular recompensa según tipo de enemigo
-      const reward = 10; // Valor base, podría variar según enemigo
+      // Usar reward del target si está definido, si no calcular por tipo
+      const reward = target.reward ?? DamagePipeline.getRewardForType(target.type);
       this.eventBus.emit('enemy:died', {
         enemyId: target.id,
         position: { x: position.x, y: position.y, z: position.z },
         reward,
-        // Nota: el evento enemy:died no tiene campo killerId, lo omitimos
       });
     }
   }
 
   /**
-   * Crea un número de daño flotante en la pantalla.
-   * (Esta es una implementación básica; se mejorará con DamageNumber.ts)
+   * Crea un número de daño flotante 3D usando DamageNumberSystem.
    */
   private showDamageNumber(
     damage: number,
@@ -179,17 +213,20 @@ export class DamagePipeline {
     targetType: 'player' | 'enemy'
   ): void {
     // Colores según tipo y crítico
-    let color = 0xffffff; // blanco por defecto
+    let color = 0xffffff; // blanco por defecto (daño a enemigo)
     if (targetType === 'player') {
       color = 0xff5555; // rojo para daño a jugador
     } else if (isCrit) {
-      color = 0xffff00; // amarillo para críticos
+      color = 0xff2200; // rojo fuerte para críticos
     }
 
-    console.log(`[DamagePipeline] ${damage.toFixed(1)} ${isCrit ? 'CRIT!' : ''} at ${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}`);
-
-    // TODO: Integrar con DamageNumber.ts para mostrar texto 3D
-    // Por ahora solo logueamos
+    // Usar DamageNumberSystem si está disponible
+    if (this.damageNumberSystem) {
+      this.damageNumberSystem.createDamageNumber(damage, position, {
+        color,
+        isCrit,
+      });
+    }
   }
 
   /**

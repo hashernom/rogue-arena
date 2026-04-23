@@ -89,6 +89,14 @@ export class MeleeAttack {
   }
 
   /**
+   * Establece un pipeline de daño compartido (en lugar de crear uno interno).
+   * Útil para compartir el mismo DamageNumberSystem entre múltiples sistemas.
+   */
+  setDamagePipeline(pipeline: DamagePipeline): void {
+    this.damagePipeline = pipeline;
+  }
+
+  /**
    * Intenta ejecutar un ataque melee si no está en cooldown.
    * @returns true si el ataque se ejecutó, false si está en cooldown
    */

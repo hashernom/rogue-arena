@@ -3,6 +3,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
 import { Groups, Masks } from '../physics/CollisionGroups';
 import { EventBus } from '../engine/EventBus';
+import { DamagePipeline } from './DamagePipeline';
 
 export interface ProjectileConfig {
   /** Velocidad inicial (m/s) */
@@ -35,6 +36,9 @@ export class Projectile {
   // Para detección de colisiones
   private lastCollisionCheck: number = 0;
   private readonly collisionCheckInterval: number = 0.1; // segundos
+
+  /** Pipeline centralizado de daño (opcional) */
+  private damagePipeline: DamagePipeline | null = null;
 
   constructor(
     private readonly physicsWorld: PhysicsWorld,
@@ -109,6 +113,13 @@ export class Projectile {
 
     // Aplicar velocidad inicial
     this.setVelocity(config.velocity);
+  }
+
+  /**
+   * Establece el pipeline centralizado de daño.
+   */
+  setDamagePipeline(pipeline: DamagePipeline): void {
+    this.damagePipeline = pipeline;
   }
 
   /**
@@ -196,13 +207,30 @@ export class Projectile {
     // Obtener posición actual del proyectil
     const position = this.getPosition();
 
-    // Emitir evento de daño al enemigo
-    this.eventBus.emit('enemy:damage', {
-      enemyId: enemyData.id,
-      damage: this.config.damage,
-      attackerId: this.config.ownerId,
-      position: { x: position.x, y: position.y, z: position.z },
-    });
+    // Usar el pipeline centralizado si está disponible
+    if (this.damagePipeline && enemyData.entity) {
+      this.damagePipeline.applyDamage(
+        { id: this.config.ownerId },
+        enemyData.entity,
+        this.config.damage,
+        {
+          position,
+          source: 'projectile',
+          attackerId: this.config.ownerId,
+          canCrit: true,
+          critChance: 0.1,
+          critMultiplier: 1.5,
+        }
+      );
+    } else {
+      // Fallback: emitir evento de daño directamente
+      this.eventBus.emit('enemy:damage', {
+        enemyId: enemyData.id,
+        damage: this.config.damage,
+        attackerId: this.config.ownerId,
+        position: { x: position.x, y: position.y, z: position.z },
+      });
+    }
 
     console.log(`[Projectile] Aplicando daño ${this.config.damage} a enemigo ${enemyData.id}`);
 

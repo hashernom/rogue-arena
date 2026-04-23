@@ -13,6 +13,7 @@ import { PiercePassive } from './abilities/PiercePassive';
 import { SalvoAbility } from './abilities/SalvoAbility';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Groups } from '../physics/CollisionGroups';
+import { DamagePipeline } from '../combat/DamagePipeline';
 
 /**
  * ADC (Attack Damage Carry) - Personaje de daño a distancia.
@@ -59,6 +60,9 @@ export class AdcCharacter extends Character {
 
   /** Habilidad activa Salva */
   private salvoAbility: SalvoAbility | null = null;
+
+  /** Pipeline centralizado de daño */
+  private damagePipeline: DamagePipeline | null = null;
 
   /** Stats base del ADC según M4-03 */
   static readonly BASE_STATS: CharacterStats = {
@@ -721,11 +725,34 @@ export class AdcCharacter extends Character {
     // 2. ORDENAR MATEMÁTICAMENTE: Del más cercano (menor toi) al más lejano (mayor toi)
     hits.sort((a, b) => a.toi - b.toi);
 
-    // 3. APLICAR DAÑO Y LÓGICA DE PIERCING
+    // 3. APLICAR DAÑO Y LÓGICA DE PIERCING (usando DamagePipeline)
     const enemiesHit = new Set<number>();
     for (const hit of hits) {
       if (!enemiesHit.has(hit.id)) {
-        hit.entity.takeDamage(damage);
+        // Usar el pipeline centralizado si está disponible
+        if (this.damagePipeline) {
+          const hitPos = new THREE.Vector3(
+            origin.x + direction.x * hit.toi,
+            origin.y + direction.y * hit.toi,
+            origin.z + direction.z * hit.toi
+          );
+          this.damagePipeline.applyDamage(
+            { id: this.id },
+            hit.entity,
+            damage,
+            {
+              position: hitPos,
+              source: 'ranged',
+              attackerId: this.id,
+              canCrit: true,
+              critChance: 0.1,
+              critMultiplier: 1.5,
+            }
+          );
+        } else {
+          // Fallback: aplicar daño directamente (sin pipeline)
+          hit.entity.takeDamage(damage);
+        }
         enemiesHit.add(hit.id);
         console.log(`🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`);
 
@@ -948,6 +975,14 @@ export class AdcCharacter extends Character {
     // Remover proyectiles
     this.activeProjectiles.forEach(proj => this.sceneManager.remove(proj));
     this.activeProjectiles = [];
+  }
+
+  /**
+   * Establece el pipeline centralizado de daño.
+   * Todas las fuentes de daño (proyectiles, rayos) usarán este pipeline.
+   */
+  setDamagePipeline(pipeline: DamagePipeline): void {
+    this.damagePipeline = pipeline;
   }
 
   /**

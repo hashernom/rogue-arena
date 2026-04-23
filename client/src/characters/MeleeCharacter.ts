@@ -12,6 +12,7 @@ import { AnimationController } from './AnimationController';
 import { FuryPassive } from './abilities/FuryPassive';
 import { ChargeAbility } from './abilities/ChargeAbility';
 import { MeleeAttack } from '../combat/MeleeAttack';
+import { DamagePipeline } from '../combat/DamagePipeline';
 
 /**
  * Caballero melee, primer personaje jugable.
@@ -843,6 +844,16 @@ export class MeleeCharacter extends Character {
   /**
    * Incrementa el contador de kills y activa la furia al llegar a 3.
    */
+  /**
+   * Establece un pipeline de daño compartido.
+   * Reemplaza el pipeline interno de MeleeAttack si ya fue creado.
+   */
+  setDamagePipeline(pipeline: DamagePipeline): void {
+    if (this.meleeAttack) {
+      this.meleeAttack.setDamagePipeline(pipeline);
+    }
+  }
+
   incrementKillCount(): void {
     this.killCount++;
 

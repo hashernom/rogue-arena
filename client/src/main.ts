@@ -12,6 +12,8 @@ import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
 import { EnemyPool } from './enemies/EnemyPool';
 import { Enemy, EnemyType, SKELETON_MINION_STATS } from './enemies/Enemy';
+import { DamagePipeline } from './combat/DamagePipeline';
+import { DamageNumberSystem } from './combat/DamageNumber';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -64,6 +66,10 @@ let adcCharacter: AdcCharacter | null = null;
 let enemyPool: EnemyPool | null = null;
 // Enemigos de prueba (fila para testing de piercing)
 let testEnemies: Enemy[] = [];
+// Pipeline centralizado de daño (compartido entre todos los sistemas)
+let damagePipeline: DamagePipeline | null = null;
+// Sistema de números de daño flotantes
+let damageNumberSystem: DamageNumberSystem | null = null;
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -149,6 +155,22 @@ async function initGameWithPhysics(): Promise<void> {
 
       console.log('📦 Cuerpos físicos creados y sincronizados (damping aplicado)');
 
+      // Inicializar pipeline centralizado de daño y sistema de números flotantes
+      damagePipeline = new DamagePipeline(eventBus);
+      const scene = sceneManager.getScene();
+      damageNumberSystem = new DamageNumberSystem(scene);
+      damagePipeline.setDamageNumberSystem(damageNumberSystem);
+      console.log('💥 DamagePipeline y DamageNumberSystem inicializados');
+
+      // Compartir el pipeline con todos los sistemas de combate
+      if (meleeCharacter) {
+        meleeCharacter.setDamagePipeline(damagePipeline);
+      }
+      if (adcCharacter) {
+        adcCharacter.setDamagePipeline(damagePipeline);
+      }
+      console.log('🔗 DamagePipeline compartido con MeleeCharacter y AdcCharacter');
+
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
       enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
       
@@ -230,6 +252,11 @@ async function initGameWithPhysics(): Promise<void> {
       enemy.update(dt);
       enemy.updateAI(dt, players);
     });
+
+    // Actualizar números de daño flotantes
+    if (damageNumberSystem) {
+      damageNumberSystem.update(dt);
+    }
 
     // Rotación básica (solo para visualización) - mantener independiente de física
     // cubeP2 ya no existe, se eliminó

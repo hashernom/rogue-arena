@@ -11,6 +11,8 @@ export interface DamageNumberOptions {
   riseSpeed?: number;
   /** Desviación horizontal aleatoria */
   horizontalDrift?: number;
+  /** Indica si es un golpe crítico (cambia display) */
+  isCrit?: boolean;
 }
 
 /**
@@ -37,7 +39,11 @@ export class DamageNumber {
       duration = 0.8,
       riseSpeed = 2,
       horizontalDrift = 0.5,
+      isCrit = false,
     } = options;
+
+    // Si es crítico, usar fuente más grande
+    const effectiveFontSize = isCrit ? 45 : fontSize;
 
     this.duration = duration;
     this.riseSpeed = riseSpeed;
@@ -55,9 +61,9 @@ export class DamageNumber {
     // Configurar canvas
     const padding = 10;
     const text = Math.round(damage).toString();
-    context.font = `bold ${fontSize}px Arial`;
+    context.font = `bold ${effectiveFontSize}px Arial`;
     const textWidth = context.measureText(text).width;
-    const textHeight = fontSize;
+    const textHeight = effectiveFontSize;
 
     canvas.width = textWidth + padding * 2;
     canvas.height = textHeight + padding * 2;
@@ -67,7 +73,7 @@ export class DamageNumber {
 
     // Dibujar texto
     context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
-    context.font = `bold ${fontSize}px Arial`;
+    context.font = `bold ${effectiveFontSize}px Arial`;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillText(text, canvas.width / 2, canvas.height / 2);
@@ -89,7 +95,10 @@ export class DamageNumber {
     this.sprite.position.copy(position);
     
     // Escalar sprite según tamaño del texto
-    const scale = 0.01; // Ajuste para que el texto sea legible en unidades 3D
+    // Los críticos son 1.5x más grandes visualmente
+    const baseScale = 0.01;
+    const scaleMultiplier = isCrit ? 1.2 : 1.0;
+    const scale = baseScale * scaleMultiplier;
     this.sprite.scale.set(canvas.width * scale, canvas.height * scale, 1);
 
     // Dirección de deriva aleatoria
