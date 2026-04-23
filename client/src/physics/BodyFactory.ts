@@ -45,7 +45,8 @@ export class BodyFactory {
       collider: colliderDesc,
       lockRotations: true,
       gravityScale: 0,
-      linearDamping: 5.0, // ← ahora SÍ llega al cuerpo real
+      linearDamping: 5.0,
+      ccdEnabled: true, // CCD para evitar que el player atraviese enemigos
       collisionGroup: group,
       collisionMask: mask,
     });
@@ -53,7 +54,12 @@ export class BodyFactory {
 
   /**
    * Crea un cuerpo para un enemigo.
-   * Similar al character body pero con cápsula más pequeña según el tipo.
+   * - RigidBody tipo Dynamic con masa extremadamente alta (10000)
+   * - Los cuerpos cinemáticos NO colisionan entre sí en Rapier3D,
+   *   por lo que los enemigos DEBEN ser dinámicos para colisionar con el player (también cinemático).
+   * - La masa alta evita que el enemigo sea empujado por el jugador.
+   * - El movimiento se controla con setLinvel() tanto para AI como para knockback.
+   * - Collider: Cápsula según tipo de enemigo
    *
    * @param world Instancia de PhysicsWorld
    * @param pos Posición inicial
@@ -86,12 +92,13 @@ export class BodyFactory {
         break;
     }
 
-    const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
-    bodyDesc.setTranslation(pos.x, pos.y, pos.z);
-    bodyDesc.lockRotations();
-    bodyDesc.setGravityScale(0);
+    // Usar Dynamic con masa extremadamente alta para que:
+    // 1. Colisione con el player (cinemático) - los cinemáticos NO colisionan entre sí
+    // 2. No sea empujado por el player (masa 10000 vs masa por defecto del player)
+    // 3. setLinvel() funcione para AI y knockback
 
     const colliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius);
+    colliderDesc.setFriction(10.0); // Alta fricción para sensación de peso sólido
     const groups = makeCollisionGroups(Groups.ENEMY, Masks.ENEMY);
     colliderDesc.setCollisionGroups(groups);
 
@@ -101,17 +108,21 @@ export class BodyFactory {
       ...(entity ? { entity } : {})
     };
 
-    return world.createBody({
-      type: 'kinematic',
+    const bodyHandle = world.createBody({
+      type: 'dynamic',
       position: pos,
       collider: colliderDesc,
       lockRotations: true,
       gravityScale: 0,
-      ccdEnabled: true, // Habilitar CCD para prevenir que atraviesen muros con knockback
+      linearDamping: 10.0, // Alto damping para que el momentum de colisión se disipe instantáneamente
+      ccdEnabled: true,
+      additionalMass: 10000, // Masa extremadamente alta para evitar ser empujado
       collisionGroup: Groups.ENEMY,
       collisionMask: Masks.ENEMY,
       userData: Object.keys(userData).length > 0 ? userData : undefined,
     });
+
+    return bodyHandle;
   }
 
   /**

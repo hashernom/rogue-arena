@@ -483,6 +483,9 @@ export class Enemy extends Character {
   updateAI(dt: number, players: any[], world?: any): void {
     if (!this.model || players.length === 0) return;
     if (this.enemyState !== EnemyState.Active) return;
+    
+    // No moverse si el steering está deshabilitado (ej: durante knockback)
+    if (!this.steeringEnabled) return;
 
     const nearestPlayer = players[0];
     if (!nearestPlayer || !nearestPlayer.getPosition) return;
@@ -497,30 +500,30 @@ export class Enemy extends Character {
       .subVectors(playerPos, enemyPos)
       .normalize();
 
-    // Mover en dirección al jugador (solo en plano XZ)
-    const moveSpeed = this.getEffectiveStat('speed') * dt;
-    const moveVector = direction.multiplyScalar(moveSpeed);
-    moveVector.y = 0;
-
-    // Actualizar posición del modelo
-    this.model.position.add(moveVector);
-
     // Rotar hacia el jugador
     if (direction.lengthSq() > 0.001) {
       const targetAngle = Math.atan2(direction.x, direction.z);
       this.model.rotation.y = THREE.MathUtils.lerp(this.model.rotation.y, targetAngle, 0.1);
     }
 
-    // Sincronizar cuerpo físico
+    // Mover usando setLinvel (compatible con dynamic)
+    // Los cuerpos dinámicos con masa alta ignoran fuerzas externas (no son empujados
+    // por colisiones), y setLinvel() funciona para controlar su movimiento.
+    const moveSpeed = this.getEffectiveStat('speed');
     if (this.physicsBody && this.physicsWorld) {
       const body = this.physicsWorld.getBody(this.physicsBody);
       if (body) {
-        body.setTranslation(this.model.position, true);
+        const currentVel = body.linvel();
+        body.setLinvel({
+          x: direction.x * moveSpeed,
+          y: currentVel.y,
+          z: direction.z * moveSpeed
+        }, true);
       }
     }
 
     // Cambiar animación según estado
-    if (moveVector.lengthSq() > 0.001) {
+    if (direction.lengthSq() > 0.001) {
       this.playAnimation('Walk');
     } else {
       this.playAnimation('Idle');

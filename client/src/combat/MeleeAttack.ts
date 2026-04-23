@@ -413,11 +413,12 @@ export class MeleeAttack {
         // Obtener resistencia al knockback del enemigo (por defecto 0)
         const knockbackResistance = (enemyEntity as any).knockbackResistance ?? 0;
         // Configuración de knockback (usar preset MEDIUM)
+        // baseStrength: unidades/segundo de velocidad de knockback
         const knockbackConfig = {
-          baseStrength: 12,
-          duration: 0.4,
+          baseStrength: 2.5,
+          duration: 0.25,
           scaleWithDamage: true,
-          damageScaleFactor: 0.05
+          damageScaleFactor: 0.015
         };
         // Aplicar knockback
         this.knockbackSystem.applyKnockback(
@@ -530,6 +531,11 @@ export class MeleeAttack {
     // Actualizar cooldown
     if (this.cooldownTimer > 0) {
       this.cooldownTimer = Math.max(0, this.cooldownTimer - dt);
+    }
+    
+    // Actualizar estados de knockback (debe llamarse cada frame)
+    if (this.knockbackSystem) {
+      this.knockbackSystem.update(dt);
     }
     
     // Actualizar debug mesh si está activo

@@ -6,7 +6,7 @@ import type { Character } from '../characters/Character';
  * Configuración del knockback.
  */
 export interface KnockbackConfig {
-  /** Fuerza base del knockback (unidades de impulso) */
+  /** Fuerza base del knockback (unidades/segundo de velocidad) */
   baseStrength: number;
   /** Duración del knockback en segundos */
   duration: number;
@@ -18,12 +18,17 @@ export interface KnockbackConfig {
 
 /**
  * Estado de knockback activo en un personaje.
+ * Almacena la velocidad de knockback que se aplica cada frame via setLinvel().
  */
 export interface KnockbackState {
-  /** Fuerza aplicada (vector dirección * magnitud) */
-  force: THREE.Vector3;
-  /** Tiempo restante en segundos */
-  remainingTime: number;
+  /** Handle del cuerpo Rapier */
+  bodyHandle: any;
+  /** Velocidad de knockback a aplicar cada frame (unidades/segundo) */
+  velocity: THREE.Vector3;
+  /** Duración total del knockback en segundos */
+  duration: number;
+  /** Tiempo transcurrido desde que comenzó el knockback */
+  elapsedTime: number;
   /** Si el knockback está activo */
   active: boolean;
   /** Callback para restaurar el steering */
@@ -31,8 +36,16 @@ export interface KnockbackState {
 }
 
 /**
- * Sistema de knockback que aplica impulso cinemático a los enemigos.
- * Maneja el estado de knockback y deshabilita el steering temporalmente.
+ * Sistema de knockback para cuerpos dinámicos con masa alta.
+ *
+ * Los cuerpos dinámicos con masa alta (10000) ignoran fuerzas externas
+ * como colisiones con el player, pero setLinvel() funciona para controlar
+ * su movimiento. Esto permite colisiones confiables player-enemy.
+ *
+ * Esto permite:
+ * - Enemigos que NO son empujados por personajes al colisionar
+ * - Enemigos que SÍ reciben knockback vía setLinvel()
+ * - Colisiones entre personajes y enemigos funcionan correctamente
  */
 export class KnockbackSystem {
   private physicsWorld: PhysicsWorld | null = null;
@@ -46,7 +59,10 @@ export class KnockbackSystem {
   }
 
   /**
-   * Aplica knockback a un personaje.
+   * Aplica knockback a un personaje (enemigo).
+   * Calcula la velocidad de knockback y la almacena en el estado.
+   * La velocidad se aplica cada frame en update() via setLinvel().
+   *
    * @param character El personaje (enemigo) a afectar
    * @param attackerPos Posición del atacante
    * @param config Configuración del knockback
@@ -77,11 +93,11 @@ export class KnockbackSystem {
       return;
     }
 
-    // Calcular dirección del knockback (desde atacante hacia enemigo)
-    const enemyPos = new THREE.Vector3();
+    // Obtener posición actual del cuerpo
     const translation = body.translation();
-    enemyPos.set(translation.x, translation.y, translation.z);
-    
+    const enemyPos = new THREE.Vector3(translation.x, translation.y, translation.z);
+
+    // Calcular dirección del knockback (desde atacante hacia enemigo)
     const dir = enemyPos.clone().sub(attackerPos).normalize();
     if (dir.lengthSq() < 0.001) {
       dir.set(1, 0, 0); // fallback
@@ -100,21 +116,24 @@ export class KnockbackSystem {
       return;
     }
 
-    const force = dir.multiplyScalar(effectiveStrength);
+    // Calcular velocidad de knockback = dirección * fuerza (unidades/segundo)
+    const velocity = dir.clone().multiplyScalar(effectiveStrength);
 
-    // Aplicar impulso al cuerpo Rapier
-    // Rapier usa applyImpulse para aplicar un impulso lineal instantáneo
-    body.applyImpulse({ x: force.x, y: force.y, z: force.z }, true);
-
-    console.log(`[Knockback] Aplicado knockback a ${character.id}: fuerza=(${force.x.toFixed(2)}, ${force.y.toFixed(2)}, ${force.z.toFixed(2)}), resistencia=${knockbackResistance}`);
+    console.log(
+      `[Knockback] Aplicado knockback a ${character.id}: ` +
+      `velocidad=(${velocity.x.toFixed(2)}, ${velocity.y.toFixed(2)}, ${velocity.z.toFixed(2)}), ` +
+      `resistencia=${knockbackResistance}, duración=${config.duration}s`
+    );
 
     // Registrar estado de knockback
     const state: KnockbackState = {
-      force: force.clone(),
-      remainingTime: config.duration,
+      bodyHandle: bodyHandle,
+      velocity: velocity.clone(),
+      duration: config.duration,
+      elapsedTime: 0,
       active: true,
       onFinish: () => {
-        // Restaurar steering (debe ser implementado por el enemigo)
+        // Restaurar steering
         if ((character as any).enableSteering) {
           (character as any).enableSteering();
         }
@@ -128,27 +147,51 @@ export class KnockbackSystem {
       (character as any).disableSteering();
     }
 
-    // Emitir evento de knockback (opcional)
+    // Emitir evento de knockback
     if ((character as any).eventBus) {
       (character as any).eventBus.emit('enemy:knockback', {
         enemyId: character.id,
-        force: { x: force.x, y: force.y, z: force.z },
+        force: { x: velocity.x, y: velocity.y, z: velocity.z },
         duration: config.duration
       });
     }
   }
 
   /**
-   * Actualiza los estados de knockback (debe llamarse cada frame).
+   * Actualiza los estados de knockback cada frame.
+   * Aplica setLinvel() para mover el cuerpo dinámico.
+   *
    * @param deltaTime Tiempo transcurrido en segundos
    */
   update(deltaTime: number): void {
+    if (!this.physicsWorld) return;
+
     for (const [id, state] of this.knockbackStates) {
       if (!state.active) continue;
 
-      state.remainingTime -= deltaTime;
-      if (state.remainingTime <= 0) {
+      // Avanzar tiempo
+      state.elapsedTime += deltaTime;
+
+      // Aplicar velocidad de knockback via setLinvel
+      const body = this.physicsWorld.getBody(state.bodyHandle);
+      if (body) {
+        body.setLinvel({
+          x: state.velocity.x,
+          y: 0,
+          z: state.velocity.z
+        }, true);
+      }
+
+      // Si se completó la duración, finalizar
+      if (state.elapsedTime >= state.duration) {
         state.active = false;
+
+        // Restaurar velocidad a 0 para que el enemigo no siga deslizándose
+        const finishBody = this.physicsWorld.getBody(state.bodyHandle);
+        if (finishBody) {
+          finishBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        }
+
         if (state.onFinish) {
           state.onFinish();
         }
@@ -171,6 +214,15 @@ export class KnockbackSystem {
     const state = this.knockbackStates.get(characterId);
     if (state) {
       state.active = false;
+
+      // Restaurar velocidad a 0
+      if (this.physicsWorld) {
+        const body = this.physicsWorld.getBody(state.bodyHandle);
+        if (body) {
+          body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        }
+      }
+
       if (state.onFinish) {
         state.onFinish();
       }
@@ -212,11 +264,4 @@ export const KnockbackPresets = {
     scaleWithDamage: true,
     damageScaleFactor: 0.1
   } as KnockbackConfig,
-  /** Sin knockback (para tanques) */
-  NONE: {
-    baseStrength: 0,
-    duration: 0,
-    scaleWithDamage: false,
-    damageScaleFactor: 0
-  } as KnockbackConfig
 };

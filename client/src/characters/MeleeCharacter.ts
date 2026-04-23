@@ -687,10 +687,6 @@ export class MeleeCharacter extends Character {
       // Convertir input a dirección isométrica
       this.moveDirection = this.inputToIsometric(inputState.moveDir);
 
-      // Calcular desplazamiento
-      const speed = this.getEffectiveStat('speed');
-      const displacement = this.moveDirection.clone().multiplyScalar(speed * dt);
-
       // Aplicar movimiento al cuerpo físico si existe
       if (this.physicsBody && this.physicsWorld) {
         this.moveBody(inputState);

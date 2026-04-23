@@ -19,7 +19,12 @@ export interface BodyOptions {
   lockRotations?: boolean; // Para personajes top-down
   lockTranslations?: boolean;
   gravityScale?: number;
-  linearDamping?: number; // ← AGREGAR ESTO
+  linearDamping?: number;
+  /**
+   * Masa adicional para cuerpos dinámicos.
+   * Útil para crear cuerpos muy pesados que no sean empujados fácilmente.
+   */
+  additionalMass?: number;
   /**
    * Habilita Continuous Collision Detection para cuerpos que se mueven a alta velocidad.
    * Útil para proyectiles.
@@ -113,6 +118,10 @@ export class PhysicsWorld {
         bodyDesc = RAPIER.RigidBodyDesc.fixed();
         break;
       case 'kinematic':
+        // kinematicVelocityBased: el cuerpo se mueve via setLinvel().
+        // Los cuerpos cinemáticos NO colisionan entre sí en Rapier,
+        // por lo que player y enemies NO pueden ser ambos cinemáticos.
+        // Los enemies se crean como dynamic con masa alta para colisionar.
         bodyDesc = RAPIER.RigidBodyDesc.kinematicVelocityBased();
         break;
       default:
@@ -144,6 +153,11 @@ export class PhysicsWorld {
     // Damping lineal (para freno suave)
     if (options.linearDamping !== undefined) {
       bodyDesc.setLinearDamping(options.linearDamping);
+    }
+
+    // Masa adicional para cuerpos dinámicos pesados
+    if (options.additionalMass !== undefined) {
+      bodyDesc.setAdditionalMass(options.additionalMass);
     }
 
     // Continuous Collision Detection (para proyectiles de alta velocidad)

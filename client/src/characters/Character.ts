@@ -283,10 +283,11 @@ export abstract class Character {
 
   /**
    * Aplica knockback al personaje.
+   * NOTA: El steering se restaura automáticamente vía KnockbackSystem.update().
    * @param force Vector de fuerza (dirección * magnitud)
-   * @param duration Duración en segundos
+   * @param duration Duración en segundos (no usado internamente, lo gestiona KnockbackSystem)
    */
-  applyKnockback(force: THREE.Vector3, duration: number): void {
+  applyKnockback(force: THREE.Vector3, _duration: number): void {
     // Implementación básica: aplicar impulso al cuerpo físico
     if (this.physicsBody && this.physicsWorld) {
       const body = this.physicsWorld.getBody(this.physicsBody);
@@ -294,12 +295,8 @@ export abstract class Character {
         body.applyImpulse({ x: force.x, y: force.y, z: force.z }, true);
       }
     }
-    // Deshabilitar steering durante la duración
+    // Deshabilitar steering (KnockbackSystem lo restaurará vía onFinish)
     this.disableSteering();
-    // Restaurar steering después de la duración
-    setTimeout(() => {
-      this.enableSteering();
-    }, duration * 1000);
   }
 
   /**
