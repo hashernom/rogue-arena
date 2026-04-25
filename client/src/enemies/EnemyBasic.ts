@@ -6,6 +6,16 @@ import type { EventBus } from '../engine/EventBus';
 import type { SceneManager } from '../engine/SceneManager';
 import type { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
 import { BodyFactory } from '../physics/BodyFactory';
+import {
+  seek,
+  separation,
+  combineForces,
+  applyAcceleration,
+  DEFAULT_MELEE_WEIGHTS,
+  DEFAULT_SEPARATION_RADIUS,
+  MAX_SEPARATION_NEIGHBORS,
+  type SteeringAgent,
+} from './SteeringBehaviors';
 
 // =================================================================
 // STATS BASE PARA EnemyBasic
@@ -316,55 +326,38 @@ export class EnemyBasic extends Enemy {
         this.playAnimation('Idle');
       }
     } else {
-      // 3b. Perseguir al jugador
+      // 3b. Perseguir al jugador usando steering behaviors
       const dist = Math.sqrt(distSq);
       if (dist < 0.001) return;
 
-      // Dirección normalizada hacia el jugador
-      let dirX = dx / dist;
-      let dirZ = dz / dist;
+      // Preparar agente para steering (solo posición)
+      const agent: SteeringAgent = { position: enemyPos };
 
-      // ================================================================
-      // SEPARACIÓN: evitar que los enemigos se amontonen
-      // ================================================================
-      const SEPARATION_DIST = 1.5;  // distancia mínima entre enemigos
-      const SEPARATION_FORCE = 0.8; // intensidad de la fuerza de separación
-      let sepX = 0;
-      let sepZ = 0;
-
-      if (activeEnemies && activeEnemies.length > 0) {
+      // Preparar vecinos para separación
+      const neighbors: SteeringAgent[] = [];
+      if (activeEnemies) {
         for (let i = 0; i < activeEnemies.length; i++) {
           const other = activeEnemies[i];
-          // Saltarse a sí mismo
-          if (other === this || !other.model) continue;
-
-          const otherPos = other.model.position;
-          if (!otherPos) continue;
-
-          const ex = enemyPos.x - otherPos.x;
-          const ez = enemyPos.z - otherPos.z;
-          const eDistSq = ex * ex + ez * ez;
-
-          // Si está demasiado cerca, aplicar separación
-          if (eDistSq < SEPARATION_DIST * SEPARATION_DIST && eDistSq > 0.001) {
-            const eDist = Math.sqrt(eDistSq);
-            const strength = (SEPARATION_DIST - eDist) / SEPARATION_DIST * SEPARATION_FORCE;
-            sepX += (ex / eDist) * strength;
-            sepZ += (ez / eDist) * strength;
-          }
+          if (other === this || !other.model || !other.model.position) continue;
+          neighbors.push({ position: other.model.position });
         }
       }
 
-      // Aplicar separación a la dirección de movimiento
-      dirX += sepX;
-      dirZ += sepZ;
+      // Calcular steering forces
+      const seekForce = seek(agent, targetPos);
+      const sepForce = separation(agent, neighbors, DEFAULT_SEPARATION_RADIUS, MAX_SEPARATION_NEIGHBORS);
 
-      // Re-normalizar después de separación
-      const finalDist = Math.sqrt(dirX * dirX + dirZ * dirZ);
-      if (finalDist > 0.001) {
-        dirX /= finalDist;
-        dirZ /= finalDist;
-      }
+      // Combinar con pesos
+      const { direction, hasMovement } = combineForces([
+        [seekForce, DEFAULT_MELEE_WEIGHTS.seek],
+        [sepForce, DEFAULT_MELEE_WEIGHTS.separation],
+      ]);
+
+      if (!hasMovement) return;
+
+      // Aplicar aceleración suave
+      const moveSpeed = this.getEffectiveStat('speed');
+      applyAcceleration(this.currentSteeringVel, direction, moveSpeed, this.maxAcceleration, dt);
 
       // ================================================================
       // ROTACIÓN: el modelo base tiene rotation.y = Math.PI (aplicado en
@@ -372,22 +365,21 @@ export class EnemyBasic extends Enemy {
       // Math.atan2(dirX, dirZ) asume forward = +Z, así que sumamos PI
       // para que el modelo (forward = -Z) mire hacia el jugador.
       // ================================================================
-      const targetAngle = Math.atan2(dirX, dirZ) + Math.PI;
+      const targetAngle = Math.atan2(direction.x, direction.y) + Math.PI;
       this.model.rotation.y = THREE.MathUtils.lerp(
         this.model.rotation.y,
         targetAngle,
         0.1
       );
 
-      // Mover usando setLinvel
-      const moveSpeed = this.getEffectiveStat('speed');
+      // Mover usando setLinvel con velocidad suave
       if (this.physicsBody && this.physicsWorld) {
         const body = this.physicsWorld.getBody(this.physicsBody);
         if (body) {
           body.setLinvel({
-            x: dirX * moveSpeed,
+            x: this.currentSteeringVel.x,
             y: 0,
-            z: dirZ * moveSpeed,
+            z: this.currentSteeringVel.y,
           }, true);
         }
       }

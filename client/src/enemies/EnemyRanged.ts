@@ -9,6 +9,18 @@ import { AssetLoader } from '../engine/AssetLoader';
 import { ProjectilePool } from '../combat/ProjectilePool';
 import { Groups, Masks } from '../physics/CollisionGroups';
 import RAPIER from '@dimforge/rapier3d-compat';
+import {
+  seek,
+  flee,
+  strafeAround,
+  separation,
+  combineForces,
+  applyAcceleration,
+  DEFAULT_RANGED_WEIGHTS,
+  DEFAULT_SEPARATION_RADIUS,
+  MAX_SEPARATION_NEIGHBORS,
+  type SteeringAgent,
+} from './SteeringBehaviors';
 
 // =================================================================
 // STATS DEL ENEMIGO A DISTANCIA
@@ -487,18 +499,31 @@ export class EnemyRanged extends Enemy {
     const dirX = dx / dist;
     const dirZ = dz / dist;
 
-    // 3. Determinar comportamiento según distancia
-    let moveDirX = 0;
-    let moveDirZ = 0;
+    // 3. Determinar comportamiento según distancia usando steering behaviors
+    const agent: SteeringAgent = { position: enemyPos };
+
+    // Preparar vecinos para separación
+    const neighbors: SteeringAgent[] = [];
+    if (activeEnemies) {
+      for (let i = 0; i < activeEnemies.length; i++) {
+        const other = activeEnemies[i];
+        if (other === this || !other.model || !other.model.position) continue;
+        neighbors.push({ position: other.model.position });
+      }
+    }
+
+    // Calcular steering forces según distancia
+    let primaryForce: THREE.Vector2;
+    let primaryWeight: number;
 
     if (dist < this.FLEE_THRESHOLD) {
       // === FLEE: huir del jugador ===
-      moveDirX = -dirX;
-      moveDirZ = -dirZ;
+      primaryForce = flee(agent, targetPos);
+      primaryWeight = DEFAULT_RANGED_WEIGHTS.flee;
     } else if (dist > this.SEEK_THRESHOLD) {
       // === SEEK: acercarse al jugador ===
-      moveDirX = dirX;
-      moveDirZ = dirZ;
+      primaryForce = seek(agent, targetPos);
+      primaryWeight = DEFAULT_RANGED_WEIGHTS.seek;
     } else {
       // === STRAFE: orbitar alrededor del jugador ===
       // Cambiar dirección de strafe periódicamente
@@ -507,48 +532,23 @@ export class EnemyRanged extends Enemy {
         this.strafeDirection *= -1;
         this.lastStrafeChangeTime = now;
       }
-
-      // Perpendicular a la dirección hacia el target
-      moveDirX = -dirZ * this.strafeDirection;
-      moveDirZ = dirX * this.strafeDirection;
+      primaryForce = strafeAround(agent, targetPos, this.strafeDirection);
+      primaryWeight = DEFAULT_RANGED_WEIGHTS.strafe;
     }
 
-    // 4. SEPARACIÓN: evitar que los enemigos se amontonen
-    const SEPARATION_DIST = 1.5;
-    const SEPARATION_FORCE = 0.8;
-    let sepX = 0;
-    let sepZ = 0;
+    const sepForce = separation(agent, neighbors, DEFAULT_SEPARATION_RADIUS, MAX_SEPARATION_NEIGHBORS);
 
-    if (activeEnemies && activeEnemies.length > 0) {
-      for (let i = 0; i < activeEnemies.length; i++) {
-        const other = activeEnemies[i];
-        if (other === this || !other.model) continue;
+    // Combinar con pesos
+    const { direction, hasMovement } = combineForces([
+      [primaryForce, primaryWeight],
+      [sepForce, DEFAULT_RANGED_WEIGHTS.separation],
+    ]);
 
-        const otherPos = other.model.position;
-        if (!otherPos) continue;
+    if (!hasMovement) return;
 
-        const ex = enemyPos.x - otherPos.x;
-        const ez = enemyPos.z - otherPos.z;
-        const eDistSq = ex * ex + ez * ez;
-
-        if (eDistSq < SEPARATION_DIST * SEPARATION_DIST && eDistSq > 0.001) {
-          const eDist = Math.sqrt(eDistSq);
-          const strength = (SEPARATION_DIST - eDist) / SEPARATION_DIST * SEPARATION_FORCE;
-          sepX += (ex / eDist) * strength;
-          sepZ += (ez / eDist) * strength;
-        }
-      }
-    }
-
-    moveDirX += sepX;
-    moveDirZ += sepZ;
-
-    // Re-normalizar después de separación
-    const finalDist = Math.sqrt(moveDirX * moveDirX + moveDirZ * moveDirZ);
-    if (finalDist > 0.001) {
-      moveDirX /= finalDist;
-      moveDirZ /= finalDist;
-    }
+    // Aplicar aceleración suave
+    const moveSpeed = this.getEffectiveStat('speed');
+    applyAcceleration(this.currentSteeringVel, direction, moveSpeed, this.maxAcceleration, dt);
 
     // 5. ROTACIÓN: mirar hacia el target
     const targetAngle = Math.atan2(dirX, dirZ) + Math.PI;
@@ -558,15 +558,14 @@ export class EnemyRanged extends Enemy {
       0.1
     );
 
-    // 6. MOVIMIENTO
-    const moveSpeed = this.getEffectiveStat('speed');
+    // 6. MOVIMIENTO con velocidad suave
     if (this.physicsBody && this.physicsWorld) {
       const body = this.physicsWorld.getBody(this.physicsBody);
       if (body) {
         body.setLinvel({
-          x: moveDirX * moveSpeed,
+          x: this.currentSteeringVel.x,
           y: 0,
-          z: moveDirZ * moveSpeed,
+          z: this.currentSteeringVel.y,
         }, true);
       }
     }

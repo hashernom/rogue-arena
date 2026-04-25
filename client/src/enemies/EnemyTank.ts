@@ -7,6 +7,16 @@ import type { SceneManager } from '../engine/SceneManager';
 import type { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
 import { BodyFactory } from '../physics/BodyFactory';
 import { AssetLoader } from '../engine/AssetLoader';
+import {
+  seek,
+  separation,
+  combineForces,
+  applyAcceleration,
+  DEFAULT_MELEE_WEIGHTS,
+  DEFAULT_SEPARATION_RADIUS,
+  MAX_SEPARATION_NEIGHBORS,
+  type SteeringAgent,
+} from './SteeringBehaviors';
 
 // =================================================================
 // STATS BASE PARA EnemyTank
@@ -375,52 +385,43 @@ export class EnemyTank extends Enemy {
         this.playAnimation('Idle');
       }
     } else {
-      // 3b. Perseguir al target
+      // 3b. Perseguir al target usando steering behaviors
       const dist = Math.sqrt(distSq);
       if (dist < 0.001) return;
 
-      // Dirección normalizada hacia el target
+      // Dirección normalizada hacia el target (para rotación)
       const dirX = dx / dist;
       const dirZ = dz / dist;
 
-      // ================================================================
-      // SEPARACIÓN: evitar que los enemigos se amontonen
-      // ================================================================
-      const SEPARATION_DIST = 2.0; // Mayor distancia de separación por ser grande
-      const SEPARATION_FORCE = 0.8;
-      let sepX = 0;
-      let sepZ = 0;
-
-      if (activeEnemies && activeEnemies.length > 0) {
+      // Preparar agente y vecinos para steering
+      const agent: SteeringAgent = { position: enemyPos };
+      const neighbors: SteeringAgent[] = [];
+      if (activeEnemies) {
         for (let i = 0; i < activeEnemies.length; i++) {
           const other = activeEnemies[i];
-          if (other === this || !other.model) continue;
-
-          const otherPos = other.model.position;
-          if (!otherPos) continue;
-
-          const ex = enemyPos.x - otherPos.x;
-          const ez = enemyPos.z - otherPos.z;
-          const eDistSq = ex * ex + ez * ez;
-
-          if (eDistSq < SEPARATION_DIST * SEPARATION_DIST && eDistSq > 0.001) {
-            const eDist = Math.sqrt(eDistSq);
-            const strength = (SEPARATION_DIST - eDist) / SEPARATION_DIST * SEPARATION_FORCE;
-            sepX += (ex / eDist) * strength;
-            sepZ += (ez / eDist) * strength;
-          }
+          if (other === this || !other.model || !other.model.position) continue;
+          neighbors.push({ position: other.model.position });
         }
       }
 
-      let moveDirX = dirX + sepX;
-      let moveDirZ = dirZ + sepZ;
+      // Tank usa un radio de separación mayor por su tamaño
+      const tankSeparationRadius = DEFAULT_SEPARATION_RADIUS * 1.5; // 1.2m
 
-      // Re-normalizar después de separación
-      const finalDist = Math.sqrt(moveDirX * moveDirX + moveDirZ * moveDirZ);
-      if (finalDist > 0.001) {
-        moveDirX /= finalDist;
-        moveDirZ /= finalDist;
-      }
+      // Calcular steering forces
+      const seekForce = seek(agent, targetPos);
+      const sepForce = separation(agent, neighbors, tankSeparationRadius, MAX_SEPARATION_NEIGHBORS);
+
+      // Combinar con pesos (Tank tiene más peso en separación)
+      const { direction, hasMovement } = combineForces([
+        [seekForce, DEFAULT_MELEE_WEIGHTS.seek],
+        [sepForce, DEFAULT_MELEE_WEIGHTS.separation * 1.5],
+      ]);
+
+      if (!hasMovement) return;
+
+      // Aplicar aceleración suave
+      const moveSpeed = this.getEffectiveStat('speed');
+      applyAcceleration(this.currentSteeringVel, direction, moveSpeed, this.maxAcceleration, dt);
 
       // ================================================================
       // ROTACIÓN: el modelo base tiene rotation.y = Math.PI (aplicado en
@@ -435,15 +436,14 @@ export class EnemyTank extends Enemy {
         0.1
       );
 
-      // Mover usando setLinvel
-      const moveSpeed = this.getEffectiveStat('speed');
+      // Mover usando setLinvel con velocidad suave
       if (this.physicsBody && this.physicsWorld) {
         const body = this.physicsWorld.getBody(this.physicsBody);
         if (body) {
           body.setLinvel({
-            x: moveDirX * moveSpeed,
+            x: this.currentSteeringVel.x,
             y: 0,
-            z: moveDirZ * moveSpeed,
+            z: this.currentSteeringVel.y,
           }, true);
         }
       }

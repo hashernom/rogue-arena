@@ -215,6 +215,12 @@ export abstract class Enemy extends Character {
   protected animations: THREE.AnimationAction[] = [];
   protected currentAnimation: THREE.AnimationAction | null = null;
 
+  // ========== STEERING BEHAVIORS ==========
+  /** Velocidad 2D actual para aceleración suave (x=horizontal, y=vertical en plano XZ) */
+  protected currentSteeringVel: THREE.Vector2 = new THREE.Vector2(0, 0);
+  /** Aceleración máxima para movimiento suave (units/s²) */
+  protected maxAcceleration: number = 15;
+
   // ========== POOL / CICLO DE VIDA ==========
   /** Tipo de enemigo */
   public readonly type: EnemyType;

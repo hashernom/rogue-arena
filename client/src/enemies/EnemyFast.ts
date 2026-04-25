@@ -6,6 +6,16 @@ import type { EventBus } from '../engine/EventBus';
 import type { SceneManager } from '../engine/SceneManager';
 import type { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
 import { BodyFactory } from '../physics/BodyFactory';
+import {
+  seek,
+  separation,
+  combineForces,
+  applyAcceleration,
+  DEFAULT_MELEE_WEIGHTS,
+  DEFAULT_SEPARATION_RADIUS,
+  MAX_SEPARATION_NEIGHBORS,
+  type SteeringAgent,
+} from './SteeringBehaviors';
 
 // =================================================================
 // STATS BASE PARA EnemyFast
@@ -368,7 +378,7 @@ export class EnemyFast extends Enemy {
         this.playAnimation('Idle');
       }
     } else {
-      // 4b. Perseguir al target con flanqueo
+      // 4b. Perseguir al target con flanqueo usando steering behaviors
       const dist = Math.sqrt(distSq);
       if (dist < 0.001) return;
 
@@ -378,11 +388,9 @@ export class EnemyFast extends Enemy {
 
       // Calcular punto de flanqueo: desplazar el target perpendicularmente
       // a la dirección de aproximación
-      // Perpendicular en 2D: (-dirZ, dirX) para izquierda, (dirZ, -dirX) para derecha
       const perpX = -dirZ;
       const perpZ = dirX;
 
-      // Aplicar el offset lateral (flankOffset.x es -1.5 o +1.5)
       const flankTargetX = targetPos.x + perpX * this.flankOffset.x;
       const flankTargetZ = targetPos.z + perpZ * this.flankOffset.x;
 
@@ -391,63 +399,42 @@ export class EnemyFast extends Enemy {
       const fdz = flankTargetZ - enemyPos.z;
       const fDist = Math.sqrt(fdx * fdx + fdz * fdz);
 
-      let moveDirX: number;
-      let moveDirZ: number;
+      // Determinar el target de seek: punto de flanqueo o target directo
+      const seekTarget = new THREE.Vector3(
+        fDist > 0.1 ? flankTargetX : targetPos.x,
+        0,
+        fDist > 0.1 ? flankTargetZ : targetPos.z
+      );
 
-      if (fDist > 0.1) {
-        // Moverse hacia el punto de flanqueo
-        moveDirX = fdx / fDist;
-        moveDirZ = fdz / fDist;
-      } else {
-        // Ya está en posición de flanqueo — moverse directamente al target
-        moveDirX = dirX;
-        moveDirZ = dirZ;
-      }
-
-      // ================================================================
-      // SEPARACIÓN: evitar que los enemigos se amontonen
-      // ================================================================
-      const SEPARATION_DIST = 1.5;
-      const SEPARATION_FORCE = 0.8;
-      let sepX = 0;
-      let sepZ = 0;
-
-      if (activeEnemies && activeEnemies.length > 0) {
+      // Preparar agente y vecinos para steering
+      const agent: SteeringAgent = { position: enemyPos };
+      const neighbors: SteeringAgent[] = [];
+      if (activeEnemies) {
         for (let i = 0; i < activeEnemies.length; i++) {
           const other = activeEnemies[i];
-          if (other === this || !other.model) continue;
-
-          const otherPos = other.model.position;
-          if (!otherPos) continue;
-
-          const ex = enemyPos.x - otherPos.x;
-          const ez = enemyPos.z - otherPos.z;
-          const eDistSq = ex * ex + ez * ez;
-
-          if (eDistSq < SEPARATION_DIST * SEPARATION_DIST && eDistSq > 0.001) {
-            const eDist = Math.sqrt(eDistSq);
-            const strength = (SEPARATION_DIST - eDist) / SEPARATION_DIST * SEPARATION_FORCE;
-            sepX += (ex / eDist) * strength;
-            sepZ += (ez / eDist) * strength;
-          }
+          if (other === this || !other.model || !other.model.position) continue;
+          neighbors.push({ position: other.model.position });
         }
       }
 
-      moveDirX += sepX;
-      moveDirZ += sepZ;
+      // Calcular steering forces
+      const seekForce = seek(agent, seekTarget);
+      const sepForce = separation(agent, neighbors, DEFAULT_SEPARATION_RADIUS, MAX_SEPARATION_NEIGHBORS);
 
-      // Re-normalizar después de separación
-      const finalDist = Math.sqrt(moveDirX * moveDirX + moveDirZ * moveDirZ);
-      if (finalDist > 0.001) {
-        moveDirX /= finalDist;
-        moveDirZ /= finalDist;
-      }
+      // Combinar con pesos
+      const { direction, hasMovement } = combineForces([
+        [seekForce, DEFAULT_MELEE_WEIGHTS.seek],
+        [sepForce, DEFAULT_MELEE_WEIGHTS.separation],
+      ]);
+
+      if (!hasMovement) return;
+
+      // Aplicar aceleración suave
+      const moveSpeed = this.getEffectiveStat('speed');
+      applyAcceleration(this.currentSteeringVel, direction, moveSpeed, this.maxAcceleration, dt);
 
       // ================================================================
-      // ROTACIÓN: el modelo base tiene rotation.y = Math.PI (aplicado en
-      // ensureModelLoaded/loadModel), por lo que el forward efectivo es -Z.
-      // Math.atan2(dirX, dirZ) asume forward = +Z, así que sumamos PI
-      // para que el modelo (forward = -Z) mire hacia el jugador.
+      // ROTACIÓN: mirar hacia el target (no al punto de flanqueo)
       // ================================================================
       const targetAngle = Math.atan2(dirX, dirZ) + Math.PI;
       this.model.rotation.y = THREE.MathUtils.lerp(
@@ -456,15 +443,14 @@ export class EnemyFast extends Enemy {
         0.1
       );
 
-      // Mover usando setLinvel
-      const moveSpeed = this.getEffectiveStat('speed');
+      // Mover usando setLinvel con velocidad suave
       if (this.physicsBody && this.physicsWorld) {
         const body = this.physicsWorld.getBody(this.physicsBody);
         if (body) {
           body.setLinvel({
-            x: moveDirX * moveSpeed,
+            x: this.currentSteeringVel.x,
             y: 0,
-            z: moveDirZ * moveSpeed,
+            z: this.currentSteeringVel.y,
           }, true);
         }
       }
