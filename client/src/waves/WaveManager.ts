@@ -1,6 +1,7 @@
 import { EventBus } from '../engine/EventBus';
 import { EnemyType } from '../enemies/Enemy';
 import { Spawner } from './Spawner';
+import { Character } from '../characters/Character';
 
 /**
  * Configuración de una oleada de enemigos.
@@ -82,8 +83,19 @@ export function generateWaveConfig(round: number): WaveConfig {
     round,
     isBossWave,
     enemyGroups: groups,
-    betweenRoundDuration: 5,
+    betweenRoundDuration: 15, // 15 segundos entre rondas
   };
+}
+
+/**
+ * Calcula la recompensa en monedas para una ronda completada.
+ * @param round - Número de ronda completada
+ * @param enemyCount - Cantidad de enemigos en la ronda
+ * @returns Monedas otorgadas
+ */
+export function calculateWaveReward(round: number, enemyCount: number): number {
+  // Base: 10 monedas + 5 por ronda + 1 por enemigo
+  return 10 + round * 5 + enemyCount;
 }
 
 /**
@@ -105,9 +117,43 @@ export class WaveManager {
   private currentWaveConfig: WaveConfig | null = null;
   private isSpawning: boolean = false;
 
+  // Ready-up system
+  private player1Ready: boolean = false;
+  private player2Ready: boolean = false;
+  private players: Character[] = [];
+
   constructor(eventBus: EventBus, spawner: Spawner) {
     this.eventBus = eventBus;
     this.spawner = spawner;
+  }
+
+  /**
+   * Establece las referencias a los personajes jugadores para
+   * aplicar curación entre rondas.
+   * @param players - Array con los personajes de los jugadores
+   */
+  setPlayers(players: Character[]): void {
+    this.players = players;
+  }
+
+  /**
+   * Marca a un jugador como listo (Ready) durante el período entre rondas.
+   * Cuando ambos jugadores están listos, se salta el timer.
+   * @param playerIndex - Índice del jugador (0 o 1)
+   */
+  setPlayerReady(playerIndex: number): void {
+    if (this.state !== WaveState.BetweenRound) return;
+
+    if (playerIndex === 0) {
+      this.player1Ready = true;
+    } else if (playerIndex === 1) {
+      this.player2Ready = true;
+    }
+
+    // Si ambos jugadores están listos, saltar el timer
+    if (this.player1Ready && this.player2Ready) {
+      this.betweenRoundTimer = 0;
+    }
   }
 
   /**
@@ -129,6 +175,9 @@ export class WaveManager {
       (sum, g) => sum + g.count, 0
     );
     this.remainingEnemies = this.totalEnemiesInWave;
+
+    // Comunicar la ronda actual al Spawner para escalado de dificultad
+    this.spawner.setCurrentRound(round);
 
     // Delegar el spawn visual al Spawner
     this.spawner.spawnWave(this.currentWaveConfig);
@@ -193,6 +242,23 @@ export class WaveManager {
   }
 
   /**
+   * Obtiene el timer restante entre rondas (en segundos).
+   */
+  getBetweenRoundTimer(): number {
+    return this.betweenRoundTimer;
+  }
+
+  /**
+   * Obtiene el estado de ready de los jugadores.
+   */
+  getReadyState(): { player1Ready: boolean; player2Ready: boolean } {
+    return {
+      player1Ready: this.player1Ready,
+      player2Ready: this.player2Ready,
+    };
+  }
+
+  /**
    * Actualiza el WaveManager cada frame.
    * @param dt - Delta time en segundos
    */
@@ -225,11 +291,17 @@ export class WaveManager {
 
   /**
    * Actualiza el timer entre rondas.
+   * Cuando el timer llega a 0, inicia la siguiente ronda.
    */
   private updateBetweenRound(dt: number): void {
     this.betweenRoundTimer -= dt;
 
     if (this.betweenRoundTimer <= 0) {
+      this.betweenRoundTimer = 0;
+
+      // Cerrar la tienda antes de iniciar la siguiente ronda
+      this.eventBus.emit('shop:closed', undefined);
+
       // Iniciar siguiente ronda automáticamente
       this.startWave(this.currentRound + 1);
     }
@@ -237,19 +309,46 @@ export class WaveManager {
 
   /**
    * Finaliza la oleada actual y transiciona a BetweenRound.
+   * Calcula la recompensa, aplica cura del 20% a los jugadores,
+   * y abre la tienda.
    */
   private endWave(): void {
     if (this.state !== WaveState.WaveInProgress) return;
 
+    const reward = calculateWaveReward(this.currentRound, this.totalEnemiesInWave);
+
     this.state = WaveState.BetweenRound;
     this.isSpawning = false;
-    this.betweenRoundTimer = this.currentWaveConfig?.betweenRoundDuration ?? 5;
+    this.betweenRoundTimer = this.currentWaveConfig?.betweenRoundDuration ?? 15;
 
-    console.log(`[WaveManager] Ronda ${this.currentRound} completada`);
+    // Resetear ready-up para la nueva ronda
+    this.player1Ready = false;
+    this.player2Ready = false;
 
+    console.log(
+      `[WaveManager] Ronda ${this.currentRound} completada. Recompensa: ${reward} monedas`
+    );
+
+    // Emitir wave:ended con la recompensa
     this.eventBus.emit('wave:ended', {
       round: this.currentRound,
+      reward,
     });
+
+    // Aplicar cura del 20% de la vida máxima a cada jugador
+    for (const player of this.players) {
+      if (player) {
+        const maxHp = player.getEffectiveStat('maxHp');
+        const healAmount = Math.round(maxHp * 0.2);
+        player.heal(healAmount);
+        console.log(
+          `[WaveManager] ${player.constructor.name} curado ${healAmount} HP (20% de ${maxHp})`
+        );
+      }
+    }
+
+    // Abrir la tienda
+    this.eventBus.emit('shop:opened', undefined);
   }
 
   /**
@@ -260,6 +359,8 @@ export class WaveManager {
     this.currentRound = 0;
     this.remainingEnemies = 0;
     this.isSpawning = false;
+    this.player1Ready = false;
+    this.player2Ready = false;
     this.startWave(1);
   }
 
@@ -274,6 +375,9 @@ export class WaveManager {
     this.betweenRoundTimer = 0;
     this.currentWaveConfig = null;
     this.isSpawning = false;
+    this.player1Ready = false;
+    this.player2Ready = false;
+    this.players = [];
     this.spawner.reset();
   }
 }

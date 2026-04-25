@@ -185,9 +185,11 @@ export class EnemyPool {
    * Obtiene un enemigo del pool (o crea uno nuevo si es necesario)
    * @param type - Tipo de enemigo a obtener
    * @param spawnOptions - Opciones de spawn para el enemigo
+   * @param overrideStats - Estadísticas opcionales que sobrescriben las base
+   *                        (usado por DifficultyScaler para escalar stats por ronda)
    * @returns Instancia de enemigo lista para usar
    */
-  acquire(type: EnemyType, spawnOptions: SpawnOptions): Enemy | null {
+  acquire(type: EnemyType, spawnOptions: SpawnOptions, overrideStats?: EnemyStats): Enemy | null {
     const config = this.configs.get(type);
     if (!config) {
       console.warn(`[EnemyPool] Tipo de enemigo no registrado: ${type}`);
@@ -196,6 +198,9 @@ export class EnemyPool {
 
     const available = this.available.get(type)!;
     const inUse = this.inUse.get(type)!;
+
+    // Determinar qué stats usar: overrideStats (escalados) o los base del pool
+    const stats = overrideStats ?? config.stats;
 
     let enemy: Enemy;
 
@@ -209,7 +214,7 @@ export class EnemyPool {
         console.warn(`[EnemyPool] Límite máximo alcanzado para ${type} (${config.maxSize})`);
         return null;
       }
-      enemy = this.createEnemyInstance(type, config.stats);
+      enemy = this.createEnemyInstance(type, stats);
     }
 
     // Spawnear el enemigo en la posición especificada

@@ -19,9 +19,10 @@ export interface GameEvents {
   'enemy:damage': { enemyId: string; damage: number; attackerId: string; position: Vector3Like; isCritical?: boolean };
   // Oleadas
   'wave:started': { round: number; enemyCount: number };
-  'wave:ended': { round: number };
+  'wave:ended': { round: number; reward: number };
   // Tienda
   'shop:opened': void;
+  'shop:closed': void;
   'shop:itemBought': { itemId: string; playerId: string };
   // Estado del juego
   'game:over': { rounds: number };

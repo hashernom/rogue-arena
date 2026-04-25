@@ -35,6 +35,10 @@ export class InputManager {
     p2_abilityQ: 'KeyP',
     p2_abilityE: 'BracketLeft',
 
+    // Ready-up keys (entre rondas)
+    p1_ready: 'KeyR',
+    p2_ready: 'Slash',
+
     // Debug keys (solo en modo desarrollo)
     debug_toggle_melee: 'KeyM',
   } as const;
@@ -43,6 +47,7 @@ export class InputManager {
   private static readonly GAME_KEYS = Object.values(InputManager.KEY_MAP) as readonly string[];
 
   private keys: Set<string>;
+  private previousKeys: Set<string>;
   private gamepads: Gamepad[] = [];
   private states: {
     1: InputState;
@@ -53,6 +58,7 @@ export class InputManager {
 
   constructor() {
     this.keys = new Set();
+    this.previousKeys = new Set();
     this.states = {
       1: this.createEmptyState(),
       2: this.createEmptyState(),
@@ -158,8 +164,11 @@ export class InputManager {
   /**
    * Actualiza el estado de input para ambos jugadores.
    * Debe llamarse UNA VEZ por tick del game loop.
+   * Guarda el snapshot de teclas del frame anterior para detección de flanco.
    */
   public update(): void {
+    // Guardar snapshot del frame anterior para isKeyJustPressed
+    this.previousKeys = new Set(this.keys);
     this.updateFromKeyboard();
     this.updateFromGamepads();
   }
@@ -262,6 +271,16 @@ export class InputManager {
    */
   public isKeyPressed(keyCode: string): boolean {
     return this.keys.has(keyCode);
+  }
+
+  /**
+   * Verifica si una tecla fue presionada en este frame (flanco de subida).
+   * Útil para acciones que deben ejecutarse una sola vez por presión.
+   * @param keyCode Código de la tecla (ej: 'KeyR')
+   * @returns true si la tecla se presionó en este frame
+   */
+  public isKeyJustPressed(keyCode: string): boolean {
+    return this.keys.has(keyCode) && !this.previousKeys.has(keyCode);
   }
 
   /**

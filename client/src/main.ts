@@ -8,6 +8,7 @@ import { InputManager } from './engine/InputManager';
 import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
 import { DebugRenderer } from './physics/DebugRenderer';
 import { EventBus } from './engine/EventBus';
+import { Character } from './characters/Character';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
 import { EnemyPool } from './enemies/EnemyPool';
@@ -83,6 +84,9 @@ let waveManager: WaveManager | null = null;
 let spawner: Spawner | null = null;
 // HP bars para jugadores (sprites flotantes)
 let playerHpBars: Map<string, THREE.Sprite> = new Map();
+// Ready-up debounce flags (para evitar múltiples activaciones por presión)
+let p1ReadyJustPressed = false;
+let p2ReadyJustPressed = false;
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -365,6 +369,13 @@ async function initGameWithPhysics(): Promise<void> {
       // Crear WaveManager que orquesta el progreso de rondas
       waveManager = new WaveManager(eventBus, spawner);
 
+      // Pasar referencias de los personajes al WaveManager para curación entre rondas
+      const playerCharacters: Character[] = [];
+      if (meleeCharacter) playerCharacters.push(meleeCharacter);
+      if (adcCharacter) playerCharacters.push(adcCharacter);
+      waveManager.setPlayers(playerCharacters);
+      console.log('👥 Personajes vinculados al WaveManager para curación entre rondas');
+
       // Suscribirse a enemy:died para notificar al WaveManager
       eventBus.on('enemy:died', () => {
         waveManager?.onEnemyDied();
@@ -417,6 +428,31 @@ async function initGameWithPhysics(): Promise<void> {
     // Actualizar WaveManager (timers entre rondas)
     if (waveManager) {
       waveManager.update(dt);
+    }
+
+    // Manejar ready-up entre rondas (flanco de subida con debounce)
+    if (waveManager && waveManager.getState() === WaveState.BetweenRound) {
+      // Player 1: tecla R
+      if (inputManager.isKeyJustPressed('KeyR')) {
+        if (!p1ReadyJustPressed) {
+          p1ReadyJustPressed = true;
+          waveManager.setPlayerReady(0);
+          console.log('[Ready] Player 1 listo');
+        }
+      } else {
+        p1ReadyJustPressed = false;
+      }
+
+      // Player 2: tecla /
+      if (inputManager.isKeyJustPressed('Slash')) {
+        if (!p2ReadyJustPressed) {
+          p2ReadyJustPressed = true;
+          waveManager.setPlayerReady(1);
+          console.log('[Ready] Player 2 listo');
+        }
+      } else {
+        p2ReadyJustPressed = false;
+      }
     }
 
     // Actualizar Spawner (indicadores visuales, animaciones de spawn)
@@ -509,6 +545,11 @@ async function initGameWithPhysics(): Promise<void> {
     // _alpha no se usa porque SceneManager.render() no necesita interpolación
     sceneManager.render();
 
+    // Mostrar HUD de entre-roundas (timer + ready-up)
+    if (waveManager) {
+      displayBetweenRoundHud(waveManager);
+    }
+
     // Mostrar FPS en modo desarrollo
     if (import.meta.env.DEV) {
       displayFps(gameLoop.fps);
@@ -583,6 +624,50 @@ function displayInputState(
   }
   const dir = state.moveDir;
   inputElement.textContent = `P${playerId}: dir(${dir.x.toFixed(2)}, ${dir.y.toFixed(2)}) A:${state.attacking ? 'Y' : 'N'} Q:${state.abilityQ ? 'Y' : 'N'} E:${state.abilityE ? 'Y' : 'N'}`;
+}
+
+/**
+ * Muestra el timer de entre-roundas y el estado de ready-up en el HUD.
+ * @param waveManager - Referencia al WaveManager
+ */
+function displayBetweenRoundHud(wm: WaveManager): void {
+  let hudElement = document.getElementById('between-round-hud');
+  if (!hudElement) {
+    hudElement = document.createElement('div');
+    hudElement.id = 'between-round-hud';
+    hudElement.style.position = 'fixed';
+    hudElement.style.top = '50%';
+    hudElement.style.left = '50%';
+    hudElement.style.transform = 'translate(-50%, -50%)';
+    hudElement.style.color = '#ffffff';
+    hudElement.style.fontFamily = 'monospace';
+    hudElement.style.fontSize = '24px';
+    hudElement.style.textAlign = 'center';
+    hudElement.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    hudElement.style.padding = '20px 40px';
+    hudElement.style.borderRadius = '10px';
+    hudElement.style.border = '2px solid #ffaa00';
+    hudElement.style.zIndex = '1000';
+    hudElement.style.display = 'none';
+    document.body.appendChild(hudElement);
+  }
+
+  if (wm.getState() === WaveState.BetweenRound) {
+    const timer = Math.ceil(wm.getBetweenRoundTimer());
+    const readyState = wm.getReadyState();
+    hudElement.style.display = 'block';
+    hudElement.innerHTML = `
+      <div style="font-size: 18px; color: #ffaa00; margin-bottom: 8px;">PREPARANDO RONDA ${wm.getCurrentRound() + 1}</div>
+      <div style="font-size: 36px; margin-bottom: 12px;">${timer}s</div>
+      <div style="font-size: 14px; color: #aaaaaa;">
+        P1: ${readyState.player1Ready ? '<span style="color: #00ff88;">✓ LISTO</span>' : '<span style="color: #ff6644;">[R]</span>'}
+        |
+        P2: ${readyState.player2Ready ? '<span style="color: #00ff88;">✓ LISTO</span>' : '<span style="color: #ff6644;">[/]</span>'}
+      </div>
+    `;
+  } else {
+    hudElement.style.display = 'none';
+  }
 }
 
 // Exportar para HMR

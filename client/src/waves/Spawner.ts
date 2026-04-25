@@ -3,6 +3,7 @@ import { EnemyType } from '../enemies/Enemy';
 import { EnemyPool } from '../enemies/EnemyPool';
 import { SceneManager } from '../engine/SceneManager';
 import type { WaveConfig } from './WaveManager';
+import { getEnemyStatsForRound } from './DifficultyScaler';
 
 /**
  * Puntos de spawn fijos en los bordes de la arena 30×30m.
@@ -57,6 +58,8 @@ export class Spawner {
   private enemyPool: EnemyPool;
   private pendingSpawns: PendingSpawn[] = [];
   private scene: THREE.Scene;
+  /** Ronda actual para escalado de dificultad */
+  private currentRound: number = 1;
 
   /** Geometría compartida para los indicadores visuales */
   private static indicatorGeometry: THREE.RingGeometry | null = null;
@@ -81,6 +84,16 @@ export class Spawner {
         depthWrite: false,
       });
     }
+  }
+
+  /**
+   * Establece la ronda actual para el escalado de dificultad.
+   * Debe llamarse antes de spawnWave() para que los enemigos aparezcan
+   * con las estadísticas escaladas correspondientes.
+   * @param round - Número de ronda actual (1-based)
+   */
+  setCurrentRound(round: number): void {
+    this.currentRound = round;
   }
 
   /**
@@ -193,6 +206,7 @@ export class Spawner {
 
   /**
    * Inicia la fase de spawning: crea el enemigo y lo spawnea.
+   * Aplica escalado de dificultad según la ronda actual.
    */
   private startSpawning(spawn: PendingSpawn): void {
     spawn.phase = 'spawning';
@@ -201,8 +215,11 @@ export class Spawner {
     const point = SPAWN_POINTS[spawn.pointIndex];
     const pos = new THREE.Vector3(point.x, 0, point.z);
 
-    // Adquirir enemigo del pool
-    const enemy = this.enemyPool.acquire(spawn.type, { position: pos });
+    // Calcular stats escalados para la ronda actual
+    const scaledStats = getEnemyStatsForRound(spawn.type, this.currentRound);
+
+    // Adquirir enemigo del pool con stats escalados por dificultad
+    const enemy = this.enemyPool.acquire(spawn.type, { position: pos }, scaledStats);
     if (enemy) {
       spawn.enemy = enemy;
       // El Enemy.spawn() ya pone EnemyState.Spawning y escala 0.0001
