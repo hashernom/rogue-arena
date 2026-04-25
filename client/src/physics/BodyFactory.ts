@@ -81,18 +81,18 @@ export class BodyFactory {
       case 'small':
         radius = 0.3;
         halfHeight = 0.3;
-        colliderOffsetY = 0.2; // Subida para que cubra de media pierna a cabeza
+        colliderOffsetY = 0.5; // Elevada para que el ADC no tenga que apuntar a los pies
         break;
       case 'large':
         radius = 0.45;
         halfHeight = 0.7;
-        colliderOffsetY = 0.4; // Subida para que cubra de media pierna a cabeza
+        colliderOffsetY = 0.9; // Elevada para que el ADC no tenga que apuntar a los pies
         break;
       case 'medium':
       default:
         radius = 0.35;
         halfHeight = 0.5;
-        colliderOffsetY = 0.3; // Subida para que cubra de media pierna a cabeza
+        colliderOffsetY = 0.7; // Elevada para que el ADC no tenga que apuntar a los pies
         break;
     }
 
