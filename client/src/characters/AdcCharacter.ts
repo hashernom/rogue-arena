@@ -1125,8 +1125,7 @@ export class AdcCharacter extends Character {
         }
       });
 
-      // Escala y posición ajustadas para que no tape la capa del personaje
-      quiverModel.scale.set(0.7, 0.7, 0.7);
+      quiverModel.scale.set(1.0, 1.0, 1.0);
 
       if (spineBone) {
         // Adjuntar al hueso de la columna (sigue las animaciones del torso)
