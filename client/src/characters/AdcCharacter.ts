@@ -113,8 +113,7 @@ export class AdcCharacter extends Character {
         this.assetLoader.load('/models/Rig_Medium_CombatRanged.glb'),
         this.assetLoader.load('/models/Rig_Medium_General.glb'),
         this.assetLoader.load('/models/weapons/bow.gltf'),
-        this.assetLoader.load('/models/weapons/quiver.gltf'),
-        this.assetLoader.load('/models/weapons/arrow.gltf')
+        this.assetLoader.load('/models/weapons/quiver.gltf')
       ]);
       const modelGltf = assets[0] as GLTF;
       const movementGltf = assets[1] as GLTF;
@@ -122,7 +121,14 @@ export class AdcCharacter extends Character {
       const generalGltf = assets[3] as GLTF;
       const weaponGltf = assets[4] as GLTF;
       const quiverGltf = assets[5] as GLTF;
-      this.arrowGltf = assets[6] as GLTF;
+
+      // Cargar flecha por separado para que no bloquee el modelo principal si falla
+      try {
+        const arrowGltf = await this.assetLoader.load('/models/weapons/arrow.gltf');
+        this.arrowGltf = arrowGltf as GLTF;
+      } catch (arrowError) {
+        console.warn(`[AdcCharacter ${this.id}] No se pudo cargar el modelo de flecha, usando fallback cónico:`, arrowError);
+      }
 
       // 1. Clonado de esqueleto independiente
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
