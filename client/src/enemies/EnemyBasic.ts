@@ -53,6 +53,8 @@ export class EnemyBasic extends Enemy {
   private lastAttackTime: number = 0;
   /** Indica si el enemigo está en rango de ataque */
   private isInAttackRange: boolean = false;
+  /** Tiempo mínimo (ms) que la animación de ataque debe verse antes de允许 Idle */
+  private readonly ATTACK_ANIM_DURATION_MS: number = 600;
 
   /**
    * Crea un nuevo EnemyBasic
@@ -242,25 +244,28 @@ export class EnemyBasic extends Enemy {
   /**
    * Aplica daño cuerpo a cuerpo al jugador objetivo.
    * Respeta la cadencia de ataque según attackSpeed.
-   * Reproduce la animación de ataque si está disponible.
+   * Reproduce la animación de ataque (one-shot, sin loop) si está disponible.
+   * @returns true si el ataque se ejecutó, false si estaba en cooldown.
    */
-  private tryMeleeAttack(target: any): void {
+  private tryMeleeAttack(target: any): boolean {
     const now = Date.now();
     const attackSpeed = this.getEffectiveStat('attackSpeed');
     const cooldownMs = attackSpeed > 0 ? 1000 / attackSpeed : 1000;
 
-    if (now - this.lastAttackTime < cooldownMs) return;
+    if (now - this.lastAttackTime < cooldownMs) return false;
 
     this.lastAttackTime = now;
 
-    // Reproducir animación de ataque
-    this.playAnimation('Attack');
+    // Reproducir animación de ataque (one-shot, sin loop)
+    this.playAnimation('Attack', false);
 
     const damage = this.getEffectiveStat('damage');
     if (target && typeof target.takeDamage === 'function') {
       target.takeDamage(damage);
       console.log(`[EnemyBasic ${this.id}] Ataque cuerpo a cuerpo a ${target.id}: ${damage} daño`);
     }
+
+    return true;
   }
 
   /**
@@ -292,7 +297,7 @@ export class EnemyBasic extends Enemy {
 
     if (this.isInAttackRange) {
       // 3a. Atacar cuerpo a cuerpo
-      this.tryMeleeAttack(target);
+      const didAttack = this.tryMeleeAttack(target);
 
       // Detener movimiento mientras ataca
       if (this.physicsBody && this.physicsWorld) {
@@ -300,6 +305,15 @@ export class EnemyBasic extends Enemy {
         if (body) {
           body.setLinvel({ x: 0, y: 0, z: 0 }, true);
         }
+      }
+
+      // Solo reproducir Idle si NO se ejecutó un ataque (está en cooldown)
+      // Y si ha pasado suficiente tiempo desde el último ataque para que
+      // la animación de Attack se haya visto completa.
+      const now = Date.now();
+      const attackAnimFinished = (now - this.lastAttackTime) >= this.ATTACK_ANIM_DURATION_MS;
+      if (!didAttack && attackAnimFinished) {
+        this.playAnimation('Idle');
       }
     } else {
       // 3b. Perseguir al jugador
@@ -380,11 +394,6 @@ export class EnemyBasic extends Enemy {
 
       // Animación de caminar
       this.playAnimation('Walk');
-    }
-
-    // Si está en rango de ataque, animación Idle mientras ataca
-    if (this.isInAttackRange) {
-      this.playAnimation('Idle');
     }
   }
 

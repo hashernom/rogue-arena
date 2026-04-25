@@ -532,10 +532,16 @@ export abstract class Enemy extends Character {
   /**
    * Reproduce una animación por nombre
    */
-  protected playAnimation(name: string): void {
+  /**
+   * Reproduce una animación por nombre.
+   * @param name Nombre o subcadena del clip de animación
+   * @param loop Si es true (default), la animación se repite en loop infinito.
+   *             Si es false, se reproduce una sola vez (LoopOnce).
+   */
+  protected playAnimation(name: string, loop: boolean = true): void {
     if (!this.mixer || !Enemy.modelAnimations) return;
 
-    // Buscar el clip directamente en modelAnimations (no en this.animations)
+    // Buscar el clip directamente en modelAnimations
     const animClip = Enemy.modelAnimations.find(a =>
       a.name.toLowerCase().includes(name.toLowerCase())
     );
@@ -543,6 +549,7 @@ export abstract class Enemy extends Character {
     if (animClip) {
       const action = this.mixer.clipAction(animClip);
 
+      // Si ya está reproduciendo esta acción exacta, no reiniciar
       if (this.currentAnimation === action) return;
 
       if (this.currentAnimation) {
@@ -550,10 +557,17 @@ export abstract class Enemy extends Character {
       }
 
       action.reset();
-      // FORZAR PESO Y ESCALA DE TIEMPO
       action.setEffectiveTimeScale(1);
       action.setEffectiveWeight(1);
-      action.setLoop(THREE.LoopRepeat, Infinity);
+
+      if (loop) {
+        action.setLoop(THREE.LoopRepeat, Infinity);
+      } else {
+        action.setLoop(THREE.LoopOnce, 1);
+        // Para animaciones one-shot, no mantener la última pose
+        action.clampWhenFinished = true;
+      }
+
       action.fadeIn(0.2).play();
 
       this.currentAnimation = action;
