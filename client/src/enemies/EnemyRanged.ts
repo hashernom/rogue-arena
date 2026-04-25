@@ -324,26 +324,27 @@ export class EnemyRanged extends Enemy {
     const targetPos = target.getPosition();
     if (!targetPos) return;
 
-    // Calcular dirección hacia el target
+    // Posición de spawn: desde el pecho del enemigo (~1.0 sobre el suelo)
+    const spawnPos = new THREE.Vector3(
+      enemyPos.x,
+      enemyPos.y + 1.0,
+      enemyPos.z
+    );
+
+    // Dirección 3D completa desde el spawn hasta el centro del target
+    // Incluye componente Y para que el projectile viaje en línea recta 3D
+    // y alcance la hitbox del player (capsule: y=-0.5 a y=0.5)
     const dir = new THREE.Vector3()
       .copy(targetPos)
-      .sub(enemyPos);
-    dir.y = 0; // Mantener en plano horizontal
+      .sub(spawnPos);
     const dist = dir.length();
     if (dist < 0.1) return;
     dir.normalize();
 
-    // Posición de spawn: desde el pecho del enemigo
-    const spawnPos = new THREE.Vector3(
-      enemyPos.x + dir.x * 0.5,
-      enemyPos.y + 1.0,
-      enemyPos.z + dir.z * 0.5
-    );
-
-    // Velocidad del proyectil
+    // Velocidad del proyectil en 3D (incluye Y)
     const velocity = new THREE.Vector3(
       dir.x * this.PROJECTILE_SPEED,
-      0,
+      dir.y * this.PROJECTILE_SPEED,
       dir.z * this.PROJECTILE_SPEED
     );
 

@@ -305,6 +305,10 @@ async function initGameWithPhysics(): Promise<void> {
 
       // Crear pool de proyectiles para enemigos a distancia
       enemyProjectilePool = new ProjectilePool(physicsWorld, scene, eventBus, 30);
+      // Compartir el pipeline de daño con los proyectiles del pool
+      if (damagePipeline) {
+        enemyProjectilePool.setDamagePipeline(damagePipeline);
+      }
       console.log('🎯 ProjectilePool para enemigos creado con 30 proyectiles');
 
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
@@ -445,22 +449,27 @@ async function initGameWithPhysics(): Promise<void> {
       enemyPool.update(dt, players);
     }
 
-    // Actualizar proyectiles enemigos (pool de proyectiles)
-    if (enemyProjectilePool) {
-      enemyProjectilePool.update(dt);
-    }
-
     // Actualizar números de daño flotantes
     if (damageNumberSystem) {
       damageNumberSystem.update(dt);
     }
 
-    // Rotación básica (solo para visualización) - mantener independiente de física
-    // cubeP2 ya no existe, se eliminó
-
-    // Avanzar simulación física
+    // Avanzar simulación física PRIMERO
+    // Los proyectiles necesitan que stepAll() se ejecute antes para que
+    // sus cuerpos dinámicos tengan posiciones actualizadas al hacer
+    // las overlap queries de detección de colisiones.
     if (physicsWorld) {
       physicsWorld.stepAll(dt);
+    }
+
+    // Actualizar proyectiles enemigos DESPUÉS del step físico
+    // para que las overlap queries usen posiciones actualizadas.
+    // También pasar los players como targets para distance check directo.
+    if (enemyProjectilePool) {
+      enemyProjectilePool.update(dt, players.map(p => ({
+        entity: p,
+        getPosition: () => p.getPosition(),
+      })));
     }
 
     // Sincronizar modelos DESPUÉS del step (mismo frame que el debug)

@@ -26,7 +26,15 @@ export interface ProjectileConfig {
 
 /**
  * Proyectil reutilizable con cuerpo físico y mesh visual.
- * Se mueve cinemáticamente, detecta colisiones y aplica daño.
+ *
+ * Estrategia de detección de impacto:
+ * 1. El proyectil se mueve como cuerpo dinámico con CCD (para colisionar con cuerpos cinemáticos).
+ * 2. En cada frame, se usa `intersectionsWithShape` (overlap query) con una esfera en la
+ *    posición actual del proyectil para detectar solapamiento con colliders objetivo.
+ * 3. Como fallback, se usa un raycast desde la posición anterior a la actual para cubrir
+ *    el arco de movimiento entre frames (anti-tunneling).
+ * 4. Como fallback adicional, se hace un distance check directo contra targets registrados
+ *    (no depende de Rapier queries ni alturas de colliders).
  */
 export class Projectile {
   private mesh: THREE.Mesh;
@@ -37,12 +45,14 @@ export class Projectile {
   private hasPierced: boolean = false;
   private startPosition: THREE.Vector3 = new THREE.Vector3();
 
-  // Para detección de colisiones
-  private lastCollisionCheck: number = 0;
-  private readonly collisionCheckInterval: number = 0.1; // segundos
+  /** Posición en el frame anterior (para raycast entre frames) */
+  private previousPosition: THREE.Vector3 | null = null;
 
   /** Pipeline centralizado de daño (opcional) */
   private damagePipeline: DamagePipeline | null = null;
+
+  /** Targets a los que puede dañar este proyectil (para distance check directo) */
+  private targets: { entity: any; getPosition: () => THREE.Vector3 | null }[] = [];
 
   constructor(
     private readonly physicsWorld: PhysicsWorld,
@@ -70,11 +80,12 @@ export class Projectile {
 
     this.config = config;
     this.startPosition.copy(position);
+    this.previousPosition = position.clone();
     this.distanceTraveled = 0;
     this.hasPierced = false;
     this.active = true;
 
-    // Crear cuerpo físico (kinemático con CCD activado)
+    // Crear cuerpo físico (dinámico con CCD para colisionar con cuerpos cinemáticos)
     this.createPhysicsBody(position, config);
 
     // Configurar mesh visual
@@ -86,23 +97,28 @@ export class Projectile {
 
   /**
    * Crea el cuerpo físico Rapier para el proyectil.
+   * Usa cuerpo dinámico (no cinemático) para que los eventos de colisión
+   * funcionen correctamente con cuerpos cinemáticos (players).
    */
   private createPhysicsBody(position: THREE.Vector3, config: ProjectileConfig): void {
-    // Crear collider esférico
     const radius = config.radius ?? 0.1;
     const group = config.collisionGroup ?? Groups.PROJECTILE;
     const mask = config.collisionMask ?? Masks.PROJECTILE;
+
+    // Collider esférico
     const colliderDesc = RAPIER.ColliderDesc.ball(radius)
       .setTranslation(position.x, position.y, position.z)
       .setCollisionGroups((group << 16) | mask)
-      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS); // Para detectar colisiones
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
 
-    // Crear cuerpo kinemático (movido manualmente) con CCD habilitado
+    // Cuerpo dinámico (NO kinematic) para colisionar con cuerpos cinemáticos
     this.bodyHandle = this.physicsWorld.createBody({
-      type: 'kinematic',
+      type: 'dynamic',
       position,
       collider: colliderDesc,
       ccdEnabled: true, // Continuous Collision Detection para alta velocidad
+      gravityScale: 0,  // Sin gravedad (top-down)
+      linearDamping: 0, // Sin damping para que mantenga velocidad constante
       userData: {
         type: 'projectile',
         projectile: this,
@@ -129,6 +145,15 @@ export class Projectile {
   }
 
   /**
+   * Establece los targets contra los que hacer distance check directo.
+   * Útil para proyectiles enemigos que necesitan detectar players
+   * independientemente de la altura de sus colliders de física.
+   */
+  setTargets(targets: { entity: any; getPosition: () => THREE.Vector3 | null }[]): void {
+    this.targets = targets;
+  }
+
+  /**
    * Establece la velocidad del proyectil.
    */
   setVelocity(velocity: THREE.Vector3): void {
@@ -147,21 +172,25 @@ export class Projectile {
   update(deltaTime: number): void {
     if (!this.active || !this.bodyHandle || !this.config) return;
 
-    // Actualizar distancia recorrida
     const body = this.physicsWorld.getBody(this.bodyHandle);
-    if (body) {
-      const currentPos = body.translation();
-      this.distanceTraveled = this.startPosition.distanceTo(
-        new THREE.Vector3(currentPos.x, currentPos.y, currentPos.z)
-      );
-    }
+    if (!body) return;
 
-    // Verificar colisiones periódicamente
-    this.lastCollisionCheck += deltaTime;
-    if (this.lastCollisionCheck >= this.collisionCheckInterval) {
-      this.checkCollisions();
-      this.lastCollisionCheck = 0;
-    }
+    const currentPos = body.translation();
+
+    // Actualizar distancia recorrida
+    this.distanceTraveled = this.startPosition.distanceTo(
+      new THREE.Vector3(currentPos.x, currentPos.y, currentPos.z)
+    );
+
+    // 1. Detectar colisiones vía Rapier: overlap query + raycast entre frames
+    this.checkCollisions(body, currentPos);
+
+    // 2. Distance check directo contra targets (fallback robusto)
+    //    No depende de alturas de colliders ni del orden de stepAll()
+    this.checkTargetDistance(currentPos);
+
+    // Guardar posición actual para el próximo frame
+    this.previousPosition = new THREE.Vector3(currentPos.x, currentPos.y, currentPos.z);
 
     // Verificar si superó el rango máximo
     if (this.distanceTraveled > this.config.range) {
@@ -171,44 +200,40 @@ export class Projectile {
   }
 
   /**
-   * Verifica colisiones usando raycast desde la posición actual del proyectil.
-   * Filtra por el grupo de colisión del proyectil para detectar solo objetivos válidos.
+   * Detecta colisiones usando overlap query (intersectionsWithShape) y raycast entre frames.
+   *
+   * El overlap query detecta si la esfera del proyectil se solapa con algún collider
+   * en su posición actual. Usa un radio generoso (0.5) para cubrir el rango vertical
+   * de los capsules de los personajes.
+   *
+   * El raycast entre frames cubre el arco de movimiento para evitar tunneling.
    */
-  private checkCollisions(): void {
-    if (!this.bodyHandle || !this.config) return;
+  private checkCollisions(body: RAPIER.RigidBody, currentPos: RAPIER.Vector): void {
+    if (!this.config) return;
 
     const world = this.physicsWorld.getWorld();
     if (!world) return;
-
-    // Obtener posición actual del proyectil
-    const body = world.getRigidBody(this.bodyHandle);
-    if (!body) return;
-
-    const pos = body.translation();
 
     // Determinar qué grupo buscar según el collision group del proyectil
     const group = this.config.collisionGroup ?? Groups.PROJECTILE;
     const targetGroup = group === Groups.ENEMY_PROJECTILE ? Groups.PLAYER : Groups.ENEMY;
 
-    // Usar la velocidad para determinar la dirección del raycast
-    const vel = body.linvel();
-    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-    if (speed < 0.01) return;
+    // Radio generoso para la overlap query (0.5 cubre bien el rango vertical
+    // de los capsules: halfHeight=0.5, radius=0.3)
+    const queryRadius = 0.5;
 
-    const rayDir = { x: vel.x / speed, y: vel.y / speed, z: vel.z / speed };
+    // --- 1. Overlap query: esfera grande en la posición actual ---
+    // Usamos un radio generoso para asegurar que la esfera cubra el rango
+    // vertical de los capsules de los personajes, incluso si el projectile
+    // viaja a una altura ligeramente diferente.
+    const sphereShape = new RAPIER.Ball(queryRadius);
+    const identity = { x: 0, y: 0, z: 0, w: 1 };
 
-    // --- Raycast hacia adelante ---
-    // Escaneamos una distancia que cubra el movimiento desde el último check
-    // (speed * collisionCheckInterval) más el radio del proyectil para detectar solapamiento
-    const forwardScanDistance = speed * this.collisionCheckInterval + (this.config.radius ?? 0.1) + 0.5;
-    const rayOrigin = { x: pos.x, y: pos.y, z: pos.z };
-    const forwardRay = new RAPIER.Ray(rayOrigin, rayDir);
-
-    world.intersectionsWithRay(
-      forwardRay, forwardScanDistance, false,
-      (intersection: RAPIER.RayColliderIntersection) => {
-        const collider = intersection.collider;
-
+    world.intersectionsWithShape(
+      { x: currentPos.x, y: currentPos.y, z: currentPos.z },
+      identity,
+      sphereShape,
+      (collider: RAPIER.Collider) => {
         // Filtrar por el grupo objetivo
         const groups = collider.collisionGroups();
         const membership = (groups >> 16) & 0xffff;
@@ -216,45 +241,98 @@ export class Projectile {
           return true; // No es el objetivo, continuar
         }
 
-        const userData = collider.parent()?.userData as { entity?: any; type?: string } | undefined;
+        const parentBody = collider.parent();
+        if (!parentBody) return true;
+
+        const userData = parentBody.userData as { entity?: any; type?: string } | undefined;
 
         if (userData) {
-          // Llamar al manejador de colisión
+          console.log(`[Projectile] Hit detectado (overlap): type=${userData.type}, entity=${!!userData.entity}`);
           this.handleCollision(userData);
+        } else {
+          console.log(`[Projectile] Collider sin userData (overlap), groups=${groups.toString(16)}`);
         }
 
         return true; // Continuar buscando
-      }
+      },
+      undefined, // filterFlags
+      undefined, // filterGroups
+      undefined, // filterExcludeCollider
+      undefined, // filterExcludeRigidBody
+      undefined  // filterPredicate
     );
 
-    // --- Raycast hacia atrás ---
-    // Si el proyectil ya atravesó al objetivo entre frames, el raycast forward no lo detecta.
-    // Escaneamos hacia atrás para cubrir esa posibilidad.
-    const backDir = { x: -rayDir.x, y: -rayDir.y, z: -rayDir.z };
-    const backRay = new RAPIER.Ray(rayOrigin, backDir);
-    // Escaneamos una distancia menor hacia atrás (solo para detectar solapamiento)
-    const backScanDistance = (this.config.radius ?? 0.1) + 0.5;
+    // --- 2. Raycast entre frames (anti-tunneling) ---
+    // Si el proyectil se mueve muy rápido, el overlap query podría no detectar
+    // colliders pequeños entre frames. El raycast desde la posición anterior
+    // cubre todo el arco de movimiento.
+    if (this.previousPosition) {
+      const prev = this.previousPosition;
+      const dx = currentPos.x - prev.x;
+      const dy = currentPos.y - prev.y;
+      const dz = currentPos.z - prev.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    world.intersectionsWithRay(
-      backRay, backScanDistance, false,
-      (intersection: RAPIER.RayColliderIntersection) => {
-        const collider = intersection.collider;
+      if (dist > 0.001) {
+        const rayDir = { x: dx / dist, y: dy / dist, z: dz / dist };
+        const scanDistance = dist + queryRadius + 0.3;
 
-        const groups = collider.collisionGroups();
-        const membership = (groups >> 16) & 0xffff;
-        if ((membership & targetGroup) === 0) {
-          return true;
-        }
+        const ray = new RAPIER.Ray(
+          { x: prev.x, y: prev.y, z: prev.z },
+          rayDir
+        );
 
-        const userData = collider.parent()?.userData as { entity?: any; type?: string } | undefined;
+        world.intersectionsWithRay(
+          ray, scanDistance, true,
+          (intersection: RAPIER.RayColliderIntersection) => {
+            const collider = intersection.collider;
 
-        if (userData) {
-          this.handleCollision(userData);
-        }
+            // Filtrar por el grupo objetivo
+            const groups = collider.collisionGroups();
+            const membership = (groups >> 16) & 0xffff;
+            if ((membership & targetGroup) === 0) {
+              return true; // No es el objetivo, continuar
+            }
 
-        return true;
+            const parentBody = collider.parent();
+            if (!parentBody) return true;
+
+            const userData = parentBody.userData as { entity?: any; type?: string } | undefined;
+
+            if (userData) {
+              console.log(`[Projectile] Hit detectado (raycast): type=${userData.type}`);
+              this.handleCollision(userData);
+            }
+
+            return true;
+          }
+        );
       }
-    );
+    }
+  }
+
+  /**
+   * Distance check directo contra targets registrados.
+   * No depende de Rapier queries, alturas de colliders ni orden de stepAll().
+   * Detecta si el proyectil está cerca de algún target por distancia euclidiana.
+   */
+  private checkTargetDistance(currentPos: RAPIER.Vector): void {
+    if (!this.config || !this.active) return;
+
+    const hitRadius = 0.6; // Radio de impacto generoso
+    const currentVec = new THREE.Vector3(currentPos.x, currentPos.y, currentPos.z);
+
+    for (const target of this.targets) {
+      const targetPos = target.getPosition();
+      if (!targetPos) continue;
+
+      const dist = currentVec.distanceTo(targetPos);
+      if (dist < hitRadius) {
+        console.log(`[Projectile] Hit detectado (distance check): dist=${dist.toFixed(2)}, target=player`);
+        this.handleCollision({ type: 'player', entity: target.entity });
+        break;
+      }
+    }
   }
 
   /**
@@ -410,7 +488,8 @@ export class Projectile {
     this.config = null;
     this.distanceTraveled = 0;
     this.hasPierced = false;
-    this.lastCollisionCheck = 0;
+    this.previousPosition = null;
+    this.targets = [];
 
     // Ocultar mesh
     this.mesh.visible = false;

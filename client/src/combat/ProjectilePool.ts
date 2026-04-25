@@ -4,6 +4,7 @@ import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Groups, Masks } from '../physics/CollisionGroups';
 import { Projectile } from './Projectile';
 import { EventBus } from '../engine/EventBus';
+import { DamagePipeline } from './DamagePipeline';
 
 /**
  * Pool de proyectiles reutilizables para evitar garbage collection frecuente.
@@ -72,11 +73,31 @@ export class ProjectilePool {
   }
 
   /**
+   * Establece el pipeline de daño en todos los proyectiles del pool.
+   * Necesario para que los proyectiles puedan aplicar daño a través del pipeline
+   * en lugar de emitir eventos raw.
+   */
+  setDamagePipeline(pipeline: DamagePipeline): void {
+    for (const projectile of this.pool) {
+      projectile.setDamagePipeline(pipeline);
+    }
+    for (const projectile of this.activeProjectiles) {
+      projectile.setDamagePipeline(pipeline);
+    }
+  }
+
+  /**
    * Actualiza todos los proyectiles activos.
    * @param deltaTime Tiempo transcurrido desde el último frame (en segundos)
+   * @param targets Targets opcionales para distance check directo (ej: players)
    */
-  update(deltaTime: number): void {
+  update(deltaTime: number, targets?: { entity: any; getPosition: () => THREE.Vector3 | null }[]): void {
     for (const projectile of this.activeProjectiles) {
+      // Pasar targets al projectile para distance check directo
+      if (targets) {
+        projectile.setTargets(targets);
+      }
+
       projectile.update(deltaTime);
 
       // Verificar si el proyectil debe ser liberado (por rango o tiempo)
