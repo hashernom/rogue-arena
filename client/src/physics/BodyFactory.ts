@@ -79,20 +79,20 @@ export class BodyFactory {
     let colliderOffsetY: number;
     switch (enemyType) {
       case 'small':
-        radius = 0.25;
-        halfHeight = 0.2; // Solo torso, no pies-cabeza
-        colliderOffsetY = 0.25; // Desplazado hacia arriba
+        radius = 0.3;
+        halfHeight = 0.25;
+        colliderOffsetY = 0.35;
         break;
       case 'large':
-        radius = 0.4;
-        halfHeight = 0.35; // Solo torso
-        colliderOffsetY = 0.55; // Desplazado hacia arriba
+        radius = 0.45;
+        halfHeight = 0.4;
+        colliderOffsetY = 0.65;
         break;
       case 'medium':
       default:
-        radius = 0.3;
-        halfHeight = 0.25; // Solo torso
-        colliderOffsetY = 0.4; // Desplazado hacia arriba
+        radius = 0.35;
+        halfHeight = 0.3;
+        colliderOffsetY = 0.5;
         break;
     }
 
