@@ -55,6 +55,9 @@ export class AdcCharacter extends Character {
   /** Arma del personaje (arco) */
   private weapon: THREE.Object3D | null = null;
 
+  /** Aljaba en la espalda */
+  private quiver: THREE.Object3D | null = null;
+
   /** Habilidad pasiva Perforación */
   private piercePassive: PiercePassive | null = null;
 
@@ -106,13 +109,15 @@ export class AdcCharacter extends Character {
         this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
         this.assetLoader.load('/models/Rig_Medium_CombatRanged.glb'),
         this.assetLoader.load('/models/Rig_Medium_General.glb'),
-        this.assetLoader.load('/models/weapons/bow.gltf')
+        this.assetLoader.load('/models/weapons/bow.gltf'),
+        this.assetLoader.load('/models/weapons/quiver.gltf')
       ]);
       const modelGltf = assets[0] as GLTF;
       const movementGltf = assets[1] as GLTF;
       const combatGltf = assets[2] as GLTF;
       const generalGltf = assets[3] as GLTF;
       const weaponGltf = assets[4] as GLTF;
+      const quiverGltf = assets[5] as GLTF;
 
       // 1. Clonado de esqueleto independiente
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
@@ -137,7 +142,10 @@ export class AdcCharacter extends Character {
       // 4. CARGAR ARMA REAL (arco KayKit)
       await this.loadWeapon(weaponGltf);
 
-      // 5. Inicialización del Mixer
+      // 5. CARGAR ALJABA EN LA ESPALDA
+      await this.loadQuiver(quiverGltf);
+
+      // 6. Inicialización del Mixer
       this.mixer = new THREE.AnimationMixer(this.innerMesh);
 
       // 5. Mapeo Inteligente
@@ -995,6 +1003,10 @@ export class AdcCharacter extends Character {
       this.mixer.stopAllAction();
       this.mixer = null;
     }
+    // Limpiar aljaba
+    if (this.quiver) {
+      this.quiver = null;
+    }
     // Remover proyectiles
     this.activeProjectiles.forEach(proj => this.sceneManager.remove(proj));
     this.activeProjectiles = [];
@@ -1091,6 +1103,58 @@ export class AdcCharacter extends Character {
 
     } catch (error) {
       console.error(`[AdcCharacter ${this.id}] Error cargando el arma:`, error);
+    }
+  }
+
+  /**
+   * Carga y adjunta la aljaba en la espalda del personaje.
+   * Busca un hueso de la columna/spine para attachment esqueletal,
+   * o fallback a posición fija en el torso.
+   */
+  private async loadQuiver(quiverGltf: GLTF): Promise<void> {
+    try {
+      const quiverModel = SkeletonUtils.clone(quiverGltf.scene);
+
+      // Buscar hueso de la columna/spine en el esqueleto
+      let spineBone: any = null;
+      this.innerMesh!.traverse((child: any) => {
+        if (child.isBone) {
+          const name = child.name.toLowerCase();
+          if (name.includes('spine') || name.includes('chest') || name.includes('upper')) {
+            spineBone = child;
+          }
+        }
+      });
+
+      if (spineBone) {
+        // Adjuntar al hueso de la columna (sigue las animaciones del torso)
+        quiverModel.position.set(0, 0.15, -0.25);
+        quiverModel.rotation.set(0, Math.PI, 0);
+        quiverModel.scale.set(0.8, 0.8, 0.8);
+        spineBone.add(quiverModel);
+        console.log(`[AdcCharacter ${this.id}] Aljaba asignada a la columna: ${spineBone.name}`);
+      } else {
+        // Fallback: posición fija en la espalda
+        quiverModel.position.set(0, 0.9, -0.35);
+        quiverModel.rotation.set(0, Math.PI, 0);
+        quiverModel.scale.set(0.8, 0.8, 0.8);
+        this.innerMesh!.add(quiverModel);
+        console.log(`[AdcCharacter ${this.id}] Aljaba asignada al modelo general (posición espalda)`);
+      }
+
+      // Configurar sombras
+      quiverModel.traverse((child: any) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      this.quiver = quiverModel;
+      console.log(`[AdcCharacter ${this.id}] Aljaba cargada exitosamente`);
+
+    } catch (error) {
+      console.error(`[AdcCharacter ${this.id}] Error cargando la aljaba:`, error);
     }
   }
 
