@@ -79,8 +79,8 @@ export class BodyFactory {
     let colliderOffsetY: number;
     switch (enemyType) {
       case 'small':
-        radius = 0.2;
-        halfHeight = 0.15; // Solo torso, no pies-cabeza
+        radius = 0.25;
+        halfHeight = 0.2; // Solo torso, no pies-cabeza
         colliderOffsetY = 0.25; // Desplazado hacia arriba
         break;
       case 'large':
