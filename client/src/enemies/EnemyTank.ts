@@ -258,24 +258,24 @@ export class EnemyTank extends Enemy {
   }
 
   // =================================================================
-  // IA: PRIORIZA AL JUGADOR CON MENOS HP
+  // IA: PRIORIZA AL JUGADOR MÁS CERCANO
   // =================================================================
 
   /**
-   * Encuentra al jugador con menos HP actual.
-   * Si hay empate, elige al más cercano.
+   * Encuentra al jugador vivo más cercano.
+   * El tanque es lento pero va directo al target más próximo.
    *
    * Zero-garbage: no crea objetos temporales en el game loop.
    */
-  private getWeakestPlayer(players: any[]): any | null {
+  private getClosestPlayer(players: any[]): any | null {
     if (players.length === 0) return null;
 
-    let weakest: any | null = null;
-    let lowestHp = Infinity;
+    let closest: any | null = null;
     let closestDist = Infinity;
 
     // Posición del tanque para calcular distancia
     const enemyPos = this.model ? this.model.position : null;
+    if (!enemyPos) return null;
 
     for (let i = 0; i < players.length; i++) {
       const player = players[i];
@@ -283,30 +283,20 @@ export class EnemyTank extends Enemy {
       if (!player || !player.getPosition || !player.isAlive) continue;
       if (!player.isAlive()) continue;
 
-      // Obtener HP actual del jugador
-      const currentHp = player.getEffectiveStat('hp');
-      if (typeof currentHp !== 'number') continue;
+      const playerPos = player.getPosition();
+      if (!playerPos) continue;
 
-      // Calcular distancia (para desempate)
-      let dist = Infinity;
-      if (enemyPos) {
-        const playerPos = player.getPosition();
-        if (playerPos) {
-          const dx = playerPos.x - enemyPos.x;
-          const dz = playerPos.z - enemyPos.z;
-          dist = dx * dx + dz * dz;
-        }
-      }
+      const dx = playerPos.x - enemyPos.x;
+      const dz = playerPos.z - enemyPos.z;
+      const distSq = dx * dx + dz * dz;
 
-      // Priorizar al de menor HP; si hay empate, al más cercano
-      if (currentHp < lowestHp || (currentHp === lowestHp && dist < closestDist)) {
-        lowestHp = currentHp;
-        closestDist = dist;
-        weakest = player;
+      if (distSq < closestDist) {
+        closestDist = distSq;
+        closest = player;
       }
     }
 
-    return weakest;
+    return closest;
   }
 
   /**
@@ -337,7 +327,7 @@ export class EnemyTank extends Enemy {
   }
 
   /**
-   * Actualiza la IA del enemigo: persigue al jugador con menos HP.
+   * Actualiza la IA del enemigo: persigue al jugador más cercano.
    * Zero-garbage: no instancia nuevos objetos en el game loop.
    */
   updateAI(dt: number, players: any[], world?: any, activeEnemies?: any[]): void {
@@ -345,8 +335,8 @@ export class EnemyTank extends Enemy {
     if (this.enemyState !== EnemyState.Active) return;
     if (!this.steeringEnabled) return;
 
-    // 1. Encontrar al jugador con menos HP
-    const target = this.getWeakestPlayer(players);
+    // 1. Encontrar al jugador más cercano
+    const target = this.getClosestPlayer(players);
     if (!target || !target.getPosition) return;
 
     const targetPos = target.getPosition();
