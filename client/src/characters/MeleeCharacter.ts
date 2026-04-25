@@ -586,8 +586,14 @@ export class MeleeCharacter extends Character {
    * Versión consolidada "a prueba de balas" con sincronización directa.
    */
   update(dt: number, inputState?: InputState): void {
+    if (!this.physicsBody || !this.physicsWorld || this.state === CharacterState.Dead) {
+      // Si está muerto, solo actualizar el mixer si hay animación de muerte reproduciéndose
+      if (this.state === CharacterState.Dead && this.mixer) {
+        this.mixer.update(dt);
+      }
+      return;
+    }
     if (this.mixer) this.mixer.update(dt);
-    if (!this.physicsBody || !this.physicsWorld || this.state === CharacterState.Dead) return;
 
     // Actualizar habilidades
     if (this.chargeAbility) {
@@ -892,9 +898,18 @@ export class MeleeCharacter extends Character {
   die(): void {
     super.die();
 
-    // Remover modelo de la escena
+    // Remover modelo de la escena y limpiar referencias
     if (this.model) {
       this.sceneManager.remove(this.model);
+      this.model = null;
+    }
+    if (this.innerMesh) {
+      this.innerMesh = null;
+    }
+    // Detener el mixer de animaciones
+    if (this.mixer) {
+      this.mixer.stopAllAction();
+      this.mixer = null;
     }
   }
 

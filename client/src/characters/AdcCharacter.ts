@@ -343,6 +343,14 @@ export class AdcCharacter extends Character {
    * Versión consolidada "a prueba de balas" con sincronización directa.
    */
   update(dt: number, inputState?: InputState): void {
+    if (!this.physicsBody || !this.physicsWorld || this.state === CharacterState.Dead) {
+      // Si está muerto, solo actualizar el mixer si hay animación de muerte reproduciéndose
+      if (this.state === CharacterState.Dead && this.mixer) {
+        this.mixer.update(dt);
+      }
+      return;
+    }
+    
     // Actualizar mixer de animaciones THREE.js
     if (this.mixer) this.mixer.update(dt);
     
@@ -353,8 +361,6 @@ export class AdcCharacter extends Character {
     
     // Actualizar proyectiles
     this.updateProjectiles(dt);
-
-    if (!this.physicsBody || !this.physicsWorld || this.state === CharacterState.Dead) return;
 
     // Obtener el cuerpo físico real
     const body = this.physicsWorld.getBody(this.physicsBody);
@@ -976,11 +982,19 @@ export class AdcCharacter extends Character {
   die(): void {
     super.die();
 
-    // Remover modelo de la escena
+    // Remover modelo de la escena y limpiar referencias
     if (this.model) {
       this.sceneManager.remove(this.model);
+      this.model = null;
     }
-
+    if (this.innerMesh) {
+      this.innerMesh = null;
+    }
+    // Detener el mixer de animaciones
+    if (this.mixer) {
+      this.mixer.stopAllAction();
+      this.mixer = null;
+    }
     // Remover proyectiles
     this.activeProjectiles.forEach(proj => this.sceneManager.remove(proj));
     this.activeProjectiles = [];
@@ -1046,7 +1060,7 @@ export class AdcCharacter extends Character {
       if (handBone) {
         // Ajustar posición y rotación del arma relativa a la mano
         weaponModel.position.set(0.1, 0, 0.1);
-        weaponModel.rotation.set(0, -Math.PI / 2, 0);
+        weaponModel.rotation.set(0, Math.PI, 0);
         weaponModel.scale.set(0.8, 0.8, 0.8);
         
         // Añadir el arma como hijo del hueso de la mano
@@ -1057,7 +1071,7 @@ export class AdcCharacter extends Character {
       } else {
         // Si no encontramos hueso, adjuntar al modelo general
         weaponModel.position.set(0.5, 1, 0);
-        weaponModel.rotation.set(0, -Math.PI / 2, 0);
+        weaponModel.rotation.set(0, Math.PI, 0);
         weaponModel.scale.set(0.8, 0.8, 0.8);
         this.innerMesh!.add(weaponModel);
         this.weapon = weaponModel;
