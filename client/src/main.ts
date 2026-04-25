@@ -17,6 +17,7 @@ import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
 import { ENEMY_FAST_STATS } from './enemies/EnemyFast';
 import { ENEMY_TANK_STATS, ensureWarriorModelLoaded } from './enemies/EnemyTank';
 import { ENEMY_RANGED_STATS, ensureMageModelLoaded } from './enemies/EnemyRanged';
+import { MINIBOSS_STATS, ensureMiniBossModelLoaded } from './enemies/MiniBoss';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
 import { ProjectilePool } from './combat/ProjectilePool';
@@ -313,6 +314,10 @@ async function initGameWithPhysics(): Promise<void> {
       await ensureMageModelLoaded();
       console.log('✅ Modelo Mage precargado para EnemyRanged');
 
+      // Precargar modelo del Warrior para MiniBoss
+      await ensureMiniBossModelLoaded();
+      console.log('✅ Modelo Warrior precargado para MiniBoss');
+
       // Crear pool de proyectiles para enemigos a distancia
       enemyProjectilePool = new ProjectilePool(physicsWorld, scene, eventBus, 30);
       // Compartir el pipeline de daño con los proyectiles del pool
@@ -359,6 +364,15 @@ async function initGameWithPhysics(): Promise<void> {
         maxSize: 15
       });
       console.log('🔴 EnemyPool inicializado con tipo ranged');
+
+      // Registrar tipo de enemigo mini-boss (jefe de oleadas especiales)
+      enemyPool.registerEnemyType({
+        type: EnemyType.MiniBoss,
+        stats: MINIBOSS_STATS,
+        initialCount: 1,
+        maxSize: 3
+      });
+      console.log('🟣 EnemyPool inicializado con tipo mini_boss');
 
       // ================================================================
       // SISTEMA DE OLEADAS (WaveManager + Spawner)

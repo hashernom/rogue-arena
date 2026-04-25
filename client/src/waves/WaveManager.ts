@@ -73,10 +73,16 @@ export function generateWaveConfig(round: number): WaveConfig {
 
   const isBossWave = round % 5 === 0;
 
-  // En oleadas de jefe, agregar un grupo extra de Tanques
+  // En oleadas de jefe (rondas 5, 10, 15...):
+  // - Spawnear 1 MiniBoss con delay inicial
+  // - Reducir a la mitad los enemigos normales
   if (isBossWave) {
-    const bossCount = Math.ceil(round / 5);
-    groups.push({ type: EnemyType.Tank, count: bossCount, spawnDelay: 1.0 });
+    // Reducir todos los grupos existentes a la mitad
+    for (let i = 0; i < groups.length; i++) {
+      groups[i].count = Math.max(1, Math.floor(groups[i].count / 2));
+    }
+    // Agregar el MiniBoss con delay mayor
+    groups.push({ type: EnemyType.MiniBoss, count: 1, spawnDelay: 2.0 });
   }
 
   return {

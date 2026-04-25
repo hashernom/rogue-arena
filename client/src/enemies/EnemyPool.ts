@@ -7,6 +7,7 @@ import { EnemyBasic, ENEMY_BASIC_STATS } from './EnemyBasic';
 import { EnemyFast, ENEMY_FAST_STATS } from './EnemyFast';
 import { EnemyTank, ENEMY_TANK_STATS } from './EnemyTank';
 import { EnemyRanged, ENEMY_RANGED_STATS } from './EnemyRanged';
+import { MiniBoss, MINIBOSS_STATS } from './MiniBoss';
 import { ProjectilePool } from '../combat/ProjectilePool';
 
 /**
@@ -152,6 +153,19 @@ export class EnemyPool {
           0xcccccc,  // Color original del esqueleto
           1.5,       // Tamaño 1.5x (más grande e imponente)
           stats.knockbackResistance, // 1.0 — inmune a knockback
+          type,
+          stats
+        );
+      case EnemyType.MiniBoss:
+        return new MiniBoss(
+          enemyId,
+          this.eventBus,
+          this.sceneManager,
+          this.physicsWorld,
+          undefined,
+          0x880000,
+          1.8,
+          stats.knockbackResistance,
           type,
           stats
         );

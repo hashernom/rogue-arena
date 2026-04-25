@@ -24,6 +24,7 @@ export enum EnemyType {
   Fast = 'fast',
   Tank = 'tank',
   Ranged = 'ranged',
+  MiniBoss = 'mini_boss',
 }
 
 /**
