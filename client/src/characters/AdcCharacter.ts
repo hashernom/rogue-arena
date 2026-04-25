@@ -1046,8 +1046,8 @@ export class AdcCharacter extends Character {
       if (handBone) {
         // Ajustar posición y rotación del arma relativa a la mano
         weaponModel.position.set(0.1, 0, 0.1);
-        weaponModel.rotation.set(0, Math.PI / 2, 0);
-        weaponModel.scale.set(1.5, 1.5, 1.5);
+        weaponModel.rotation.set(0, -Math.PI / 2, 0);
+        weaponModel.scale.set(0.8, 0.8, 0.8);
         
         // Añadir el arma como hijo del hueso de la mano
         handBone.add(weaponModel);
@@ -1057,8 +1057,8 @@ export class AdcCharacter extends Character {
       } else {
         // Si no encontramos hueso, adjuntar al modelo general
         weaponModel.position.set(0.5, 1, 0);
-        weaponModel.rotation.set(0, Math.PI / 2, 0);
-        weaponModel.scale.set(1.5, 1.5, 1.5);
+        weaponModel.rotation.set(0, -Math.PI / 2, 0);
+        weaponModel.scale.set(0.8, 0.8, 0.8);
         this.innerMesh!.add(weaponModel);
         this.weapon = weaponModel;
         console.log(`[AdcCharacter ${this.id}] Arma asignada al modelo general (no se encontró hueso de mano)`);
