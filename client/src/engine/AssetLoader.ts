@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 /**
  * Cargador de assets centralizado con cache y soporte para instancing.
@@ -84,7 +83,9 @@ export class AssetLoader {
    * @returns Grupo clonado (THREE.Group).
    */
   public clone(gltf: GLTF): THREE.Group {
-    const clonedScene = SkeletonUtils.clone(gltf.scene) as THREE.Group;
+    // Usar scene.clone(true) para deep clone completo (funciona para modelos estáticos y skinned)
+    // SkeletonUtils.clone() puede producir grupos vacíos en modelos sin skinning
+    const clonedScene = gltf.scene.clone(true) as THREE.Group;
     // Clonar materiales y geometrías para evitar compartir referencias
     clonedScene.traverse(child => {
       if (child instanceof THREE.Mesh) {
