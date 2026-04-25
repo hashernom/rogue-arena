@@ -102,8 +102,8 @@ export async function ensureWarriorModelLoaded(): Promise<void> {
  * - Inmune a knockback (knockbackResistance = 1.0)
  * - Prioriza al jugador con MENOS HP actual
  * - Usa el modelo Skeleton_Warrior.glb (más imponente)
- * - Escala 1.5× el tamaño normal
- * - Usa cuerpo físico 'large' (radio 0.4, halfHeight 0.7)
+ * - Escala 1.15× el tamaño normal (ligeramente más grande que Basic/Fast)
+ * - Usa cuerpo físico 'medium' (mismo que Basic/Fast)
  */
 export class EnemyTank extends Enemy {
   // ========== ATAQUE MELEE ==========
@@ -124,7 +124,7 @@ export class EnemyTank extends Enemy {
     physicsWorld?: PhysicsWorld,
     physicsBody?: RigidBodyHandle,
     color: number = 0xcccccc,
-    size: number = 1.5,
+    size: number = 1.15,
     knockbackResistance: number = 1.0,
     type: EnemyType = EnemyType.Tank,
     stats?: EnemyStats
@@ -226,12 +226,13 @@ export class EnemyTank extends Enemy {
   }
 
   // =================================================================
-  // FÍSICA (override: usa 'large' para el tamaño 1.5x)
+  // FÍSICA (override: usa 'medium' — mismo tamaño que Basic/Fast)
   // =================================================================
 
   /**
-   * Crea el cuerpo físico usando BodyFactory con tamaño 'large'.
-   * El tanque es más grande que los enemigos normales.
+   * Crea el cuerpo físico usando BodyFactory con tamaño 'medium'.
+   * El tanque es ligeramente más grande visualmente (1.15x) pero
+   * comparte el mismo collider que los demás enemigos.
    */
   protected createPhysicsBody(): void {
     if (!this.physicsWorld || !this.model) return;
@@ -244,13 +245,13 @@ export class EnemyTank extends Enemy {
           this.model.position.y,
           this.model.position.z
         ),
-        'large', // Tamaño grande (radio 0.4, halfHeight 0.7)
+        'medium', // Mismo tamaño que Basic/Fast (radio 0.3, halfHeight 0.5)
         this.id,
         this
       );
 
       this.physicsBody = bodyHandle;
-      console.log(`[EnemyTank ${this.id}] Cuerpo físico creado (large)`);
+      console.log(`[EnemyTank ${this.id}] Cuerpo físico creado (medium)`);
     } catch (error) {
       console.error(`[EnemyTank ${this.id}] Error creando cuerpo físico:`, error);
     }
