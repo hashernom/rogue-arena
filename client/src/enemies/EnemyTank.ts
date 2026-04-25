@@ -6,49 +6,106 @@ import type { EventBus } from '../engine/EventBus';
 import type { SceneManager } from '../engine/SceneManager';
 import type { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
 import { BodyFactory } from '../physics/BodyFactory';
+import { AssetLoader } from '../engine/AssetLoader';
 
 // =================================================================
-// STATS BASE PARA EnemyFast
+// STATS BASE PARA EnemyTank
 // =================================================================
 
 /**
- * Estadísticas base para el enemigo veloz (flanqueador).
- * - hp: 20, baja vida -> frágil
- * - speed: 5.5, muy rápido
- * - damage: 5, daño bajo pero constante
- * - armor: 0, sin protección
- * - knockbackResistance: 0.2, leve resistencia
- * - reward: 2, recompensa baja
+ * Estadísticas base para el enemigo tanque (alta vida, lento, mucho daño).
+ * - hp: 200, muy alta -> absorbe mucho daño
+ * - speed: 1.5, muy lento
+ * - damage: 15, alto daño por golpe
+ * - armor: 5, resistencia media
+ * - knockbackResistance: 1.0, inmune a knockback
+ * - reward: 8, recompensa alta
  */
-export const ENEMY_FAST_STATS: EnemyStats = {
-  hp: 20,
-  maxHp: 20,
-  speed: 3.8,
-  damage: 5,
-  attackSpeed: 1.0,
-  range: 0.6,
-  armor: 0,
-  knockbackResistance: 0.2,
-  reward: 2,
+export const ENEMY_TANK_STATS: EnemyStats = {
+  hp: 200,
+  maxHp: 200,
+  speed: 1.5,
+  damage: 15,
+  attackSpeed: 0.8,
+  range: 0.8,
+  armor: 5,
+  knockbackResistance: 1.0,
+  reward: 8,
 };
 
 // =================================================================
-// CLASE EnemyFast
+// CARGA ESTÁTICA DEL MODELO WARRIOR (separada del Minion compartido)
+// =================================================================
+
+/** AssetLoader dedicado para el modelo Warrior */
+const warriorAssetLoader = new AssetLoader();
+/** Escena original del GLTF Warrior (se clona con SkeletonUtils.clone()) */
+let warriorModelScene: THREE.Group | null = null;
+/** Promesa de carga del modelo Warrior */
+let warriorLoadPromise: Promise<THREE.Group> | null = null;
+
+/**
+ * Carga el modelo Skeleton_Warrior.glb de forma estática (similar a
+ * Enemy.ensureModelLoaded() pero para el modelo de Warrior).
+ *
+ * Es seguro llamarlo múltiples veces — si ya está cargado o cargando, no hace nada.
+ * @returns Promesa que resuelve cuando el modelo Warrior está disponible
+ */
+export async function ensureWarriorModelLoaded(): Promise<void> {
+  if (warriorModelScene) return;
+  if (warriorLoadPromise) {
+    await warriorLoadPromise;
+    return;
+  }
+
+  warriorLoadPromise = new Promise(async (resolve, reject) => {
+    try {
+      const gltf = await warriorAssetLoader.load('/models/enemies/Skeleton_Warrior.glb');
+      const model = gltf.scene;
+
+      // Misma orientación que el Minion: rotation.y = Math.PI para que
+      // el forward del modelo apunte en -Z (compatible con Three.js)
+      model.scale.set(1.0, 1.0, 1.0);
+      model.rotation.y = Math.PI;
+
+      model.traverse(child => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      warriorModelScene = model;
+      resolve(model);
+    } catch (error) {
+      warriorLoadPromise = null;
+      console.error('[EnemyTank] Error cargando modelo Warrior:', error);
+      reject(error);
+    }
+  });
+
+  await warriorLoadPromise;
+}
+
+// =================================================================
+// CLASE EnemyTank
 // =================================================================
 
 /**
- * Enemigo veloz que prioriza atacar al Tirador (ADC), flanqueando
- * en lugar de ir en línea recta.
+ * Enemigo tanque que absorbe mucho daño y ejerce presión constante
+ * por su alto daño de golpe.
  *
  * Características:
- * - Prioriza al ADC (AdcCharacter) sobre el Caballero (MeleeCharacter)
- * - Se aproxima con offset lateral de 1.5m (flanqueo)
- * - Recalcula el offset de flanqueo (left/right random) cada 2s
- * - Al morir el ADC, cambia de target al Caballero inmediatamente
- * - Usa el mismo modelo de esqueleto con tinte celeste muy leve
- * - Usa el pool lifecycle de Enemy (spawn, release, reset, dispose)
+ * - Alta vida (200 HP) y armadura (5)
+ * - Movimiento lento (1.5 speed)
+ * - Alto daño por golpe (15 damage)
+ * - Inmune a knockback (knockbackResistance = 1.0)
+ * - Prioriza al jugador con MENOS HP actual
+ * - Usa el modelo Skeleton_Warrior.glb (más imponente)
+ * - Escala 1.5× el tamaño normal
+ * - Usa cuerpo físico 'large' (radio 0.4, halfHeight 0.7)
  */
-export class EnemyFast extends Enemy {
+export class EnemyTank extends Enemy {
   // ========== ATAQUE MELEE ==========
   /** Timestamp del último ataque (para control de cadencia) */
   private lastAttackTime: number = 0;
@@ -57,18 +114,8 @@ export class EnemyFast extends Enemy {
   /** Tiempo mínimo (ms) que la animación de ataque debe verse antes de permitir Idle */
   private readonly ATTACK_ANIM_DURATION_MS: number = 600;
 
-  // ========== FLANQUEO ==========
-  /** Offset lateral actual para flanqueo (Vector3 para evitar crear objetos en updateAI) */
-  private flankOffset: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
-  /** Timestamp del último recálculo del offset de flanqueo */
-  private lastFlankRecalcTime: number = 0;
-  /** Intervalo en ms entre recálculos de flanqueo */
-  private readonly FLANK_RECALC_INTERVAL_MS: number = 2000;
-  /** Distancia lateral del offset de flanqueo */
-  private readonly FLANK_OFFSET_DISTANCE: number = 1.5;
-
   /**
-   * Crea un nuevo EnemyFast
+   * Crea un nuevo EnemyTank
    */
   constructor(
     id: string,
@@ -76,17 +123,17 @@ export class EnemyFast extends Enemy {
     sceneManager: SceneManager,
     physicsWorld?: PhysicsWorld,
     physicsBody?: RigidBodyHandle,
-    color: number = 0xbbddff,
-    size: number = 1.0,
-    knockbackResistance: number = 0.2,
-    type: EnemyType = EnemyType.Fast,
+    color: number = 0xcccccc,
+    size: number = 1.5,
+    knockbackResistance: number = 1.0,
+    type: EnemyType = EnemyType.Tank,
     stats?: EnemyStats
   ) {
-    // Usar ENEMY_FAST_STATS si no se proporcionan stats
-    const effectiveStats = stats || ENEMY_FAST_STATS;
+    // Usar ENEMY_TANK_STATS si no se proporcionan stats
+    const effectiveStats = stats || ENEMY_TANK_STATS;
 
     // Llamar al constructor de Enemy con skipModelLoad=true para evitar
-    // que Enemy cargue el modelo del esqueleto (lo haremos nosotros aquí)
+    // que Enemy cargue el modelo Minion (cargaremos el Warrior aquí)
     super(
       id,
       eventBus,
@@ -98,83 +145,60 @@ export class EnemyFast extends Enemy {
       knockbackResistance,
       type,
       effectiveStats,
-      true // skipModelLoad — nosotros manejamos la carga
+      true // skipModelLoad — nosotros manejamos la carga del Warrior
     );
 
-    // Cargar el modelo de esqueleto inmediatamente
-    this.loadSkeletonModel(color);
+    // Cargar el modelo de Warrior inmediatamente
+    this.loadWarriorModel();
   }
 
   // =================================================================
-  // CARGA DE MODELO (esqueleto con tinte celeste)
+  // CARGA DE MODELO (Skeleton_Warrior.glb)
   // =================================================================
 
   /**
-   * Carga el modelo de esqueleto reutilizando la carga compartida de Enemy.
-   * Si el modelo compartido aún no está disponible, se suscribe a la promesa.
+   * Carga el modelo Skeleton_Warrior reutilizando la carga estática.
+   * Si el modelo aún no está disponible, se suscribe a la promesa.
    */
-  private loadSkeletonModel(color: number): void {
-    // Intentar obtener el modelo compartido de Enemy (getter estático)
-    const sharedModel = Enemy.getSharedModelScene();
-
-    if (sharedModel) {
+  private loadWarriorModel(): void {
+    if (warriorModelScene) {
       // El modelo ya está cargado — clonar inmediatamente (síncrono)
-      this.cloneAndTintSkeleton(sharedModel, color);
+      this.cloneWarriorSkeleton(warriorModelScene);
       return;
     }
 
     // Si no está disponible, suscribirse a la promesa de carga
-    const loadPromise = Enemy.getSharedLoadPromise();
-    if (loadPromise) {
-      loadPromise.then((scene: THREE.Group) => {
-        this.cloneAndTintSkeleton(scene, color);
+    if (warriorLoadPromise) {
+      warriorLoadPromise.then((scene: THREE.Group) => {
+        this.cloneWarriorSkeleton(scene);
       }).catch(err => {
-        console.error(`[EnemyFast ${this.id}] Error en carga compartida:`, err);
+        console.error(`[EnemyTank ${this.id}] Error en carga del Warrior:`, err);
       });
       return;
     }
 
-    // Si no hay promesa ni modelo, el modelo nunca se cargó
-    console.warn(`[EnemyFast ${this.id}] Modelo compartido no disponible — los skeletons se crean antes`);
+    // Si no hay promesa ni modelo, iniciar carga ahora
+    console.warn(`[EnemyTank ${this.id}] Modelo Warrior no precargado — cargando ahora`);
+    ensureWarriorModelLoaded().then(() => {
+      if (warriorModelScene) {
+        this.cloneWarriorSkeleton(warriorModelScene);
+      }
+    }).catch(err => {
+      console.error(`[EnemyTank ${this.id}] Error cargando modelo Warrior:`, err);
+    });
   }
 
   /**
-   * Clona el modelo de esqueleto compartido y le aplica un tinte de color.
-   *
-   * IMPORTANTE: Este método puede ejecutarse de forma diferida (vía promesa)
-   * después de que spawn() ya haya corrido. Por eso:
-   * 1. Aplica this.targetPosition al modelo (spawn() no pudo porque !this.model)
-   * 2. Crea el physics body en la posición correcta
-   * 3. Aplica la escala inicial de spawn animation si es necesario
+   * Clona el modelo Warrior compartido y lo configura para esta instancia.
    *
    * NOTA: El modelo base ya tiene rotation.y = Math.PI aplicado en
-   * Enemy.ensureModelLoaded() / loadModel(). SkeletonUtils.clone() hereda
-   * esa rotación, por lo que NO debemos rotar el innerMesh nuevamente.
+   * ensureWarriorModelLoaded(). SkeletonUtils.clone() hereda esa rotación,
+   * por lo que NO debemos rotar el innerMesh nuevamente.
    */
-  private cloneAndTintSkeleton(sourceScene: THREE.Group, color: number): void {
+  private cloneWarriorSkeleton(sourceScene: THREE.Group): void {
     try {
       // Clonar con SkeletonUtils para preservar skinning
       const cloned = SkeletonUtils.clone(sourceScene) as THREE.Group;
-
-      // Aplicar tinte de color a todas las mallas del modelo clonado
-      cloned.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh;
-          if (mesh.material) {
-            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-            materials.forEach((mat) => {
-              if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhongMaterial) {
-                // Mezclar el color base con el tinte (multiplicativo)
-                const tintColor = new THREE.Color(color);
-                if (mat.color) {
-                  mat.color.multiply(tintColor);
-                }
-                mat.needsUpdate = true;
-              }
-            });
-          }
-        }
-      });
 
       // Usar setupModel de Enemy (protected) para configurar el modelo
       this.setupModel(cloned);
@@ -195,18 +219,19 @@ export class EnemyFast extends Enemy {
         this.createPhysicsBody();
       }
 
-      console.log(`[EnemyFast ${this.id}] Modelo de esqueleto (tinte celeste) cargado y configurado en (${this.targetPosition.x}, ${this.targetPosition.y}, ${this.targetPosition.z})`);
+      console.log(`[EnemyTank ${this.id}] Modelo Warrior cargado y configurado en (${this.targetPosition.x}, ${this.targetPosition.y}, ${this.targetPosition.z})`);
     } catch (error) {
-      console.error(`[EnemyFast ${this.id}] Error clonando modelo:`, error);
+      console.error(`[EnemyTank ${this.id}] Error clonando modelo Warrior:`, error);
     }
   }
 
   // =================================================================
-  // FÍSICA
+  // FÍSICA (override: usa 'large' para el tamaño 1.5x)
   // =================================================================
 
   /**
-   * Crea el cuerpo físico usando BodyFactory.
+   * Crea el cuerpo físico usando BodyFactory con tamaño 'large'.
+   * El tanque es más grande que los enemigos normales.
    */
   protected createPhysicsBody(): void {
     if (!this.physicsWorld || !this.model) return;
@@ -219,36 +244,37 @@ export class EnemyFast extends Enemy {
           this.model.position.y,
           this.model.position.z
         ),
-        'small',
+        'large', // Tamaño grande (radio 0.4, halfHeight 0.7)
         this.id,
         this
       );
 
       this.physicsBody = bodyHandle;
-      console.log(`[EnemyFast ${this.id}] Cuerpo físico creado`);
+      console.log(`[EnemyTank ${this.id}] Cuerpo físico creado (large)`);
     } catch (error) {
-      console.error(`[EnemyFast ${this.id}] Error creando cuerpo físico:`, error);
+      console.error(`[EnemyTank ${this.id}] Error creando cuerpo físico:`, error);
     }
   }
 
   // =================================================================
-  // IA: FLANQUEO CON PRIORIDAD ADC
+  // IA: PRIORIZA AL JUGADOR CON MENOS HP
   // =================================================================
 
   /**
-   * Encuentra el target prioritario: ADC (AdcCharacter) si está vivo,
-   * o Caballero (MeleeCharacter) si el ADC está muerto.
-   *
-   * Detecta al ADC verificando si tiene el método `shootProjectile`
-   * (presente en AdcCharacter, ausente en MeleeCharacter).
+   * Encuentra al jugador con menos HP actual.
+   * Si hay empate, elige al más cercano.
    *
    * Zero-garbage: no crea objetos temporales en el game loop.
    */
-  private getTargetPlayer(players: any[]): any | null {
+  private getWeakestPlayer(players: any[]): any | null {
     if (players.length === 0) return null;
 
-    let adcTarget: any | null = null;
-    let meleeTarget: any | null = null;
+    let weakest: any | null = null;
+    let lowestHp = Infinity;
+    let closestDist = Infinity;
+
+    // Posición del tanque para calcular distancia
+    const enemyPos = this.model ? this.model.position : null;
 
     for (let i = 0; i < players.length; i++) {
       const player = players[i];
@@ -256,36 +282,30 @@ export class EnemyFast extends Enemy {
       if (!player || !player.getPosition || !player.isAlive) continue;
       if (!player.isAlive()) continue;
 
-      // Detectar ADC por la presencia de shootProjectile
-      if (typeof player.shootProjectile === 'function') {
-        adcTarget = player;
-      } else {
-        meleeTarget = player;
+      // Obtener HP actual del jugador
+      const currentHp = player.getEffectiveStat('hp');
+      if (typeof currentHp !== 'number') continue;
+
+      // Calcular distancia (para desempate)
+      let dist = Infinity;
+      if (enemyPos) {
+        const playerPos = player.getPosition();
+        if (playerPos) {
+          const dx = playerPos.x - enemyPos.x;
+          const dz = playerPos.z - enemyPos.z;
+          dist = dx * dx + dz * dz;
+        }
+      }
+
+      // Priorizar al de menor HP; si hay empate, al más cercano
+      if (currentHp < lowestHp || (currentHp === lowestHp && dist < closestDist)) {
+        lowestHp = currentHp;
+        closestDist = dist;
+        weakest = player;
       }
     }
 
-    // Priorizar ADC; si no hay ADC vivo, ir al Caballero
-    return adcTarget || meleeTarget;
-  }
-
-  /**
-   * Recalcula el offset lateral de flanqueo (left o right random).
-   * Se llama cada FLANK_RECALC_INTERVAL_MS (2s).
-   */
-  private recalculateFlankOffset(): void {
-    // Elegir lado aleatorio: izquierdo (-1) o derecho (+1)
-    const side = Math.random() < 0.5 ? -1 : 1;
-
-    // El offset es perpendicular a la dirección de avance del enemigo
-    // pero se calcula en coordenadas absolutas (se rotará en updateAI
-    // según la dirección al target)
-    this.flankOffset.set(
-      side * this.FLANK_OFFSET_DISTANCE,
-      0,
-      0
-    );
-
-    this.lastFlankRecalcTime = Date.now();
+    return weakest;
   }
 
   /**
@@ -309,14 +329,14 @@ export class EnemyFast extends Enemy {
     const damage = this.getEffectiveStat('damage');
     if (target && typeof target.takeDamage === 'function') {
       target.takeDamage(damage);
-      console.log(`[EnemyFast ${this.id}] Ataque cuerpo a cuerpo a ${target.id}: ${damage} daño`);
+      console.log(`[EnemyTank ${this.id}] Ataque cuerpo a cuerpo a ${target.id}: ${damage} daño`);
     }
 
     return true;
   }
 
   /**
-   * Actualiza la IA del enemigo: flanqueo con prioridad ADC.
+   * Actualiza la IA del enemigo: persigue al jugador con menos HP.
    * Zero-garbage: no instancia nuevos objetos en el game loop.
    */
   updateAI(dt: number, players: any[], world?: any, activeEnemies?: any[]): void {
@@ -324,8 +344,8 @@ export class EnemyFast extends Enemy {
     if (this.enemyState !== EnemyState.Active) return;
     if (!this.steeringEnabled) return;
 
-    // 1. Encontrar el target prioritario (ADC > Caballero)
-    const target = this.getTargetPlayer(players);
+    // 1. Encontrar al jugador con menos HP
+    const target = this.getWeakestPlayer(players);
     if (!target || !target.getPosition) return;
 
     const targetPos = target.getPosition();
@@ -338,18 +358,14 @@ export class EnemyFast extends Enemy {
     const dz = targetPos.z - enemyPos.z;
     const distSq = dx * dx + dz * dz;
 
-    // 3. Recalcular offset de flanqueo cada 2s
-    const now = Date.now();
-    if (now - this.lastFlankRecalcTime >= this.FLANK_RECALC_INTERVAL_MS) {
-      this.recalculateFlankOffset();
-    }
-
-    // 4. Verificar si está en rango de ataque (0.6m)
-    const attackRangeSq = 0.6 * 0.6;
+    // 3. Verificar si está en rango de ataque (0.8m — rango mayor por ser grande)
+    const attackRangeSq = 0.8 * 0.8;
     this.isInAttackRange = distSq <= attackRangeSq;
 
+    const now = Date.now();
+
     if (this.isInAttackRange) {
-      // 4a. Atacar cuerpo a cuerpo
+      // 3a. Atacar cuerpo a cuerpo
       const didAttack = this.tryMeleeAttack(target);
 
       // Detener movimiento mientras ataca
@@ -368,7 +384,7 @@ export class EnemyFast extends Enemy {
         this.playAnimation('Idle');
       }
     } else {
-      // 4b. Perseguir al target con flanqueo
+      // 3b. Perseguir al target
       const dist = Math.sqrt(distSq);
       if (dist < 0.001) return;
 
@@ -376,38 +392,10 @@ export class EnemyFast extends Enemy {
       const dirX = dx / dist;
       const dirZ = dz / dist;
 
-      // Calcular punto de flanqueo: desplazar el target perpendicularmente
-      // a la dirección de aproximación
-      // Perpendicular en 2D: (-dirZ, dirX) para izquierda, (dirZ, -dirX) para derecha
-      const perpX = -dirZ;
-      const perpZ = dirX;
-
-      // Aplicar el offset lateral (flankOffset.x es -1.5 o +1.5)
-      const flankTargetX = targetPos.x + perpX * this.flankOffset.x;
-      const flankTargetZ = targetPos.z + perpZ * this.flankOffset.x;
-
-      // Calcular dirección hacia el punto de flanqueo
-      const fdx = flankTargetX - enemyPos.x;
-      const fdz = flankTargetZ - enemyPos.z;
-      const fDist = Math.sqrt(fdx * fdx + fdz * fdz);
-
-      let moveDirX: number;
-      let moveDirZ: number;
-
-      if (fDist > 0.1) {
-        // Moverse hacia el punto de flanqueo
-        moveDirX = fdx / fDist;
-        moveDirZ = fdz / fDist;
-      } else {
-        // Ya está en posición de flanqueo — moverse directamente al target
-        moveDirX = dirX;
-        moveDirZ = dirZ;
-      }
-
       // ================================================================
       // SEPARACIÓN: evitar que los enemigos se amontonen
       // ================================================================
-      const SEPARATION_DIST = 1.5;
+      const SEPARATION_DIST = 2.0; // Mayor distancia de separación por ser grande
       const SEPARATION_FORCE = 0.8;
       let sepX = 0;
       let sepZ = 0;
@@ -433,8 +421,8 @@ export class EnemyFast extends Enemy {
         }
       }
 
-      moveDirX += sepX;
-      moveDirZ += sepZ;
+      let moveDirX = dirX + sepX;
+      let moveDirZ = dirZ + sepZ;
 
       // Re-normalizar después de separación
       const finalDist = Math.sqrt(moveDirX * moveDirX + moveDirZ * moveDirZ);
@@ -445,7 +433,7 @@ export class EnemyFast extends Enemy {
 
       // ================================================================
       // ROTACIÓN: el modelo base tiene rotation.y = Math.PI (aplicado en
-      // ensureModelLoaded/loadModel), por lo que el forward efectivo es -Z.
+      // ensureWarriorModelLoaded()), por lo que el forward efectivo es -Z.
       // Math.atan2(dirX, dirZ) asume forward = +Z, así que sumamos PI
       // para que el modelo (forward = -Z) mire hacia el jugador.
       // ================================================================
@@ -496,65 +484,31 @@ export class EnemyFast extends Enemy {
    */
   spawn(options: SpawnOptions): void {
     super.spawn(options);
-
-    // Inicializar offset de flanqueo aleatorio al spawnear
-    this.recalculateFlankOffset();
-
-    // Recrear cuerpo físico si fue destruido
-    if (!this.physicsBody && this.physicsWorld && this.model) {
-      this.createPhysicsBody();
-    }
-
-    // Activar cuerpo físico
-    if (this.physicsBody && this.physicsWorld) {
-      const body = this.physicsWorld.getBody(this.physicsBody);
-      if (body) {
-        body.setTranslation(
-          { x: options.position.x, y: options.position.y, z: options.position.z },
-          true
-        );
-        body.setEnabled(true);
-      }
-    }
+    console.log(`[EnemyTank ${this.id}] Spawneado en (${options.position.x}, ${options.position.y}, ${options.position.z})`);
   }
 
   /**
-   * Libera recursos del enemigo (para ser reutilizado por el pool)
+   * Libera el enemigo de vuelta al pool
    */
   release(): void {
-    if (this.isPooled) return;
     super.release();
-    this.isPooled = true;
-    console.log(`[EnemyFast ${this.id}] Liberado al pool`);
+    this.lastAttackTime = 0;
+    this.isInAttackRange = false;
   }
 
   /**
-   * Prepara el enemigo para reutilización
+   * Resetea el enemigo para reutilización
    */
   reset(): void {
     super.reset();
-
-    // Resetear estado de ataque
     this.lastAttackTime = 0;
     this.isInAttackRange = false;
-
-    // Resetear flanqueo (se recalculará en spawn)
-    this.flankOffset.set(0, 0, 0);
-    this.lastFlankRecalcTime = 0;
-
-    if (this.physicsBody && this.physicsWorld) {
-      const body = this.physicsWorld.getBody(this.physicsBody);
-      if (body) {
-        body.setEnabled(true);
-      }
-    }
   }
 
   /**
-   * Libera todos los recursos del enemigo (disposición completa)
+   * Disposición completa de recursos
    */
   dispose(): void {
     super.dispose();
-    console.log(`[EnemyFast ${this.id}] Recursos liberados completamente`);
   }
 }

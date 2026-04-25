@@ -5,6 +5,7 @@ import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Enemy, type EnemyStats, type SpawnOptions, EnemyType } from './Enemy';
 import { EnemyBasic, ENEMY_BASIC_STATS } from './EnemyBasic';
 import { EnemyFast, ENEMY_FAST_STATS } from './EnemyFast';
+import { EnemyTank, ENEMY_TANK_STATS } from './EnemyTank';
 
 /**
  * Configuración para un tipo de enemigo en el pool
@@ -58,6 +59,8 @@ export class EnemyPool {
     this.inUse.set(EnemyType.Basic, []);
     this.available.set(EnemyType.Fast, []);
     this.inUse.set(EnemyType.Fast, []);
+    this.available.set(EnemyType.Tank, []);
+    this.inUse.set(EnemyType.Tank, []);
   }
 
   /**
@@ -129,6 +132,19 @@ export class EnemyPool {
           0xbbddff,  // Tinte azul claro muy leve (multiplicativo sobre textura original)
           1.0,       // Tamaño estándar
           stats.knockbackResistance,
+          type,
+          stats
+        );
+      case EnemyType.Tank:
+        return new EnemyTank(
+          enemyId,
+          this.eventBus,
+          this.sceneManager,
+          this.physicsWorld,
+          undefined, // Sin body handle (se creará automáticamente)
+          0xcccccc,  // Color original del esqueleto
+          1.5,       // Tamaño 1.5x (más grande e imponente)
+          stats.knockbackResistance, // 1.0 — inmune a knockback
           type,
           stats
         );

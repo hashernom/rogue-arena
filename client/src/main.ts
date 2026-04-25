@@ -14,6 +14,7 @@ import { EnemyPool } from './enemies/EnemyPool';
 import { Enemy, EnemyType } from './enemies/Enemy';
 import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
 import { ENEMY_FAST_STATS } from './enemies/EnemyFast';
+import { ENEMY_TANK_STATS, ensureWarriorModelLoaded } from './enemies/EnemyTank';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -286,9 +287,13 @@ async function initGameWithPhysics(): Promise<void> {
       // Esto se hace en el game loop más abajo
       console.log('🩸 Sistema de HP bar y damage numbers para jugadores inicializado');
 
-      // Precargar modelo compartido del esqueleto antes de crear instancias de EnemyBasic
+      // Precargar modelo compartido del esqueleto Minion antes de crear instancias de EnemyBasic
       await Enemy.ensureModelLoaded();
-      console.log('✅ Modelo compartido de esqueleto precargado');
+      console.log('✅ Modelo compartido de esqueleto Minion precargado');
+
+      // Precargar modelo del Warrior para EnemyTank
+      await ensureWarriorModelLoaded();
+      console.log('✅ Modelo Warrior precargado para EnemyTank');
 
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
       enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
@@ -310,6 +315,15 @@ async function initGameWithPhysics(): Promise<void> {
         maxSize: 20
       });
       console.log('🔵 EnemyPool inicializado con tipo fast');
+
+      // Registrar tipo de enemigo tanque (alta vida, lento, mucho daño, inmune a knockback)
+      enemyPool.registerEnemyType({
+        type: EnemyType.Tank,
+        stats: ENEMY_TANK_STATS,
+        initialCount: 2,
+        maxSize: 10
+      });
+      console.log('🟤 EnemyPool inicializado con tipo tank');
 
       // Spawnear EnemyBasic via pool para testing (esqueletos con seek AI)
       const basicPositions = [
@@ -340,6 +354,20 @@ async function initGameWithPhysics(): Promise<void> {
         }
       });
       console.log(`🔵 Spawneados ${fastPositions.length} EnemyFast para testing`);
+
+      // Spawnear EnemyTank via pool para testing (esqueletos Warrior grandes con AI de baja vida)
+      const tankPositions = [
+        new THREE.Vector3(-5, 0, -5),
+        new THREE.Vector3(-7, 0, -6),
+        new THREE.Vector3(-6, 0, -8),
+      ];
+      tankPositions.forEach(pos => {
+        const enemy = enemyPool!.acquire(EnemyType.Tank, { position: pos });
+        if (enemy) {
+          console.log(`🟤 EnemyTank spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
+        }
+      });
+      console.log(`🟤 Spawneados ${tankPositions.length} EnemyTank para testing`);
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
