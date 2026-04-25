@@ -618,25 +618,48 @@ export class AdcCharacter extends Character {
     let arrowGroup: THREE.Group;
     
     if (this.arrowGltf) {
-      // Usar modelo 3D de flecha KayKit
-      const arrowModel = this.assetLoader.clone(this.arrowGltf);
-      
-      // Patrón contenedor
-      arrowGroup = new THREE.Group();
-      arrowGroup.add(arrowModel);
-      
-      // Escalar y orientar la flecha
-      arrowModel.scale.set(0.5, 0.5, 0.5);
-      // La flecha KayKit apunta en Y+, rotar para que apunte en Z- (forward)
-      arrowModel.rotation.set(-Math.PI / 2, 0, 0);
-      
-      // Configurar sombras
-      arrowModel.traverse((child: any) => {
-        if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
+      try {
+        // Usar modelo 3D de flecha KayKit - clonación manual para evitar SkeletonUtils
+        const srcScene = this.arrowGltf.scene;
+        const arrowModel = srcScene.clone(true) as THREE.Group;
+        
+        // Verificar que el clon tenga hijos (mallas)
+        if (arrowModel.children.length === 0) {
+          console.warn(`[AdcCharacter ${this.id}] Modelo de flecha clonado está vacío, usando fallback`);
+          throw new Error('Empty arrow model');
         }
-      });
+        
+        console.log(`[AdcCharacter ${this.id}] Flecha 3D clonada con ${arrowModel.children.length} hijos`);
+        
+        // Patrón contenedor
+        arrowGroup = new THREE.Group();
+        arrowGroup.add(arrowModel);
+        
+        // Escalar y orientar la flecha
+        arrowModel.scale.set(0.5, 0.5, 0.5);
+        // La flecha KayKit apunta en Y+, rotar para que apunte en Z- (forward)
+        arrowModel.rotation.set(-Math.PI / 2, 0, 0);
+        
+        // Configurar sombras
+        arrowModel.traverse((child: any) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+      } catch (e) {
+        console.warn(`[AdcCharacter ${this.id}] Error usando modelo 3D de flecha, usando fallback:`, e);
+        this.arrowGltf = null; // Marcar como fallido para no reintentar
+        // Fallback: flecha geométrica simple
+        const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
+        const material = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+        const arrowMesh = new THREE.Mesh(geometry, material);
+        arrowMesh.castShadow = true;
+        
+        arrowGroup = new THREE.Group();
+        arrowGroup.add(arrowMesh);
+        arrowMesh.rotation.set(Math.PI / 2, 0, 0);
+      }
     } else {
       // Fallback: flecha geométrica simple
       const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
