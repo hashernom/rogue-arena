@@ -1002,7 +1002,7 @@ export class AdcCharacter extends Character {
       return;
     }
 
-    const body = BodyFactory.createCharacterBody(this.physicsWorld, position, true);
+    const body = BodyFactory.createCharacterBody(this.physicsWorld, position, true, this);
     this.setPhysicsBody(body);
 
     if (this.model) {

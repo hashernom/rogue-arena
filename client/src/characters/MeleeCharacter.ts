@@ -906,7 +906,7 @@ export class MeleeCharacter extends Character {
       return;
     }
 
-    const body = BodyFactory.createCharacterBody(this.physicsWorld, position, true);
+    const body = BodyFactory.createCharacterBody(this.physicsWorld, position, true, this);
     this.setPhysicsBody(body);
 
     // Sincronizar modelo si ya existe

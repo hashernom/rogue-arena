@@ -171,20 +171,90 @@ export class Projectile {
   }
 
   /**
-   * Verifica colisiones usando los eventos de contacto de Rapier.
+   * Verifica colisiones usando raycast desde la posición actual del proyectil.
+   * Filtra por el grupo de colisión del proyectil para detectar solo objetivos válidos.
    */
   private checkCollisions(): void {
     if (!this.bodyHandle || !this.config) return;
 
-    // Obtener el mundo Rapier
     const world = this.physicsWorld.getWorld();
-    
-    // Iterar sobre eventos de contacto (esto es un ejemplo simplificado)
-    // En una implementación real, se usaría world.contactEvents() o world.intersectionPairs()
-    // Por ahora, usaremos un enfoque más simple: raycast desde la posición anterior
-    
-    // Nota: La detección de colisiones real se manejará en el sistema de combate principal
-    // que procesa los eventos de colisión de Rapier. Este método es un placeholder.
+    if (!world) return;
+
+    // Obtener posición actual del proyectil
+    const body = world.getRigidBody(this.bodyHandle);
+    if (!body) return;
+
+    const pos = body.translation();
+
+    // Determinar qué grupo buscar según el collision group del proyectil
+    const group = this.config.collisionGroup ?? Groups.PROJECTILE;
+    const targetGroup = group === Groups.ENEMY_PROJECTILE ? Groups.PLAYER : Groups.ENEMY;
+
+    // Usar la velocidad para determinar la dirección del raycast
+    const vel = body.linvel();
+    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+    if (speed < 0.01) return;
+
+    const rayDir = { x: vel.x / speed, y: vel.y / speed, z: vel.z / speed };
+
+    // --- Raycast hacia adelante ---
+    // Escaneamos una distancia que cubra el movimiento desde el último check
+    // (speed * collisionCheckInterval) más el radio del proyectil para detectar solapamiento
+    const forwardScanDistance = speed * this.collisionCheckInterval + (this.config.radius ?? 0.1) + 0.5;
+    const rayOrigin = { x: pos.x, y: pos.y, z: pos.z };
+    const forwardRay = new RAPIER.Ray(rayOrigin, rayDir);
+
+    world.intersectionsWithRay(
+      forwardRay, forwardScanDistance, false,
+      (intersection: RAPIER.RayColliderIntersection) => {
+        const collider = intersection.collider;
+
+        // Filtrar por el grupo objetivo
+        const groups = collider.collisionGroups();
+        const membership = (groups >> 16) & 0xffff;
+        if ((membership & targetGroup) === 0) {
+          return true; // No es el objetivo, continuar
+        }
+
+        const userData = collider.parent()?.userData as { entity?: any; type?: string } | undefined;
+
+        if (userData) {
+          // Llamar al manejador de colisión
+          this.handleCollision(userData);
+        }
+
+        return true; // Continuar buscando
+      }
+    );
+
+    // --- Raycast hacia atrás ---
+    // Si el proyectil ya atravesó al objetivo entre frames, el raycast forward no lo detecta.
+    // Escaneamos hacia atrás para cubrir esa posibilidad.
+    const backDir = { x: -rayDir.x, y: -rayDir.y, z: -rayDir.z };
+    const backRay = new RAPIER.Ray(rayOrigin, backDir);
+    // Escaneamos una distancia menor hacia atrás (solo para detectar solapamiento)
+    const backScanDistance = (this.config.radius ?? 0.1) + 0.5;
+
+    world.intersectionsWithRay(
+      backRay, backScanDistance, false,
+      (intersection: RAPIER.RayColliderIntersection) => {
+        const collider = intersection.collider;
+
+        const groups = collider.collisionGroups();
+        const membership = (groups >> 16) & 0xffff;
+        if ((membership & targetGroup) === 0) {
+          return true;
+        }
+
+        const userData = collider.parent()?.userData as { entity?: any; type?: string } | undefined;
+
+        if (userData) {
+          this.handleCollision(userData);
+        }
+
+        return true;
+      }
+    );
   }
 
   /**
@@ -201,6 +271,14 @@ export class Projectile {
       this.handleEnemyCollision(otherUserData);
     } else if (entityType === 'wall') {
       this.handleWallCollision();
+    } else if (entityType === 'player') {
+      this.handlePlayerCollision(otherUserData);
+    } else if (otherUserData?.entity) {
+      // Fallback: si tiene entity, intentar aplicar daño directamente
+      const entity = otherUserData.entity;
+      if (typeof entity.takeDamage === 'function') {
+        this.applyDamageToEntity(entity);
+      }
     }
   }
 
@@ -260,6 +338,54 @@ export class Projectile {
   private handleWallCollision(): void {
     console.log(`[Projectile] Colisión con muro, destruyendo`);
     this.markForRelease();
+  }
+
+  /**
+   * Maneja colisión con jugador.
+   */
+  private handlePlayerCollision(playerData: any): void {
+    if (!this.config) return;
+
+    const entity = playerData.entity;
+    if (!entity || typeof entity.takeDamage !== 'function') return;
+
+    this.applyDamageToEntity(entity);
+    this.markForRelease();
+  }
+
+  /**
+   * Aplica daño a una entidad usando el pipeline o eventBus.
+   */
+  private applyDamageToEntity(entity: any): void {
+    if (!this.config) return;
+
+    const position = this.getPosition();
+
+    if (this.damagePipeline) {
+      this.damagePipeline.applyDamage(
+        { id: this.config.ownerId },
+        entity,
+        this.config.damage,
+        {
+          position,
+          source: 'projectile',
+          attackerId: this.config.ownerId,
+          canCrit: false,
+          critChance: 0,
+          critMultiplier: 1.0,
+        }
+      );
+    } else {
+      // Fallback: emitir evento de daño
+      this.eventBus.emit('enemy:damage', {
+        enemyId: this.config.ownerId,
+        damage: this.config.damage,
+        attackerId: this.config.ownerId,
+        position: { x: position.x, y: position.y, z: position.z },
+      });
+    }
+
+    console.log(`[Projectile] Aplicando daño ${this.config.damage} a entidad via applyDamageToEntity`);
   }
 
   /**

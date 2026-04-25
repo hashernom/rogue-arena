@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+  import * as THREE from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Enemy, type EnemyStats, type SpawnOptions, EnemyType, EnemyState } from './Enemy';
 import { EventBus } from '../engine/EventBus';

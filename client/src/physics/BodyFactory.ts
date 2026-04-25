@@ -24,7 +24,8 @@ export class BodyFactory {
   static createCharacterBody(
     world: PhysicsWorld,
     pos: THREE.Vector3,
-    isPlayer: boolean = true
+    isPlayer: boolean = true,
+    entity?: any
   ): RigidBodyHandle {
     const group = isPlayer ? Groups.PLAYER : Groups.ENEMY;
     const mask = isPlayer ? Masks.PLAYER : Masks.ENEMY;
@@ -49,6 +50,10 @@ export class BodyFactory {
       ccdEnabled: true, // CCD para evitar que el player atraviese enemigos
       collisionGroup: group,
       collisionMask: mask,
+      userData: {
+        type: isPlayer ? 'player' : 'enemy',
+        ...(entity ? { entity } : {}),
+      },
     });
   }
 
@@ -107,8 +112,9 @@ export class BodyFactory {
     const groups = makeCollisionGroups(Groups.ENEMY, Masks.ENEMY);
     colliderDesc.setCollisionGroups(groups);
 
-    // Almacenar tanto ID como referencia a la entidad para acceso directo
-    const userData = {
+    // Almacenar tipo, ID y referencia a la entidad para acceso directo
+    const userData: Record<string, any> = {
+      type: 'enemy',
       ...(id ? { id } : {}),
       ...(entity ? { entity } : {})
     };
