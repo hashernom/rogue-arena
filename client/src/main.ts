@@ -20,6 +20,8 @@ import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
 import { ProjectilePool } from './combat/ProjectilePool';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { WaveManager, WaveState } from './waves/WaveManager';
+import { Spawner } from './waves/Spawner';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -75,6 +77,10 @@ let enemyProjectilePool: ProjectilePool | null = null;
 let damagePipeline: DamagePipeline | null = null;
 // Sistema de números de daño flotantes
 let damageNumberSystem: DamageNumberSystem | null = null;
+// Gestor de oleadas
+let waveManager: WaveManager | null = null;
+// Spawner visual con indicadores en el suelo
+let spawner: Spawner | null = null;
 // HP bars para jugadores (sprites flotantes)
 let playerHpBars: Map<string, THREE.Sprite> = new Map();
 
@@ -350,64 +356,23 @@ async function initGameWithPhysics(): Promise<void> {
       });
       console.log('🔴 EnemyPool inicializado con tipo ranged');
 
-      // Spawnear EnemyBasic via pool para testing (esqueletos con seek AI)
-      const basicPositions = [
-        new THREE.Vector3(5, 0, 5),
-        new THREE.Vector3(7, 0, 6),
-        new THREE.Vector3(6, 0, 8),
-        new THREE.Vector3(8, 0, 5),
-        new THREE.Vector3(4, 0, 7),
-      ];
-      basicPositions.forEach(pos => {
-        const enemy = enemyPool!.acquire(EnemyType.Basic, { position: pos });
-        if (enemy) {
-          console.log(`🔴 EnemyBasic spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
-        }
-      });
-      console.log(`🔴 Spawneados ${basicPositions.length} EnemyBasic para testing`);
+      // ================================================================
+      // SISTEMA DE OLEADAS (WaveManager + Spawner)
+      // ================================================================
+      // Crear Spawner visual con indicadores en el suelo
+      spawner = new Spawner(sceneManager, enemyPool);
 
-      // Spawnear EnemyFast via pool para testing (esqueletos celeste con flanqueo)
-      const fastPositions = [
-        new THREE.Vector3(9, 0, 9),
-        new THREE.Vector3(10, 0, 7),
-        new THREE.Vector3(11, 0, 10),
-      ];
-      fastPositions.forEach(pos => {
-        const enemy = enemyPool!.acquire(EnemyType.Fast, { position: pos });
-        if (enemy) {
-          console.log(`🔵 EnemyFast spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
-        }
-      });
-      console.log(`🔵 Spawneados ${fastPositions.length} EnemyFast para testing`);
+      // Crear WaveManager que orquesta el progreso de rondas
+      waveManager = new WaveManager(eventBus, spawner);
 
-      // Spawnear EnemyTank via pool para testing (esqueletos Warrior grandes con AI de baja vida)
-      const tankPositions = [
-        new THREE.Vector3(-5, 0, -5),
-        new THREE.Vector3(-7, 0, -6),
-        new THREE.Vector3(-6, 0, -8),
-      ];
-      tankPositions.forEach(pos => {
-        const enemy = enemyPool!.acquire(EnemyType.Tank, { position: pos });
-        if (enemy) {
-          console.log(`🟤 EnemyTank spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
-        }
+      // Suscribirse a enemy:died para notificar al WaveManager
+      eventBus.on('enemy:died', () => {
+        waveManager?.onEnemyDied();
       });
-      console.log(`🟤 Spawneados ${tankPositions.length} EnemyTank para testing`);
 
-      // Spawnear EnemyRanged via pool para testing (esqueletos Mage con kiting AI)
-      const rangedPositions = [
-        new THREE.Vector3(-9, 0, 9),
-        new THREE.Vector3(-10, 0, 7),
-        new THREE.Vector3(-11, 0, 10),
-        new THREE.Vector3(-8, 0, 11),
-      ];
-      rangedPositions.forEach(pos => {
-        const enemy = enemyPool!.acquire(EnemyType.Ranged, { position: pos });
-        if (enemy) {
-          console.log(`🔴 EnemyRanged spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
-        }
-      });
-      console.log(`🔴 Spawneados ${rangedPositions.length} EnemyRanged para testing`);
+      // Iniciar el juego con oleadas (ronda 1 automáticamente)
+      waveManager.startGame();
+      console.log('🌊 WaveManager + Spawner iniciados con sistema de oleadas');
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -447,6 +412,16 @@ async function initGameWithPhysics(): Promise<void> {
     // Actualizar enemigos del pool
     if (enemyPool) {
       enemyPool.update(dt, players);
+    }
+
+    // Actualizar WaveManager (timers entre rondas)
+    if (waveManager) {
+      waveManager.update(dt);
+    }
+
+    // Actualizar Spawner (indicadores visuales, animaciones de spawn)
+    if (spawner) {
+      spawner.update(dt);
     }
 
     // Actualizar números de daño flotantes
