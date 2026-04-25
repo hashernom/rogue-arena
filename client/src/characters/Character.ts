@@ -196,12 +196,21 @@ export abstract class Character {
 
   /**
    * Mata al personaje y emite el evento correspondiente.
+   * Remueve el cuerpo físico de Rapier para que los enemigos no
+   * sigan orbitando alrededor del punto de muerte.
    */
   die(): void {
     if (this.state === CharacterState.Dead) return;
 
     this.state = CharacterState.Dead;
     this.statsSystem.setBaseStat('hp', 0);
+
+    // Remover cuerpo físico de Rapier para que los enemigos no
+    // se queden orbitando alrededor del punto de muerte
+    if (this.physicsWorld && this.physicsBody !== undefined) {
+      this.physicsWorld.removeBody(this.physicsBody);
+      this.physicsBody = undefined;
+    }
 
     // Emitir evento de muerte
     this.eventBus.emit('player:died', { playerId: this.id });

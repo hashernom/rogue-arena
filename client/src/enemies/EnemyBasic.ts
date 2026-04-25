@@ -63,7 +63,7 @@ export class EnemyBasic extends Enemy {
     sceneManager: SceneManager,
     physicsWorld?: PhysicsWorld,
     physicsBody?: RigidBodyHandle,
-    color: number = 0xff0000,
+    color: number = 0xcccccc,
     size: number = 1.0,
     knockbackResistance: number = 0.0,
     type: EnemyType = EnemyType.Basic,
@@ -73,8 +73,7 @@ export class EnemyBasic extends Enemy {
     const effectiveStats = stats || ENEMY_BASIC_STATS;
 
     // Llamar al constructor de Enemy con skipModelLoad=true para evitar
-    // que Enemy cargue el modelo del esqueleto (lo haremos nosotros aquí
-    // con control sobre el color)
+    // que Enemy cargue el modelo del esqueleto (lo haremos nosotros aquí)
     super(
       id,
       eventBus,
@@ -89,25 +88,25 @@ export class EnemyBasic extends Enemy {
       true // skipModelLoad — nosotros manejamos la carga
     );
 
-    // Cargar el modelo de esqueleto con color rojo inmediatamente
+    // Cargar el modelo de esqueleto inmediatamente
     this.loadSkeletonModel(color);
   }
 
   // =================================================================
-  // CARGA DE MODELO (esqueleto con color rojo)
+  // CARGA DE MODELO (esqueleto con textura original)
   // =================================================================
 
   /**
    * Carga el modelo de esqueleto reutilizando la carga compartida de Enemy.
    * Si el modelo compartido aún no está disponible, se suscribe a la promesa.
    */
-  private loadSkeletonModel(color: number): void {
+  private loadSkeletonModel(_color: number): void {
     // Intentar obtener el modelo compartido de Enemy (getter estático)
     const sharedModel = Enemy.getSharedModelScene();
 
     if (sharedModel) {
       // El modelo ya está cargado — clonar inmediatamente (síncrono)
-      this.cloneAndColorSkeleton(sharedModel, color);
+      this.cloneSkeleton(sharedModel);
       return;
     }
 
@@ -115,7 +114,7 @@ export class EnemyBasic extends Enemy {
     const loadPromise = Enemy.getSharedLoadPromise();
     if (loadPromise) {
       loadPromise.then((scene: THREE.Group) => {
-        this.cloneAndColorSkeleton(scene, color);
+        this.cloneSkeleton(scene);
       }).catch(err => {
         console.error(`[EnemyBasic ${this.id}] Error en carga compartida:`, err);
       });
@@ -128,7 +127,8 @@ export class EnemyBasic extends Enemy {
   }
 
   /**
-   * Clona el modelo de esqueleto compartido y le aplica el color rojo.
+   * Clona el modelo de esqueleto compartido (sin modificar colores,
+   * preservando la textura original del GLTF).
    *
    * IMPORTANTE: Este método puede ejecutarse de forma diferida (vía promesa)
    * después de que spawn() ya haya corrido. Por eso:
@@ -136,38 +136,19 @@ export class EnemyBasic extends Enemy {
    * 2. Crea el physics body en la posición correcta
    * 3. Aplica la escala inicial de spawn animation si es necesario
    *
-   * NOTA: El modelo GLTF de KayKit tiene forward en +Z. Three.js usa -Z como forward.
-   * Por eso rotamos el innerMesh 180° en Y para que el modelo mire hacia -Z.
+   * NOTA: El modelo base ya tiene rotation.y = Math.PI aplicado en
+   * Enemy.ensureModelLoaded() / loadModel(). SkeletonUtils.clone() hereda
+   * esa rotación, por lo que NO debemos rotar el innerMesh nuevamente.
    */
-  private cloneAndColorSkeleton(sourceScene: THREE.Group, color: number): void {
+  private cloneSkeleton(sourceScene: THREE.Group): void {
     try {
       // Clonar con SkeletonUtils para preservar skinning
       const cloned = SkeletonUtils.clone(sourceScene) as THREE.Group;
 
-      // Aplicar color rojo a todos los meshes
-      cloned.traverse((child: THREE.Object3D) => {
-        if (child instanceof THREE.Mesh && child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach((mat: THREE.Material) => {
-            if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
-              mat.color.setHex(color);
-              mat.needsUpdate = true;
-            }
-          });
-        }
-      });
-
-      // Usar setupModel de Enemy (ahora protected) para configurar el modelo
+      // Usar setupModel de Enemy (protected) para configurar el modelo
       this.setupModel(cloned);
 
-      // Rotar el innerMesh 180° en Y para corregir orientación del modelo
-      // El modelo KayKit tiene forward en +Z, Three.js usa -Z como forward
-      if (this.innerMesh) {
-        this.innerMesh.rotation.y = Math.PI;
-      }
-
       // Aplicar la posición de spawn al modelo (spawn() corrió antes sin modelo)
-      // setupModel() setea this.model, pero TS no lo infiere — usamos non-null assertion
       this.model!.position.copy(this.targetPosition);
 
       // Si el enemigo está en estado Spawning, aplicar escala inicial de spawn animation
@@ -183,7 +164,7 @@ export class EnemyBasic extends Enemy {
         this.createPhysicsBody();
       }
 
-      console.log(`[EnemyBasic ${this.id}] Modelo de esqueleto rojo cargado y configurado en (${this.targetPosition.x}, ${this.targetPosition.y}, ${this.targetPosition.z})`);
+      console.log(`[EnemyBasic ${this.id}] Modelo de esqueleto cargado y configurado en (${this.targetPosition.x}, ${this.targetPosition.y}, ${this.targetPosition.z})`);
     } catch (error) {
       console.error(`[EnemyBasic ${this.id}] Error clonando modelo:`, error);
     }
@@ -225,20 +206,22 @@ export class EnemyBasic extends Enemy {
 
   /**
    * Encuentra el jugador más cercano a la posición del enemigo.
+   * Ignora jugadores muertos (isAlive() === false).
    * Zero-garbage: no crea objetos temporales en el game loop.
    */
   private getClosestPlayer(players: any[]): any | null {
     if (players.length === 0) return null;
-    if (players.length === 1) return players[0];
 
-    let closestPlayer = players[0];
+    let closestPlayer: any | null = null;
     let closestDistanceSq = Infinity;
 
     const enemyPos = this.model ? this.model.position : new THREE.Vector3(0, 0, 0);
 
     for (let i = 0; i < players.length; i++) {
       const player = players[i];
-      if (!player || !player.getPosition) continue;
+      // Ignorar jugadores sin getPosition, sin isAlive, o muertos
+      if (!player || !player.getPosition || !player.isAlive) continue;
+      if (!player.isAlive()) continue;
 
       const playerPos = player.getPosition();
       if (!playerPos) continue;
@@ -370,10 +353,10 @@ export class EnemyBasic extends Enemy {
       }
 
       // ================================================================
-      // ROTACIÓN: el modelo KayKit tiene forward en +Z.
-      // Con innerMesh.rotation.y = Math.PI, el modelo mira hacia -Z.
+      // ROTACIÓN: el modelo base tiene rotation.y = Math.PI (aplicado en
+      // ensureModelLoaded/loadModel), por lo que el forward efectivo es -Z.
       // Math.atan2(dirX, dirZ) asume forward = +Z, así que sumamos PI
-      // para que el modelo (que ahora apunta a -Z) mire hacia el jugador.
+      // para que el modelo (forward = -Z) mire hacia el jugador.
       // ================================================================
       const targetAngle = Math.atan2(dirX, dirZ) + Math.PI;
       this.model.rotation.y = THREE.MathUtils.lerp(
@@ -394,6 +377,14 @@ export class EnemyBasic extends Enemy {
           }, true);
         }
       }
+
+      // Animación de caminar
+      this.playAnimation('Walk');
+    }
+
+    // Si está en rango de ataque, animación Idle mientras ataca
+    if (this.isInAttackRange) {
+      this.playAnimation('Idle');
     }
   }
 
