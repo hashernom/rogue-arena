@@ -80,19 +80,19 @@ export class BodyFactory {
     switch (enemyType) {
       case 'small':
         radius = 0.3;
-        halfHeight = 0.25;
-        colliderOffsetY = 0.35;
+        halfHeight = 0.3; // Cubre toda la verticalidad del modelo
+        colliderOffsetY = 0; // Centrado en el origen (pies)
         break;
       case 'large':
         radius = 0.45;
-        halfHeight = 0.4;
-        colliderOffsetY = 0.65;
+        halfHeight = 0.7; // Cubre toda la verticalidad del modelo
+        colliderOffsetY = 0; // Centrado en el origen (pies)
         break;
       case 'medium':
       default:
         radius = 0.35;
-        halfHeight = 0.3;
-        colliderOffsetY = 0.5;
+        halfHeight = 0.5; // Cubre toda la verticalidad del modelo
+        colliderOffsetY = 0; // Centrado en el origen (pies)
         break;
     }
 
