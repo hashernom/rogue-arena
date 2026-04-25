@@ -15,8 +15,10 @@ import { Enemy, EnemyType } from './enemies/Enemy';
 import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
 import { ENEMY_FAST_STATS } from './enemies/EnemyFast';
 import { ENEMY_TANK_STATS, ensureWarriorModelLoaded } from './enemies/EnemyTank';
+import { ENEMY_RANGED_STATS, ensureMageModelLoaded } from './enemies/EnemyRanged';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
+import { ProjectilePool } from './combat/ProjectilePool';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 // Obtener elemento canvas existente o crear uno nuevo
@@ -67,6 +69,8 @@ let meleeCharacter: MeleeCharacter | null = null;
 let adcCharacter: AdcCharacter | null = null;
 // Pool de enemigos para gestión eficiente de instancias
 let enemyPool: EnemyPool | null = null;
+// Pool de proyectiles para enemigos a distancia
+let enemyProjectilePool: ProjectilePool | null = null;
 // Pipeline centralizado de daño (compartido entre todos los sistemas)
 let damagePipeline: DamagePipeline | null = null;
 // Sistema de números de daño flotantes
@@ -295,8 +299,16 @@ async function initGameWithPhysics(): Promise<void> {
       await ensureWarriorModelLoaded();
       console.log('✅ Modelo Warrior precargado para EnemyTank');
 
+      // Precargar modelo del Mage para EnemyRanged
+      await ensureMageModelLoaded();
+      console.log('✅ Modelo Mage precargado para EnemyRanged');
+
+      // Crear pool de proyectiles para enemigos a distancia
+      enemyProjectilePool = new ProjectilePool(physicsWorld, scene, eventBus, 30);
+      console.log('🎯 ProjectilePool para enemigos creado con 30 proyectiles');
+
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
-      enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
+      enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld, enemyProjectilePool);
       
       // Registrar tipo de enemigo básico (seek melee)
       enemyPool.registerEnemyType({
@@ -324,6 +336,15 @@ async function initGameWithPhysics(): Promise<void> {
         maxSize: 10
       });
       console.log('🟤 EnemyPool inicializado con tipo tank');
+
+      // Registrar tipo de enemigo a distancia (kiting AI, proyectiles)
+      enemyPool.registerEnemyType({
+        type: EnemyType.Ranged,
+        stats: ENEMY_RANGED_STATS,
+        initialCount: 3,
+        maxSize: 15
+      });
+      console.log('🔴 EnemyPool inicializado con tipo ranged');
 
       // Spawnear EnemyBasic via pool para testing (esqueletos con seek AI)
       const basicPositions = [
@@ -368,6 +389,21 @@ async function initGameWithPhysics(): Promise<void> {
         }
       });
       console.log(`🟤 Spawneados ${tankPositions.length} EnemyTank para testing`);
+
+      // Spawnear EnemyRanged via pool para testing (esqueletos Mage con kiting AI)
+      const rangedPositions = [
+        new THREE.Vector3(-9, 0, 9),
+        new THREE.Vector3(-10, 0, 7),
+        new THREE.Vector3(-11, 0, 10),
+        new THREE.Vector3(-8, 0, 11),
+      ];
+      rangedPositions.forEach(pos => {
+        const enemy = enemyPool!.acquire(EnemyType.Ranged, { position: pos });
+        if (enemy) {
+          console.log(`🔴 EnemyRanged spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
+        }
+      });
+      console.log(`🔴 Spawneados ${rangedPositions.length} EnemyRanged para testing`);
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -404,9 +440,14 @@ async function initGameWithPhysics(): Promise<void> {
     if (meleeCharacter) players.push(meleeCharacter);
     if (adcCharacter) players.push(adcCharacter);
 
-    // Actualizar enemigos del pool (EnemyBasic con seek AI)
+    // Actualizar enemigos del pool
     if (enemyPool) {
       enemyPool.update(dt, players);
+    }
+
+    // Actualizar proyectiles enemigos (pool de proyectiles)
+    if (enemyProjectilePool) {
+      enemyProjectilePool.update(dt);
     }
 
     // Actualizar números de daño flotantes

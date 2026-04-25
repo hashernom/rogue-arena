@@ -23,6 +23,7 @@ export enum EnemyType {
   Basic = 'basic',
   Fast = 'fast',
   Tank = 'tank',
+  Ranged = 'ranged',
 }
 
 /**

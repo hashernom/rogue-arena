@@ -18,6 +18,10 @@ export interface ProjectileConfig {
   range: number;
   /** Radio de la esfera de colisión (metros) */
   radius?: number;
+  /** Grupo de colisión (por defecto PROJECTILE). Usar ENEMY_PROJECTILE para proyectiles enemigos */
+  collisionGroup?: number;
+  /** Máscara de colisión (por defecto Masks.PROJECTILE) */
+  collisionMask?: number;
 }
 
 /**
@@ -86,9 +90,11 @@ export class Projectile {
   private createPhysicsBody(position: THREE.Vector3, config: ProjectileConfig): void {
     // Crear collider esférico
     const radius = config.radius ?? 0.1;
+    const group = config.collisionGroup ?? Groups.PROJECTILE;
+    const mask = config.collisionMask ?? Masks.PROJECTILE;
     const colliderDesc = RAPIER.ColliderDesc.ball(radius)
       .setTranslation(position.x, position.y, position.z)
-      .setCollisionGroups((Groups.PROJECTILE << 16) | Masks.PROJECTILE)
+      .setCollisionGroups((group << 16) | mask)
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS); // Para detectar colisiones
 
     // Crear cuerpo kinemático (movido manualmente) con CCD habilitado

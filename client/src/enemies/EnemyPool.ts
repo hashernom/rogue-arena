@@ -6,6 +6,8 @@ import { Enemy, type EnemyStats, type SpawnOptions, EnemyType } from './Enemy';
 import { EnemyBasic, ENEMY_BASIC_STATS } from './EnemyBasic';
 import { EnemyFast, ENEMY_FAST_STATS } from './EnemyFast';
 import { EnemyTank, ENEMY_TANK_STATS } from './EnemyTank';
+import { EnemyRanged, ENEMY_RANGED_STATS } from './EnemyRanged';
+import { ProjectilePool } from '../combat/ProjectilePool';
 
 /**
  * Configuración para un tipo de enemigo en el pool
@@ -40,6 +42,8 @@ export class EnemyPool {
   private physicsWorld: PhysicsWorld;
   /** Generador de UUIDs */
   private uuidCounter: number = 0;
+  /** Pool de proyectiles para enemigos a distancia */
+  private projectilePool: ProjectilePool | null = null;
 
   /**
    * Crea un nuevo pool de enemigos
@@ -47,10 +51,11 @@ export class EnemyPool {
    * @param sceneManager - Manager de escena para agregar modelos
    * @param physicsWorld - Mundo físico para colisiones
    */
-  constructor(eventBus: EventBus, sceneManager: SceneManager, physicsWorld: PhysicsWorld) {
+  constructor(eventBus: EventBus, sceneManager: SceneManager, physicsWorld: PhysicsWorld, projectilePool?: ProjectilePool) {
     this.eventBus = eventBus;
     this.sceneManager = sceneManager;
     this.physicsWorld = physicsWorld;
+    this.projectilePool = projectilePool || null;
 
     // Inicializar mapas
     this.available.set(EnemyType.SkeletonMinion, []);
@@ -61,6 +66,8 @@ export class EnemyPool {
     this.inUse.set(EnemyType.Fast, []);
     this.available.set(EnemyType.Tank, []);
     this.inUse.set(EnemyType.Tank, []);
+    this.available.set(EnemyType.Ranged, []);
+    this.inUse.set(EnemyType.Ranged, []);
   }
 
   /**
@@ -148,6 +155,27 @@ export class EnemyPool {
           type,
           stats
         );
+      case EnemyType.Ranged:
+        const ranged = new EnemyRanged(
+          enemyId,
+          this.eventBus,
+          this.sceneManager,
+          this.physicsWorld,
+          undefined, // Sin body handle (se creará automáticamente)
+          0xcccccc,  // Color original del esqueleto
+          1.0,       // Tamaño estándar
+          stats.knockbackResistance,
+          type,
+          stats
+        );
+        // Asignar pool de proyectiles si está disponible
+        if (this.projectilePool) {
+          ranged.setProjectilePool(this.projectilePool);
+        }
+        // Asignar escena para fallback visual
+        const scene = this.sceneManager.getScene();
+        ranged.setScene(scene);
+        return ranged;
       default:
         throw new Error(`[EnemyPool] Tipo de enemigo no soportado: ${type}`);
     }

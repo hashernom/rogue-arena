@@ -22,6 +22,7 @@ export const Groups = {
   WALL: 0b001000, // 8
   PICKUP: 0b010000, // 16
   SENSOR: 0b100000, // 32
+  ENEMY_PROJECTILE: 0b1000000, // 64
 } as const;
 
 export type CollisionGroup = (typeof Groups)[keyof typeof Groups];
@@ -38,12 +39,13 @@ export type CollisionGroup = (typeof Groups)[keyof typeof Groups];
  * - SENSOR: (futuro) para triggers de área, no colisiona físicamente
  */
 export const Masks = {
-  PLAYER: Groups.ENEMY | Groups.WALL | Groups.PICKUP,
+  PLAYER: Groups.ENEMY | Groups.WALL | Groups.PICKUP | Groups.ENEMY_PROJECTILE,
   ENEMY: Groups.PLAYER | Groups.WALL | Groups.PROJECTILE,
   PROJECTILE: Groups.ENEMY | Groups.WALL,
   WALL: 0xffffffff, // colisiona con todo (máscara de 32 bits)
   PICKUP: Groups.PLAYER,
   SENSOR: 0, // por defecto no colisiona con nada (se puede configurar según necesidad)
+  ENEMY_PROJECTILE: Groups.PLAYER | Groups.WALL,
 } as const;
 
 export type CollisionMask = (typeof Masks)[keyof typeof Masks];
