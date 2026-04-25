@@ -1108,45 +1108,65 @@ export class AdcCharacter extends Character {
 
   /**
    * Carga y adjunta la aljaba en la espalda del personaje.
-   * Busca un hueso de la columna/spine para attachment esqueletal,
-   * o fallback a posición fija en el torso.
+   * Usa assetLoader.clone() para clonar correctamente el modelo estático (sin skeleton).
    */
   private async loadQuiver(quiverGltf: GLTF): Promise<void> {
     try {
-      const quiverModel = SkeletonUtils.clone(quiverGltf.scene);
+      // Usar assetLoader.clone() que clona materiales y geometrías correctamente
+      const quiverModel = this.assetLoader.clone(quiverGltf);
+
+      // Debug: listar bones disponibles
+      const boneNames: string[] = [];
+      this.innerMesh!.traverse((child: any) => {
+        if (child.isBone) {
+          boneNames.push(child.name);
+        }
+      });
+      console.log(`[AdcCharacter ${this.id}] Bones disponibles:`, boneNames);
 
       // Buscar hueso de la columna/spine en el esqueleto
       let spineBone: any = null;
       this.innerMesh!.traverse((child: any) => {
         if (child.isBone) {
           const name = child.name.toLowerCase();
-          if (name.includes('spine') || name.includes('chest') || name.includes('upper')) {
+          if (name.includes('spine') || name.includes('chest') || name.includes('upper') || name.includes('hips')) {
             spineBone = child;
           }
         }
       });
 
+      // Escalar primero para que sea visible
+      quiverModel.scale.set(1.5, 1.5, 1.5);
+
       if (spineBone) {
         // Adjuntar al hueso de la columna (sigue las animaciones del torso)
-        quiverModel.position.set(0, 0.15, -0.25);
+        quiverModel.position.set(0, 0.2, -0.3);
         quiverModel.rotation.set(0, Math.PI, 0);
-        quiverModel.scale.set(0.8, 0.8, 0.8);
         spineBone.add(quiverModel);
-        console.log(`[AdcCharacter ${this.id}] Aljaba asignada a la columna: ${spineBone.name}`);
+        console.log(`[AdcCharacter ${this.id}] Aljaba asignada a: ${spineBone.name}`);
       } else {
-        // Fallback: posición fija en la espalda
-        quiverModel.position.set(0, 0.9, -0.35);
+        // Fallback: posición fija en la espalda, relativa al modelo
+        quiverModel.position.set(0, 1.0, -0.5);
         quiverModel.rotation.set(0, Math.PI, 0);
-        quiverModel.scale.set(0.8, 0.8, 0.8);
-        this.innerMesh!.add(quiverModel);
-        console.log(`[AdcCharacter ${this.id}] Aljaba asignada al modelo general (posición espalda)`);
+        this.model!.add(quiverModel);
+        console.log(`[AdcCharacter ${this.id}] Aljaba asignada al model container (fallback)`);
       }
 
-      // Configurar sombras
+      // Debug: forzar color brillante para verificar visibilidad
       quiverModel.traverse((child: any) => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
+          // Forzar material visible con color brillante
+          if (child.material) {
+            const mat = child.material;
+            if (Array.isArray(mat)) {
+              mat.forEach(m => { m.needsUpdate = true; });
+            } else {
+              mat.needsUpdate = true;
+            }
+          }
+          console.log(`[AdcCharacter ${this.id}] Mesh aljaba: ${child.name}, visible: ${child.visible}`);
         }
       });
 
