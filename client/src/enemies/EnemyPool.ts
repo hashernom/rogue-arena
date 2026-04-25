@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { EventBus } from '../engine/EventBus';
 import { SceneManager } from '../engine/SceneManager';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
-import { Enemy, type EnemyStats, type SpawnOptions, EnemyType, SKELETON_MINION_STATS } from './Enemy';
+import { Enemy, type EnemyStats, type SpawnOptions, EnemyType } from './Enemy';
 import { EnemyBasic, ENEMY_BASIC_STATS } from './EnemyBasic';
 
 /**
@@ -103,19 +103,6 @@ export class EnemyPool {
     const enemyId = `enemy_${this.uuidCounter++}_${type}`;
 
     switch (type) {
-      case EnemyType.SkeletonMinion:
-        return new Enemy(
-          enemyId,
-          this.eventBus,
-          this.sceneManager,
-          this.physicsWorld,
-          undefined, // Sin body handle (se creará automáticamente)
-          0xff0000,  // Color rojo por defecto
-          1.0,       // Tamaño estándar
-          stats.knockbackResistance,
-          type,
-          stats
-        );
       case EnemyType.Basic:
         return new EnemyBasic(
           enemyId,

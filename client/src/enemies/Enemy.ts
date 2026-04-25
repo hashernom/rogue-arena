@@ -82,7 +82,7 @@ export const SKELETON_MINION_STATS: EnemyStats = {
  * Originalmente TestEnemy, ahora es la clase Enemy definitiva que
  * reemplaza tanto al TestEnemy original (cubos) como al SkeletonEnemy.
  */
-export class Enemy extends Character {
+export abstract class Enemy extends Character {
   // ========== CARGA DE MODELO ESTÁTICA (compartida entre instancias) ==========
   private static assetLoader: AssetLoader = new AssetLoader();
   /** Escena original del GLTF (se clona con SkeletonUtils.clone() para cada instancia) */
@@ -493,61 +493,17 @@ export class Enemy extends Character {
   }
 
   // =================================================================
-  // IA
+  // IA (abstracta — cada subclase debe implementar su propio comportamiento)
   // =================================================================
 
   /**
-   * IA básica: perseguir al jugador más cercano
+   * IA del enemigo. Cada subclase debe implementar su propio comportamiento.
+   * @param dt - Delta time en segundos
+   * @param players - Array de jugadores (deben tener getPosition())
+   * @param world - Mundo de física (opcional)
+   * @param activeEnemies - Array de enemigos activos para steering behaviors (separación, etc.)
    */
-  updateAI(dt: number, players: any[], world?: any, activeEnemies?: any[]): void {
-    if (!this.model || players.length === 0) return;
-    if (this.enemyState !== EnemyState.Active) return;
-    
-    // No moverse si el steering está deshabilitado (ej: durante knockback)
-    if (!this.steeringEnabled) return;
-
-    const nearestPlayer = players[0];
-    if (!nearestPlayer || !nearestPlayer.getPosition) return;
-
-    const playerPos = nearestPlayer.getPosition();
-    const enemyPos = this.model.position;
-
-    if (!playerPos) return;
-
-    // Calcular dirección hacia el jugador
-    const direction = new THREE.Vector3()
-      .subVectors(playerPos, enemyPos)
-      .normalize();
-
-    // Rotar hacia el jugador
-    if (direction.lengthSq() > 0.001) {
-      const targetAngle = Math.atan2(direction.x, direction.z);
-      this.model.rotation.y = THREE.MathUtils.lerp(this.model.rotation.y, targetAngle, 0.1);
-    }
-
-    // Mover usando setLinvel (compatible con dynamic)
-    // Los cuerpos dinámicos con masa alta ignoran fuerzas externas (no son empujados
-    // por colisiones), y setLinvel() funciona para controlar su movimiento.
-    const moveSpeed = this.getEffectiveStat('speed');
-    if (this.physicsBody && this.physicsWorld) {
-      const body = this.physicsWorld.getBody(this.physicsBody);
-      if (body) {
-        const currentVel = body.linvel();
-        body.setLinvel({
-          x: direction.x * moveSpeed,
-          y: currentVel.y,
-          z: direction.z * moveSpeed
-        }, true);
-      }
-    }
-
-    // Cambiar animación según estado
-    if (direction.lengthSq() > 0.001) {
-      this.playAnimation('Walk');
-    } else {
-      this.playAnimation('Idle');
-    }
-  }
+  abstract updateAI(dt: number, players: any[], world?: any, activeEnemies?: any[]): void;
 
   // =================================================================
   // UPDATE
@@ -1307,55 +1263,4 @@ export class Enemy extends Character {
     console.log(`[Enemy ${this.id}] Recursos liberados completamente`);
   }
 
-  // =================================================================
-  // MÉTODO ESTÁTICO: CREATE ENEMY ROW
-  // =================================================================
-
-  /**
-   * Crea una fila de enemigos para testing y espera a que todos
-   * tengan su modelo 3D cargado antes de retornar.
-   */
-  static async createEnemyRow(
-    count: number,
-    startX: number,
-    startZ: number,
-    spacing: number,
-    eventBus: EventBus,
-    sceneManager: SceneManager,
-    physicsWorld: PhysicsWorld
-  ): Promise<Enemy[]> {
-    const enemies: Enemy[] = [];
-
-    const colors = [0xff0000, 0xff5500, 0xffaa00];
-
-    for (let i = 0; i < count; i++) {
-      const enemyId = `test_enemy_${i + 1}`;
-      const color = colors[i % colors.length];
-
-      const enemy = new Enemy(
-        enemyId,
-        eventBus,
-        sceneManager,
-        physicsWorld,
-        undefined,
-        color,
-        1.0,
-        0.0,
-        EnemyType.SkeletonMinion,
-        SKELETON_MINION_STATS
-      );
-
-      const x = startX + (i * spacing);
-      enemy.setPosition(x, 0, startZ);
-
-      enemies.push(enemy);
-      console.log(`[Enemy] Creado enemigo ${enemyId} en (${x}, 0, ${startZ})`);
-    }
-
-    // Esperar a que todos los enemigos tengan su modelo 3D cargado
-    await Promise.all(enemies.map(e => e.readyPromise));
-    console.log(`[Enemy] Todos los modelos cargados para ${enemies.length} enemigos`);
-
-    return enemies;
-  }
 }

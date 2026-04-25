@@ -11,7 +11,7 @@ import { EventBus } from './engine/EventBus';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
 import { EnemyPool } from './enemies/EnemyPool';
-import { Enemy, EnemyType, SKELETON_MINION_STATS } from './enemies/Enemy';
+import { EnemyType } from './enemies/Enemy';
 import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
@@ -65,8 +65,6 @@ let meleeCharacter: MeleeCharacter | null = null;
 let adcCharacter: AdcCharacter | null = null;
 // Pool de enemigos para gestión eficiente de instancias
 let enemyPool: EnemyPool | null = null;
-// Enemigos de prueba (fila para testing de piercing)
-let testEnemies: Enemy[] = [];
 // Pipeline centralizado de daño (compartido entre todos los sistemas)
 let damagePipeline: DamagePipeline | null = null;
 // Sistema de números de daño flotantes
@@ -284,40 +282,7 @@ async function initGameWithPhysics(): Promise<void> {
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
       enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
       
-      // Registrar tipo de enemigo skeleton minion
-      enemyPool.registerEnemyType({
-        type: EnemyType.SkeletonMinion,
-        stats: SKELETON_MINION_STATS,
-        initialCount: 5,
-        maxSize: 20
-      });
-      console.log('🧟 EnemyPool inicializado con tipo skeleton minion');
-
-      // Crear enemigos en formación escalonada (sin superposición)
-      // Primera fila (3 enemigos)
-      testEnemies = await Enemy.createEnemyRow(
-        3,            // 3 enemigos
-        -3,           // startX
-        5,            // startZ
-        3,            // spacing
-        eventBus,
-        sceneManager,
-        physicsWorld
-      );
-      // Segunda fila (2 enemigos, escalonados)
-      const secondRow = await Enemy.createEnemyRow(
-        2,            // 2 enemigos
-        -1.5,         // startX (centrado entre los de la primera fila)
-        8,            // startZ (más atrás)
-        3,            // spacing
-        eventBus,
-        sceneManager,
-        physicsWorld
-      );
-      testEnemies.push(...secondRow);
-      console.log(`🧪 Creados ${testEnemies.length} enemigos en formación escalonada`);
-
-      // Registrar tipo de enemigo básico (seek melee)
+      // Registrar tipo de enemigo básico (seek melee) — único tipo de enemigo en gameplay
       // IMPORTANTE: Registrar DESPUÉS de createEnemyRow para garantizar que
       // el modelo compartido del esqueleto ya esté cargado (carga síncrona via getSharedModelScene)
       enemyPool.registerEnemyType({
@@ -379,16 +344,10 @@ async function initGameWithPhysics(): Promise<void> {
     if (meleeCharacter) players.push(meleeCharacter);
     if (adcCharacter) players.push(adcCharacter);
 
-    // Actualizar enemigos del pool
+    // Actualizar enemigos del pool (EnemyBasic con seek AI)
     if (enemyPool) {
       enemyPool.update(dt, players);
     }
-
-    // Actualizar enemigos de prueba (fila de testing) - incluir AI para animaciones
-    testEnemies.forEach(enemy => {
-      enemy.update(dt);
-      enemy.updateAI(dt, players);
-    });
 
     // Actualizar números de daño flotantes
     if (damageNumberSystem) {
