@@ -105,12 +105,14 @@ export class AdcCharacter extends Character {
         this.assetLoader.load('/models/Rogue_Hooded.glb'),
         this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
         this.assetLoader.load('/models/Rig_Medium_CombatRanged.glb'),
-        this.assetLoader.load('/models/Rig_Medium_General.glb')
+        this.assetLoader.load('/models/Rig_Medium_General.glb'),
+        this.assetLoader.load('/models/weapons/bow.gltf')
       ]);
       const modelGltf = assets[0] as GLTF;
       const movementGltf = assets[1] as GLTF;
       const combatGltf = assets[2] as GLTF;
       const generalGltf = assets[3] as GLTF;
+      const weaponGltf = assets[4] as GLTF;
 
       // 1. Clonado de esqueleto independiente
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
@@ -132,9 +134,8 @@ export class AdcCharacter extends Character {
       this.model.add(this.innerMesh);
       this.sceneManager.add(this.model);
 
-      // 4. CREAR ARMA SIMPLE (omitir carga GLTF problemática)
-      // Nota: Los archivos GLTF están corruptos/incompatibles, así que usamos arma geométrica
-      this.createSimpleWeapon();
+      // 4. CARGAR ARMA REAL (arco KayKit)
+      await this.loadWeapon(weaponGltf);
 
       // 5. Inicialización del Mixer
       this.mixer = new THREE.AnimationMixer(this.innerMesh);

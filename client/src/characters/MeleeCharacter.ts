@@ -110,18 +110,20 @@ export class MeleeCharacter extends Character {
    */
   private async loadModel(): Promise<void> {
     try {
-      // 1. Cargamos los modelos esenciales primero
+      // 1. Cargamos los modelos esenciales primero (personaje + animaciones + arma)
       const essentialAssets = await Promise.all([
         this.assetLoader.load('/models/Knight.glb'),
         this.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
         this.assetLoader.load('/models/Rig_Medium_CombatMelee.glb'),
-        this.assetLoader.load('/models/Rig_Medium_General.glb')
+        this.assetLoader.load('/models/Rig_Medium_General.glb'),
+        this.assetLoader.load('/models/weapons/sword_1handed.gltf')
       ]);
       
       const modelGltf = essentialAssets[0] as GLTF;
       const movementGltf = essentialAssets[1] as GLTF;
       const combatGltf = essentialAssets[2] as GLTF;
       const generalGltf = essentialAssets[3] as GLTF;
+      const weaponGltf = essentialAssets[4] as GLTF;
 
       // 2. CLONACIÓN (Ahora SkeletonUtils.clone funcionará porque importamos con *)
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
@@ -143,9 +145,8 @@ export class MeleeCharacter extends Character {
       this.model.add(this.innerMesh);
       this.sceneManager.add(this.model);
 
-      // 5. CREAR ARMA SIMPLE (omitir carga GLTF problemática)
-      // Nota: Los archivos GLTF están corruptos/incompatibles, así que usamos arma geométrica
-      this.createSimpleWeapon();
+      // 5. CARGAR ARMA REAL (espada KayKit)
+      await this.loadWeapon(weaponGltf);
 
       // 6. ANIMACIONES
       this.mixer = new THREE.AnimationMixer(this.innerMesh);
