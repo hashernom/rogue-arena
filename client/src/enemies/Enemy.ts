@@ -105,6 +105,76 @@ export abstract class Enemy extends Character {
     return Enemy.loadPromise;
   }
 
+  /**
+   * Inicia la carga del modelo compartido del esqueleto (solo la parte estática,
+   * sin clonar para ninguna instancia). Útil para precargar el modelo antes de
+   * crear instancias de subclases como EnemyBasic.
+   *
+   * Es seguro llamarlo múltiples veces — si ya está cargado o cargando, no hace nada.
+   * @returns Promesa que resuelve cuando el modelo compartido está disponible
+   */
+  static async ensureModelLoaded(): Promise<void> {
+    if (Enemy.modelScene) return;
+    if (Enemy.loadPromise) {
+      await Enemy.loadPromise;
+      return;
+    }
+
+    // Iniciar la misma carga que loadModel() pero sin clonar para ninguna instancia
+    Enemy.isLoading = true;
+    Enemy.loadPromise = new Promise(async (resolve, reject) => {
+      try {
+        const assets = await Promise.all([
+          Enemy.assetLoader.load('/models/enemies/Skeleton_Minion.glb'),
+          Enemy.assetLoader.load('/models/Rig_Medium_General.glb'),
+          Enemy.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
+          Enemy.assetLoader.load('/models/Rig_Medium_CombatMelee.glb')
+        ]);
+
+        const skeletonGltf = assets[0] as GLTF;
+        const generalGltf = assets[1] as GLTF;
+        const movementGltf = assets[2] as GLTF;
+        const combatGltf = assets[3] as GLTF;
+
+        const model = skeletonGltf.scene;
+
+        // Combinar animaciones
+        Enemy.modelAnimations = [
+          ...(generalGltf.animations || []),
+          ...(movementGltf.animations || []),
+          ...(combatGltf.animations || [])
+        ];
+
+        if (Enemy.modelAnimations.length === 0) {
+          console.error('⚠️ LOS RIGS NO TIENEN ANIMACIONES. Revisa los archivos Rig.');
+        } else {
+          console.log(`[Enemy] Cargadas ${Enemy.modelAnimations.length} animaciones desde los Rigs:`, Enemy.modelAnimations.map(a => a.name));
+        }
+
+        model.scale.set(1.0, 1.0, 1.0);
+        model.rotation.y = Math.PI;
+
+        model.traverse(child => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+
+        Enemy.modelScene = model;
+        Enemy.isLoading = false;
+        resolve(model);
+      } catch (error) {
+        Enemy.isLoading = false;
+        Enemy.loadPromise = null;
+        console.error('[Enemy] Error cargando assets:', error);
+        reject(error);
+      }
+    });
+
+    await Enemy.loadPromise;
+  }
+
   // ========== PROPIEDADES DE INSTANCIA ==========
   /** Modelo visual (Group contenedor) - siguiendo Container+SkeletonUtils pattern */
   protected model: THREE.Group | null = null;

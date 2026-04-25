@@ -11,7 +11,7 @@ import { EventBus } from './engine/EventBus';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
 import { EnemyPool } from './enemies/EnemyPool';
-import { EnemyType } from './enemies/Enemy';
+import { Enemy, EnemyType } from './enemies/Enemy';
 import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
@@ -278,6 +278,10 @@ async function initGameWithPhysics(): Promise<void> {
       // Actualizar posición de HP bars en cada frame (en fixed update)
       // Esto se hace en el game loop más abajo
       console.log('🩸 Sistema de HP bar y damage numbers para jugadores inicializado');
+
+      // Precargar modelo compartido del esqueleto antes de crear instancias de EnemyBasic
+      await Enemy.ensureModelLoaded();
+      console.log('✅ Modelo compartido de esqueleto precargado');
 
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
       enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
