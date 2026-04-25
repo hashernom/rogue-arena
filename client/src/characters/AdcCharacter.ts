@@ -58,6 +58,9 @@ export class AdcCharacter extends Character {
   /** Aljaba en la espalda */
   private quiver: THREE.Object3D | null = null;
 
+  /** Modelo GLTF de flecha para proyectiles */
+  private arrowGltf: GLTF | null = null;
+
   /** Habilidad pasiva Perforación */
   private piercePassive: PiercePassive | null = null;
 
@@ -110,7 +113,8 @@ export class AdcCharacter extends Character {
         this.assetLoader.load('/models/Rig_Medium_CombatRanged.glb'),
         this.assetLoader.load('/models/Rig_Medium_General.glb'),
         this.assetLoader.load('/models/weapons/bow.gltf'),
-        this.assetLoader.load('/models/weapons/quiver.gltf')
+        this.assetLoader.load('/models/weapons/quiver.gltf'),
+        this.assetLoader.load('/models/weapons/arrow.gltf')
       ]);
       const modelGltf = assets[0] as GLTF;
       const movementGltf = assets[1] as GLTF;
@@ -118,6 +122,7 @@ export class AdcCharacter extends Character {
       const generalGltf = assets[3] as GLTF;
       const weaponGltf = assets[4] as GLTF;
       const quiverGltf = assets[5] as GLTF;
+      this.arrowGltf = assets[6] as GLTF;
 
       // 1. Clonado de esqueleto independiente
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
@@ -603,29 +608,45 @@ export class AdcCharacter extends Character {
     const spawnOffset = 1.0;
     spawnPos.add(forwardDir.clone().multiplyScalar(spawnOffset));
 
-    // 4. Crear proyectil visual (flecha) con patrón contenedor
-    const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
-    const material = new THREE.MeshStandardMaterial({ color: 0xffff00 });
-    const arrowMesh = new THREE.Mesh(geometry, material);
-    arrowMesh.castShadow = true;
+    // 4. Crear proyectil visual (flecha 3D KayKit)
+    let arrowGroup: THREE.Group;
     
-    // 🔥 Patrón contenedor: envolver la malla en un Group
-    const arrowGroup = new THREE.Group();
-    arrowGroup.add(arrowMesh);
-    
-    // 🔥 Corregir la orientación de la malla DENTRO del grupo
-    // Si se va hacia arriba, la rotamos 90 grados hacia adelante.
-    arrowMesh.rotation.set(Math.PI / 2, 0, 0);
+    if (this.arrowGltf) {
+      // Usar modelo 3D de flecha KayKit
+      const arrowModel = this.assetLoader.clone(this.arrowGltf);
+      
+      // Patrón contenedor
+      arrowGroup = new THREE.Group();
+      arrowGroup.add(arrowModel);
+      
+      // Escalar y orientar la flecha
+      arrowModel.scale.set(0.5, 0.5, 0.5);
+      // La flecha KayKit apunta en Y+, rotar para que apunte en Z- (forward)
+      arrowModel.rotation.set(-Math.PI / 2, 0, 0);
+      
+      // Configurar sombras
+      arrowModel.traverse((child: any) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+    } else {
+      // Fallback: flecha geométrica simple
+      const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
+      const material = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+      const arrowMesh = new THREE.Mesh(geometry, material);
+      arrowMesh.castShadow = true;
+      
+      arrowGroup = new THREE.Group();
+      arrowGroup.add(arrowMesh);
+      arrowMesh.rotation.set(Math.PI / 2, 0, 0);
+    }
     
     // Posición y rotación del contenedor
     arrowGroup.position.copy(spawnPos);
     const lookTarget = spawnPos.clone().add(forwardDir);
     arrowGroup.lookAt(lookTarget);
-    
-    // Depuración: verificar dirección
-    const groupForward = new THREE.Vector3();
-    arrowGroup.getWorldDirection(groupForward);
-    console.log(`[AdcCharacter] forwardDir: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)}), groupForward: (${groupForward.x.toFixed(2)}, ${groupForward.y.toFixed(2)}, ${groupForward.z.toFixed(2)})`);
     
     // Almacenar dirección en userData para uso en updateProjectiles
     arrowGroup.userData = { direction: forwardDir.clone() };
@@ -1125,7 +1146,7 @@ export class AdcCharacter extends Character {
         }
       });
 
-      quiverModel.scale.set(1.0, 1.0, 1.0);
+      quiverModel.scale.set(1.3, 1.3, 1.3);
 
       if (spineBone) {
         // Adjuntar al hueso de la columna (sigue las animaciones del torso)
