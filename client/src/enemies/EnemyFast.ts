@@ -76,7 +76,7 @@ export class EnemyFast extends Enemy {
     sceneManager: SceneManager,
     physicsWorld?: PhysicsWorld,
     physicsBody?: RigidBodyHandle,
-    color: number = 0x88ccff,
+    color: number = 0xbbddff,
     size: number = 1.0,
     knockbackResistance: number = 0.2,
     type: EnemyType = EnemyType.Fast,

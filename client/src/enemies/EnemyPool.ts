@@ -126,7 +126,7 @@ export class EnemyPool {
           this.sceneManager,
           this.physicsWorld,
           undefined, // Sin body handle (se creará automáticamente)
-          0x88ccff,  // Tinte celeste muy leve
+          0xbbddff,  // Tinte azul claro muy leve (multiplicativo sobre textura original)
           1.0,       // Tamaño estándar
           stats.knockbackResistance,
           type,

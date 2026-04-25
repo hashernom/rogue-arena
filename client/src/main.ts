@@ -108,12 +108,16 @@ async function initGameWithPhysics(): Promise<void> {
 
     // Crear cuerpos físicos para los jugadores y el plano
     if (physicsWorld) {
-      // Plano estático (suelo) - tamaño enorme para evitar bordes invisibles
-      const planeCollider = RAPIER.ColliderDesc.cuboid(200, 0.1, 200); // half-extents (400x0.2x400)
+      // Plano estático (suelo) - cuboide delgado SIN rotación para evitar
+      // que el collider invada el espacio de juego (y=0).
+      // El mesh de Three.js tiene rotation.x = -PI/2 para verse horizontal,
+      // pero el collider de Rapier debe estar alineado a ejes para no atrapar
+      // a los enemigos dinámicos dentro de él.
+      const planeCollider = RAPIER.ColliderDesc.cuboid(200, 0.01, 200); // half-extents delgado
       planeBodyHandle = physicsWorld.createBody({
         type: 'static',
         position: new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z),
-        rotation: new THREE.Euler(plane.rotation.x, plane.rotation.y, plane.rotation.z),
+        // Sin rotación — el collider queda como cuboide delgado horizontal en y=-2
         collider: planeCollider,
       });
 
@@ -143,9 +147,11 @@ async function initGameWithPhysics(): Promise<void> {
 
       // Remover el cubo rojo de la escena
       sceneManager.remove(cubeP2);
-
-      // Sincronizar mesh del plano con cuerpo físico
-      physicsWorld.syncToThree(plane, planeBodyHandle);
+// NOTA: No sincronizamos el mesh del plano con Rapier porque:
+// 1. El collider no tiene rotación (cuboide alineado a ejes)
+// 2. El mesh tiene rotation.x = -PI/2 para verse horizontal
+// 3. syncToThree sobrescribiría la rotación visual del mesh
+// 4. Al ser static, su posición nunca cambia
 
       // Crear DebugRenderer para visualizar colliders (solo en desarrollo)
       if (import.meta.env.DEV) {
