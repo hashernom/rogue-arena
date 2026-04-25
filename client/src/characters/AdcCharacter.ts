@@ -414,7 +414,15 @@ export class AdcCharacter extends Character {
     const pos = body.translation();
     
     this.model.position.set(pos.x, pos.y - 0.5, pos.z);
-    this.model.updateMatrixWorld(true); // Fuerza la actualización de la jerarquía
+  }
+
+  /**
+   * Obtiene la posición actual del personaje en el mundo 3D.
+   * @returns Vector3 con la posición, o null si el modelo no está inicializado
+   */
+  getPosition(): THREE.Vector3 | null {
+    if (!this.model) return null;
+    return this.model.position.clone();
   }
 
   /**

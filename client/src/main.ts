@@ -12,6 +12,7 @@ import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
 import { EnemyPool } from './enemies/EnemyPool';
 import { Enemy, EnemyType, SKELETON_MINION_STATS } from './enemies/Enemy';
+import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -70,6 +71,8 @@ let testEnemies: Enemy[] = [];
 let damagePipeline: DamagePipeline | null = null;
 // Sistema de números de daño flotantes
 let damageNumberSystem: DamageNumberSystem | null = null;
+// HP bars para jugadores (sprites flotantes)
+let playerHpBars: Map<string, THREE.Sprite> = new Map();
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -171,6 +174,113 @@ async function initGameWithPhysics(): Promise<void> {
       }
       console.log('🔗 DamagePipeline compartido con MeleeCharacter y AdcCharacter');
 
+      // ================================================================
+      // SISTEMA DE HP BAR PARA JUGADORES
+      // ================================================================
+      // Crear sprites de HP bar para cada jugador
+      const playerHpBars: Map<string, THREE.Sprite> = new Map();
+
+      function createPlayerHpBar(playerId: string): THREE.Sprite {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 16;
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(1.2, 0.15, 1);
+        sprite.visible = false;
+        sprite.renderOrder = 999;
+        scene.add(sprite);
+        return sprite;
+      }
+
+      function updatePlayerHpBar(sprite: THREE.Sprite, ratio: number, position: THREE.Vector3): void {
+        const spriteMaterial = sprite.material as THREE.SpriteMaterial;
+        const texture = spriteMaterial.map as THREE.CanvasTexture;
+        const canvas = texture.image as HTMLCanvasElement;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Fondo negro
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Barra de HP (verde -> amarillo -> rojo según ratio)
+        const hue = Math.max(0, ratio * 120);
+        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        ctx.fillRect(1, 1, (canvas.width - 2) * ratio, canvas.height - 2);
+
+        // Borde blanco
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+        texture.needsUpdate = true;
+
+        // Posicionar sobre el jugador
+        sprite.position.copy(position);
+        sprite.position.y += 2.2;
+      }
+
+      // Crear HP bars para ambos jugadores
+      const hpBarP1 = createPlayerHpBar('player1');
+      const hpBarP2 = createPlayerHpBar('player2');
+      playerHpBars.set('player1', hpBarP1);
+      playerHpBars.set('player2', hpBarP2);
+
+      // Suscribirse a eventos de daño a jugadores para mostrar HP bar y damage numbers
+      eventBus.on('player:damaged', (data: { playerId: string; amount: number }) => {
+        // Mostrar damage number flotante
+        if (damageNumberSystem) {
+          let playerPos: THREE.Vector3 | null = null;
+          if (data.playerId === 'player1' && meleeCharacter) {
+            playerPos = meleeCharacter.getPosition();
+          } else if (data.playerId === 'player2' && adcCharacter) {
+            playerPos = adcCharacter.getPosition();
+          }
+
+          if (playerPos) {
+            damageNumberSystem.createDamageNumber(
+              Math.round(data.amount),
+              playerPos.clone().add(new THREE.Vector3(0, 1.5, 0)),
+              { color: 0xff4444, fontSize: 24 }
+            );
+          }
+        }
+
+        // Mostrar/actualizar HP bar
+        const hpBar = playerHpBars.get(data.playerId);
+        if (hpBar) {
+          let character = data.playerId === 'player1' ? meleeCharacter : adcCharacter;
+          if (character) {
+            const currentHp = character.getEffectiveStat('hp');
+            const maxHp = character.getEffectiveStat('maxHp');
+            const ratio = Math.max(0, currentHp / maxHp);
+            const pos = character.getPosition();
+            if (pos) {
+              updatePlayerHpBar(hpBar, ratio, pos);
+              hpBar.visible = true;
+
+              // Ocultar después de 3 segundos
+              setTimeout(() => {
+                hpBar.visible = false;
+              }, 3000);
+            }
+          }
+        }
+      });
+
+      // Actualizar posición de HP bars en cada frame (en fixed update)
+      // Esto se hace en el game loop más abajo
+      console.log('🩸 Sistema de HP bar y damage numbers para jugadores inicializado');
+
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
       enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
       
@@ -206,6 +316,33 @@ async function initGameWithPhysics(): Promise<void> {
       );
       testEnemies.push(...secondRow);
       console.log(`🧪 Creados ${testEnemies.length} enemigos en formación escalonada`);
+
+      // Registrar tipo de enemigo básico (seek melee)
+      // IMPORTANTE: Registrar DESPUÉS de createEnemyRow para garantizar que
+      // el modelo compartido del esqueleto ya esté cargado (carga síncrona via getSharedModelScene)
+      enemyPool.registerEnemyType({
+        type: EnemyType.Basic,
+        stats: ENEMY_BASIC_STATS,
+        initialCount: 5,
+        maxSize: 30
+      });
+      console.log('🔴 EnemyPool inicializado con tipo basic');
+
+      // Spawnear EnemyBasic via pool para testing (esqueletos rojos con seek AI)
+      const basicPositions = [
+        new THREE.Vector3(5, 0, 5),
+        new THREE.Vector3(7, 0, 6),
+        new THREE.Vector3(6, 0, 8),
+        new THREE.Vector3(8, 0, 5),
+        new THREE.Vector3(4, 0, 7),
+      ];
+      basicPositions.forEach(pos => {
+        const enemy = enemyPool!.acquire(EnemyType.Basic, { position: pos });
+        if (enemy) {
+          console.log(`🔴 EnemyBasic spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
+        }
+      });
+      console.log(`🔴 Spawneados ${basicPositions.length} EnemyBasic para testing`);
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -269,6 +406,28 @@ async function initGameWithPhysics(): Promise<void> {
     // Sincronizar modelos DESPUÉS del step (mismo frame que el debug)
     if (meleeCharacter) meleeCharacter.syncToPhysics();
     if (adcCharacter) adcCharacter.syncToPhysics();
+
+    // Actualizar posición de HP bars de jugadores (seguir al personaje)
+    if (meleeCharacter) {
+      const hpBar = playerHpBars.get('player1');
+      if (hpBar && hpBar.visible) {
+        const pos = meleeCharacter.getPosition();
+        if (pos) {
+          hpBar.position.copy(pos);
+          hpBar.position.y += 2.2;
+        }
+      }
+    }
+    if (adcCharacter) {
+      const hpBar = playerHpBars.get('player2');
+      if (hpBar && hpBar.visible) {
+        const pos = adcCharacter.getPosition();
+        if (pos) {
+          hpBar.position.copy(pos);
+          hpBar.position.y += 2.2;
+        }
+      }
+    }
 
     // Actualizar DebugRenderer para visualizar colliders
     if (debugRenderer) {

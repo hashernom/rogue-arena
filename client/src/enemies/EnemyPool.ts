@@ -3,6 +3,7 @@ import { EventBus } from '../engine/EventBus';
 import { SceneManager } from '../engine/SceneManager';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Enemy, type EnemyStats, type SpawnOptions, EnemyType, SKELETON_MINION_STATS } from './Enemy';
+import { EnemyBasic, ENEMY_BASIC_STATS } from './EnemyBasic';
 
 /**
  * Configuración para un tipo de enemigo en el pool
@@ -52,6 +53,8 @@ export class EnemyPool {
     // Inicializar mapas
     this.available.set(EnemyType.SkeletonMinion, []);
     this.inUse.set(EnemyType.SkeletonMinion, []);
+    this.available.set(EnemyType.Basic, []);
+    this.inUse.set(EnemyType.Basic, []);
   }
 
   /**
@@ -113,7 +116,19 @@ export class EnemyPool {
           type,
           stats
         );
-      // Futuros tipos de enemigos pueden agregarse aquí
+      case EnemyType.Basic:
+        return new EnemyBasic(
+          enemyId,
+          this.eventBus,
+          this.sceneManager,
+          this.physicsWorld,
+          undefined, // Sin body handle (se creará automáticamente)
+          0xff4444,  // Color rojo más claro para distinguir
+          1.0,       // Tamaño estándar
+          stats.knockbackResistance,
+          type,
+          stats
+        );
       default:
         throw new Error(`[EnemyPool] Tipo de enemigo no soportado: ${type}`);
     }
@@ -218,12 +233,16 @@ export class EnemyPool {
    * @param world - Referencia al mundo del juego (opcional)
    */
   update(dt: number, players: any[], world?: any): void {
+    // Obtener todos los enemigos activos para pasarlos a updateAI
+    // (necesario para que EnemyBasic pueda aplicar separación entre enemigos)
+    const activeEnemies = this.getAllActiveEnemies();
+
     for (const [type, enemies] of this.inUse) {
       for (const enemy of enemies) {
         // Incluir 'dying' para que la animación de muerte y partículas avancen
         if (enemy.getEnemyState() === 'active' || enemy.getEnemyState() === 'spawning' || enemy.getEnemyState() === 'dying') {
           enemy.update(dt);
-          enemy.updateAI(dt, players);
+          enemy.updateAI(dt, players, world, activeEnemies);
         }
       }
     }

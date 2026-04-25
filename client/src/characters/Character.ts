@@ -239,6 +239,12 @@ export abstract class Character {
   abstract update(dt: number, inputState?: InputState): void;
 
   /**
+   * Obtiene la posición actual del personaje en el mundo 3D.
+   * Cada subclase debe implementarlo según su modelo (Three.js Group, Rapier body, etc.)
+   */
+  abstract getPosition(): THREE.Vector3 | null;
+
+  /**
    * Establece el cuerpo de física asociado.
    */
   setPhysicsBody(body: RigidBodyHandle): void {

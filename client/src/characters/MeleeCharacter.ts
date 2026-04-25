@@ -680,6 +680,15 @@ export class MeleeCharacter extends Character {
   }
 
   /**
+   * Obtiene la posición actual del personaje en el mundo 3D.
+   * @returns Vector3 con la posición, o null si el modelo no está inicializado
+   */
+  getPosition(): THREE.Vector3 | null {
+    if (!this.model) return null;
+    return this.model.position.clone();
+  }
+
+  /**
    * Maneja el movimiento basado en input.
    */
   private handleMovement(dt: number, inputState: InputState): void {

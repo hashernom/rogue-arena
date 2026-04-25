@@ -20,6 +20,7 @@ export enum EnemyType {
   SkeletonWarrior = 'skeleton_warrior',
   SkeletonRogue = 'skeleton_rogue',
   SkeletonMage = 'skeleton_mage',
+  Basic = 'basic',
 }
 
 /**
@@ -89,56 +90,71 @@ export class Enemy extends Character {
   private static isLoading: boolean = false;
   private static loadPromise: Promise<THREE.Group> | null = null;
 
+  /**
+   * Getter estático para que subclases (como EnemyBasic) accedan al modelo compartido.
+   * Retorna la escena original del GLTF para clonar con SkeletonUtils.clone().
+   */
+  protected static getSharedModelScene(): THREE.Group | null {
+    return Enemy.modelScene;
+  }
+
+  /**
+   * Getter estático para acceder a la promesa de carga del modelo compartido.
+   */
+  protected static getSharedLoadPromise(): Promise<THREE.Group> | null {
+    return Enemy.loadPromise;
+  }
+
   // ========== PROPIEDADES DE INSTANCIA ==========
   /** Modelo visual (Group contenedor) - siguiendo Container+SkeletonUtils pattern */
-  private model: THREE.Group | null = null;
+  protected model: THREE.Group | null = null;
   /** Escena interna clonada (contiene SkinnedMesh + huesos). Root del AnimationMixer. */
-  private innerMesh: THREE.Object3D | null = null;
+  protected innerMesh: THREE.Object3D | null = null;
   /** Referencia al SceneManager */
-  private sceneManager: SceneManager;
+  protected sceneManager: SceneManager;
   /** Color base del enemigo */
   private color: number;
   /** Tamaño base del enemigo */
   private size: number;
 
   /** Posición objetivo guardada para cuando el modelo termine de cargar */
-  private targetPosition: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
+  protected targetPosition: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
   /** Rotación objetivo guardada para cuando el modelo termine de cargar */
-  private targetRotation: number = 0;
+  protected targetRotation: number = 0;
 
   // ========== HIT FLASH ==========
-  private flashTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private originalModelColor: Map<THREE.Mesh, THREE.Color> = new Map();
+  protected flashTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  protected originalModelColor: Map<THREE.Mesh, THREE.Color> = new Map();
 
   // ========== MUERTE ==========
-  private isDying: boolean = false;
-  private deathAnimationStart: number = 0;
-  private readonly DEATH_ANIMATION_DURATION = 600;
-  private deathParticles: THREE.Mesh[] = [];
+  protected isDying: boolean = false;
+  protected deathAnimationStart: number = 0;
+  protected readonly DEATH_ANIMATION_DURATION = 600;
+  protected deathParticles: THREE.Mesh[] = [];
 
   // ========== HP BAR ==========
-  private hpBar: THREE.Sprite | null = null;
-  private hpBarVisible: boolean = false;
-  private hpBarHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  protected hpBar: THREE.Sprite | null = null;
+  protected hpBarVisible: boolean = false;
+  protected hpBarHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   // ========== ANIMACIONES ==========
-  private mixer: THREE.AnimationMixer | null = null;
-  private animations: THREE.AnimationAction[] = [];
-  private currentAnimation: THREE.AnimationAction | null = null;
+  protected mixer: THREE.AnimationMixer | null = null;
+  protected animations: THREE.AnimationAction[] = [];
+  protected currentAnimation: THREE.AnimationAction | null = null;
 
   // ========== POOL / CICLO DE VIDA ==========
   /** Tipo de enemigo */
   public readonly type: EnemyType;
   /** Recompensa al morir */
-  private reward: number;
+  protected reward: number;
   /** Estado del enemigo (spawning, active, dying, dead) */
-  private enemyState: EnemyState = EnemyState.Spawning;
+  protected enemyState: EnemyState = EnemyState.Spawning;
   /** Tiempo de inicio del spawn */
-  private spawnStartTime: number = 0;
+  protected spawnStartTime: number = 0;
   /** Duración del spawn en ms */
-  private readonly SPAWN_DURATION = 500;
+  protected readonly SPAWN_DURATION = 500;
   /** Indica si está liberado al pool */
-  private isPooled: boolean = false;
+  protected isPooled: boolean = false;
 
   /** Promesa que resuelve cuando el modelo 3D ha terminado de cargar */
   public readyPromise: Promise<void>;
@@ -172,7 +188,8 @@ export class Enemy extends Character {
     size: number = 1.0,
     knockbackResistance: number = 0.0,
     type: EnemyType = EnemyType.SkeletonMinion,
-    stats?: EnemyStats
+    stats?: EnemyStats,
+    skipModelLoad: boolean = false
   ) {
     // Usar stats proporcionadas o BASE_STATS
     const effectiveStats: CharacterStats = stats || Enemy.BASE_STATS;
@@ -196,8 +213,10 @@ export class Enemy extends Character {
       this.resolveReady = resolve;
     });
 
-    // Cargar modelo asíncronamente
-    this.loadModel();
+    // Cargar modelo asíncronamente (subclases pueden saltarse esto)
+    if (!skipModelLoad) {
+      this.loadModel();
+    }
   }
 
   // =================================================================
@@ -297,7 +316,7 @@ export class Enemy extends Character {
    * NO extraer el SkinnedMesh solo - los huesos (Bone) son hermanos del SkinnedMesh
    * en la jerarquía GLTF y deben mantenerse intactos.
    */
-  private setupModel(clonedScene: THREE.Group): void {
+  protected setupModel(clonedScene: THREE.Group): void {
     // 1. Crear contenedor limpio
     this.model = new THREE.Group();
 
@@ -404,7 +423,7 @@ export class Enemy extends Character {
   /**
    * Crea un cuerpo físico para el enemigo
    */
-  private createPhysicsBody(): void {
+  protected createPhysicsBody(): void {
     if (!this.physicsWorld || !this.model) return;
 
     try {
@@ -426,7 +445,7 @@ export class Enemy extends Character {
   /**
    * Sincroniza el modelo visual con la posición física
    */
-  private syncModelWithPhysics(): void {
+  protected syncModelWithPhysics(): void {
     if (!this.model || !this.physicsBody || !this.physicsWorld) return;
 
     const body = this.physicsWorld.getBody(this.physicsBody);
@@ -443,7 +462,7 @@ export class Enemy extends Character {
   /**
    * Reproduce una animación por nombre
    */
-  private playAnimation(name: string): void {
+  protected playAnimation(name: string): void {
     if (!this.mixer || !Enemy.modelAnimations) return;
 
     // Buscar el clip directamente en modelAnimations (no en this.animations)
@@ -480,7 +499,7 @@ export class Enemy extends Character {
   /**
    * IA básica: perseguir al jugador más cercano
    */
-  updateAI(dt: number, players: any[], world?: any): void {
+  updateAI(dt: number, players: any[], world?: any, activeEnemies?: any[]): void {
     if (!this.model || players.length === 0) return;
     if (this.enemyState !== EnemyState.Active) return;
     
@@ -572,7 +591,7 @@ export class Enemy extends Character {
   /**
    * Actualiza la animación de spawn (aparecer gradualmente)
    */
-  private updateSpawnAnimation(): void {
+  protected updateSpawnAnimation(): void {
     const elapsed = Date.now() - this.spawnStartTime;
     const progress = Math.min(elapsed / this.SPAWN_DURATION, 1);
 
@@ -648,7 +667,7 @@ export class Enemy extends Character {
    * Crea pequeñas partículas en el punto de impacto (proyectil ADC, melee, etc.)
    * Se autodestruyen después de ~300ms
    */
-  private spawnHitParticles(position: THREE.Vector3): void {
+  protected spawnHitParticles(position: THREE.Vector3): void {
     if (!this.sceneManager) return;
 
     const count = 5;
@@ -721,7 +740,7 @@ export class Enemy extends Character {
   /**
    * Limpia todas las partículas de impacto (al liberar al pool)
    */
-  private cleanupHitParticles(): void {
+  protected cleanupHitParticles(): void {
     this.hitParticles.forEach(particle => {
       this.sceneManager.remove(particle);
       particle.geometry.dispose();
@@ -773,7 +792,7 @@ export class Enemy extends Character {
   /**
    * Actualiza la animación de muerte (partículas + cleanup)
    */
-  private updateDeathAnimation(): void {
+  protected updateDeathAnimation(): void {
     if (this.deathParticles.length === 0) return;
 
     const elapsed = Date.now() - this.deathAnimationStart;
@@ -815,7 +834,7 @@ export class Enemy extends Character {
   /**
    * Crea partículas para el efecto de muerte
    */
-  private createDeathParticles(): void {
+  protected createDeathParticles(): void {
     if (!this.model || !this.sceneManager) return;
 
     const position = this.model.position;
@@ -852,7 +871,7 @@ export class Enemy extends Character {
   /**
    * Limpia las partículas de muerte
    */
-  private cleanupDeathParticles(): void {
+  protected cleanupDeathParticles(): void {
     this.deathParticles.forEach(particle => {
       this.sceneManager.remove(particle);
       particle.geometry.dispose();
@@ -869,7 +888,7 @@ export class Enemy extends Character {
   /**
    * Inicia el efecto visual de hit flash (blanco por 100ms)
    */
-  private startHitFlash(): void {
+  protected startHitFlash(): void {
     if (!this.model) return;
 
     if (this.flashTimeoutId) {
@@ -888,7 +907,7 @@ export class Enemy extends Character {
   /**
    * Almacena los colores originales de todos los meshes del modelo
    */
-  private storeOriginalColor(): void {
+  protected storeOriginalColor(): void {
     if (!this.model || this.originalModelColor.size > 0) return;
 
     this.model.traverse((child) => {
@@ -908,7 +927,7 @@ export class Enemy extends Character {
   /**
    * Aplica un color a todos los meshes del modelo
    */
-  private applyColorToMeshes(color: THREE.Color): void {
+  protected applyColorToMeshes(color: THREE.Color): void {
     if (!this.model) return;
 
     this.model.traverse((child) => {
@@ -927,7 +946,7 @@ export class Enemy extends Character {
   /**
    * Restaura los colores originales del modelo
    */
-  private restoreOriginalColor(): void {
+  protected restoreOriginalColor(): void {
     if (this.originalModelColor.size === 0) return;
 
     this.originalModelColor.forEach((originalColor, mesh) => {
@@ -952,7 +971,7 @@ export class Enemy extends Character {
   /**
    * Crea la barra de HP flotante (sprite con canvas)
    */
-  private createHpBar(): void {
+  protected createHpBar(): void {
     if (this.hpBar || !this.sceneManager) return;
 
     const canvas = document.createElement('canvas');
@@ -977,7 +996,7 @@ export class Enemy extends Character {
   /**
    * Actualiza la barra de HP con el porcentaje actual
    */
-  private updateHpBar(): void {
+  protected updateHpBar(): void {
     if (!this.hpBar || !this.model) return;
 
     const spriteMaterial = this.hpBar.material as THREE.SpriteMaterial;
@@ -1038,7 +1057,7 @@ export class Enemy extends Character {
   /**
    * Limpia la barra de HP
    */
-  private cleanupHpBar(): void {
+  protected cleanupHpBar(): void {
     if (this.hpBarHideTimeoutId) {
       clearTimeout(this.hpBarHideTimeoutId);
       this.hpBarHideTimeoutId = null;
