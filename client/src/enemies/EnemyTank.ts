@@ -124,7 +124,7 @@ export class EnemyTank extends Enemy {
     physicsWorld?: PhysicsWorld,
     physicsBody?: RigidBodyHandle,
     color: number = 0xcccccc,
-    size: number = 1.15,
+    size: number = 1.05,
     knockbackResistance: number = 1.0,
     type: EnemyType = EnemyType.Tank,
     stats?: EnemyStats
