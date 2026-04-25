@@ -1112,17 +1112,7 @@ export class AdcCharacter extends Character {
    */
   private async loadQuiver(quiverGltf: GLTF): Promise<void> {
     try {
-      // Usar assetLoader.clone() que clona materiales y geometrías correctamente
       const quiverModel = this.assetLoader.clone(quiverGltf);
-
-      // Debug: listar bones disponibles
-      const boneNames: string[] = [];
-      this.innerMesh!.traverse((child: any) => {
-        if (child.isBone) {
-          boneNames.push(child.name);
-        }
-      });
-      console.log(`[AdcCharacter ${this.id}] Bones disponibles:`, boneNames);
 
       // Buscar hueso de la columna/spine en el esqueleto
       let spineBone: any = null;
@@ -1135,43 +1125,30 @@ export class AdcCharacter extends Character {
         }
       });
 
-      // Escalar primero para que sea visible
-      quiverModel.scale.set(1.5, 1.5, 1.5);
+      // Escala y posición ajustadas para que no tape la capa del personaje
+      quiverModel.scale.set(0.7, 0.7, 0.7);
 
       if (spineBone) {
         // Adjuntar al hueso de la columna (sigue las animaciones del torso)
-        quiverModel.position.set(0, 0.2, -0.3);
+        quiverModel.position.set(0, 0.15, -0.35);
         quiverModel.rotation.set(0, Math.PI, 0);
         spineBone.add(quiverModel);
-        console.log(`[AdcCharacter ${this.id}] Aljaba asignada a: ${spineBone.name}`);
       } else {
         // Fallback: posición fija en la espalda, relativa al modelo
-        quiverModel.position.set(0, 1.0, -0.5);
+        quiverModel.position.set(0, 0.9, -0.5);
         quiverModel.rotation.set(0, Math.PI, 0);
         this.model!.add(quiverModel);
-        console.log(`[AdcCharacter ${this.id}] Aljaba asignada al model container (fallback)`);
       }
 
-      // Debug: forzar color brillante para verificar visibilidad
+      // Configurar sombras
       quiverModel.traverse((child: any) => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
-          // Forzar material visible con color brillante
-          if (child.material) {
-            const mat = child.material;
-            if (Array.isArray(mat)) {
-              mat.forEach(m => { m.needsUpdate = true; });
-            } else {
-              mat.needsUpdate = true;
-            }
-          }
-          console.log(`[AdcCharacter ${this.id}] Mesh aljaba: ${child.name}, visible: ${child.visible}`);
         }
       });
 
       this.quiver = quiverModel;
-      console.log(`[AdcCharacter ${this.id}] Aljaba cargada exitosamente`);
 
     } catch (error) {
       console.error(`[AdcCharacter ${this.id}] Error cargando la aljaba:`, error);
