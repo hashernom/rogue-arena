@@ -76,19 +76,23 @@ export class BodyFactory {
     // Determinar tamaño según tipo
     let radius: number;
     let halfHeight: number;
+    let colliderOffsetY: number;
     switch (enemyType) {
       case 'small':
         radius = 0.2;
-        halfHeight = 0.3;
+        halfHeight = 0.15; // Solo torso, no pies-cabeza
+        colliderOffsetY = 0.25; // Desplazado hacia arriba
         break;
       case 'large':
         radius = 0.4;
-        halfHeight = 0.7;
+        halfHeight = 0.35; // Solo torso
+        colliderOffsetY = 0.55; // Desplazado hacia arriba
         break;
       case 'medium':
       default:
         radius = 0.3;
-        halfHeight = 0.5;
+        halfHeight = 0.25; // Solo torso
+        colliderOffsetY = 0.4; // Desplazado hacia arriba
         break;
     }
 
@@ -98,6 +102,7 @@ export class BodyFactory {
     // 3. setLinvel() funcione para AI y knockback
 
     const colliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius);
+    colliderDesc.setTranslation(0, colliderOffsetY, 0); // Subir collider a la altura del torso
     colliderDesc.setFriction(10.0); // Alta fricción para sensación de peso sólido
     const groups = makeCollisionGroups(Groups.ENEMY, Masks.ENEMY);
     colliderDesc.setCollisionGroups(groups);
