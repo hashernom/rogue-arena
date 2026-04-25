@@ -622,14 +622,16 @@ export class AdcCharacter extends Character {
       try {
         arrowGroup = this.assetLoader.clone(this.arrowGltf);
         arrowGroup.scale.set(0.8, 0.8, 0.8);
-        // Teñir la flecha de verde (equipo aliado)
+        // Teñir la flecha de verde brillante (equipo aliado) con glow
         arrowGroup.traverse(child => {
           if (child instanceof THREE.Mesh && child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => { mat.color.setHex(0x00FF00); });
-            } else {
-              child.material.color.setHex(0x00FF00);
-            }
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach(mat => {
+              mat.color.setHex(0x00FF00);
+              mat.emissive = new THREE.Color(0x00FF00);
+              mat.emissiveIntensity = 0.6;
+              mat.needsUpdate = true;
+            });
           }
         });
       } catch (cloneError) {
