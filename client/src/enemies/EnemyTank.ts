@@ -226,13 +226,13 @@ export class EnemyTank extends Enemy {
   }
 
   // =================================================================
-  // FÍSICA (override: usa 'medium' — mismo tamaño que Basic/Fast)
+  // FÍSICA (override: usa 'large' — hitbox más grande que Basic/Fast)
   // =================================================================
 
   /**
-   * Crea el cuerpo físico usando BodyFactory con tamaño 'medium'.
-   * El tanque es ligeramente más grande visualmente (1.15x) pero
-   * comparte el mismo collider que los demás enemigos.
+   * Crea el cuerpo físico usando BodyFactory con tamaño 'large'.
+   * El tanque tiene un collider más grande (radio 0.4, halfHeight 0.7)
+   * para que sea más fácil de golpear y ocupe más espacio.
    */
   protected createPhysicsBody(): void {
     if (!this.physicsWorld || !this.model) return;
@@ -245,13 +245,13 @@ export class EnemyTank extends Enemy {
           this.model.position.y,
           this.model.position.z
         ),
-        'medium', // Mismo tamaño que Basic/Fast (radio 0.3, halfHeight 0.5)
+        'large', // Hitbox grande (radio 0.4, halfHeight 0.7)
         this.id,
         this
       );
 
       this.physicsBody = bodyHandle;
-      console.log(`[EnemyTank ${this.id}] Cuerpo físico creado (medium)`);
+      console.log(`[EnemyTank ${this.id}] Cuerpo físico creado (large)`);
     } catch (error) {
       console.error(`[EnemyTank ${this.id}] Error creando cuerpo físico:`, error);
     }
