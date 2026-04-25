@@ -13,6 +13,7 @@ import { AdcCharacter } from './characters/AdcCharacter';
 import { EnemyPool } from './enemies/EnemyPool';
 import { Enemy, EnemyType } from './enemies/Enemy';
 import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
+import { ENEMY_FAST_STATS } from './enemies/EnemyFast';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -286,9 +287,7 @@ async function initGameWithPhysics(): Promise<void> {
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
       enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld);
       
-      // Registrar tipo de enemigo básico (seek melee) — único tipo de enemigo en gameplay
-      // IMPORTANTE: Registrar DESPUÉS de createEnemyRow para garantizar que
-      // el modelo compartido del esqueleto ya esté cargado (carga síncrona via getSharedModelScene)
+      // Registrar tipo de enemigo básico (seek melee)
       enemyPool.registerEnemyType({
         type: EnemyType.Basic,
         stats: ENEMY_BASIC_STATS,
@@ -297,7 +296,16 @@ async function initGameWithPhysics(): Promise<void> {
       });
       console.log('🔴 EnemyPool inicializado con tipo basic');
 
-      // Spawnear EnemyBasic via pool para testing (esqueletos rojos con seek AI)
+      // Registrar tipo de enemigo veloz (flanqueador, prioriza ADC)
+      enemyPool.registerEnemyType({
+        type: EnemyType.Fast,
+        stats: ENEMY_FAST_STATS,
+        initialCount: 3,
+        maxSize: 20
+      });
+      console.log('🔵 EnemyPool inicializado con tipo fast');
+
+      // Spawnear EnemyBasic via pool para testing (esqueletos con seek AI)
       const basicPositions = [
         new THREE.Vector3(5, 0, 5),
         new THREE.Vector3(7, 0, 6),
@@ -312,6 +320,20 @@ async function initGameWithPhysics(): Promise<void> {
         }
       });
       console.log(`🔴 Spawneados ${basicPositions.length} EnemyBasic para testing`);
+
+      // Spawnear EnemyFast via pool para testing (esqueletos celeste con flanqueo)
+      const fastPositions = [
+        new THREE.Vector3(9, 0, 9),
+        new THREE.Vector3(10, 0, 7),
+        new THREE.Vector3(11, 0, 10),
+      ];
+      fastPositions.forEach(pos => {
+        const enemy = enemyPool!.acquire(EnemyType.Fast, { position: pos });
+        if (enemy) {
+          console.log(`🔵 EnemyFast spawneado en (${pos.x}, ${pos.y}, ${pos.z})`);
+        }
+      });
+      console.log(`🔵 Spawneados ${fastPositions.length} EnemyFast para testing`);
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);

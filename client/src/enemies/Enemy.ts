@@ -21,6 +21,7 @@ export enum EnemyType {
   SkeletonRogue = 'skeleton_rogue',
   SkeletonMage = 'skeleton_mage',
   Basic = 'basic',
+  Fast = 'fast',
 }
 
 /**

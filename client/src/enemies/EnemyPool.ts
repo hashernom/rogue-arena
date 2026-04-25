@@ -4,6 +4,7 @@ import { SceneManager } from '../engine/SceneManager';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Enemy, type EnemyStats, type SpawnOptions, EnemyType } from './Enemy';
 import { EnemyBasic, ENEMY_BASIC_STATS } from './EnemyBasic';
+import { EnemyFast, ENEMY_FAST_STATS } from './EnemyFast';
 
 /**
  * Configuración para un tipo de enemigo en el pool
@@ -55,6 +56,8 @@ export class EnemyPool {
     this.inUse.set(EnemyType.SkeletonMinion, []);
     this.available.set(EnemyType.Basic, []);
     this.inUse.set(EnemyType.Basic, []);
+    this.available.set(EnemyType.Fast, []);
+    this.inUse.set(EnemyType.Fast, []);
   }
 
   /**
@@ -111,6 +114,19 @@ export class EnemyPool {
           this.physicsWorld,
           undefined, // Sin body handle (se creará automáticamente)
           0xff4444,  // Color rojo más claro para distinguir
+          1.0,       // Tamaño estándar
+          stats.knockbackResistance,
+          type,
+          stats
+        );
+      case EnemyType.Fast:
+        return new EnemyFast(
+          enemyId,
+          this.eventBus,
+          this.sceneManager,
+          this.physicsWorld,
+          undefined, // Sin body handle (se creará automáticamente)
+          0x88ccff,  // Tinte celeste muy leve
           1.0,       // Tamaño estándar
           stats.knockbackResistance,
           type,
