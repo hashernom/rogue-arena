@@ -110,7 +110,15 @@ export class DamagePipeline {
     // 1. Calcular crítico
     let isCrit = false;
     let damageMultiplier = 1.0;
-    if (canCrit && Math.random() < critChance) {
+
+    // Verificar si el atacante tiene nextAttackIsCrit forzado (efecto reactivo onHit)
+    const attackerIsCharacter = attacker instanceof Character;
+    if (canCrit && attackerIsCharacter && (attacker as Character).nextAttackIsCrit) {
+      isCrit = true;
+      damageMultiplier = critMultiplier;
+      (attacker as Character).nextAttackIsCrit = false; // Consumir el flag
+      console.log(`[DamagePipeline] Crítico forzado por efecto reactivo (onHit) para ${attacker.id}`);
+    } else if (canCrit && Math.random() < critChance) {
       isCrit = true;
       damageMultiplier = critMultiplier;
     }
@@ -199,6 +207,7 @@ export class DamagePipeline {
         enemyId: target.id,
         position: { x: position.x, y: position.y, z: position.z },
         reward,
+        attackerId: attackerId !== 'unknown' ? attackerId : undefined,
       });
     }
   }

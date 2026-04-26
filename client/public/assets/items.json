@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "id": "health_potion",
+      "name": "Poción HP",
+      "description": "+30 HP inmediato",
+      "price": 15,
+      "icon": "potion",
+      "effect": { "type": "healImmediate", "value": 30 }
+    },
+    {
+      "id": "leather_shield",
+      "name": "Escudo de Cuero",
+      "description": "+5 armadura permanente",
+      "price": 20,
+      "icon": "shield",
+      "effect": { "type": "statModifier", "stat": "armor", "value": 5, "modType": "addFlat" }
+    },
+    {
+      "id": "gauntlet",
+      "name": "Guantelete",
+      "description": "+8 daño permanente",
+      "price": 25,
+      "icon": "gauntlet",
+      "effect": { "type": "statModifier", "stat": "damage", "value": 8, "modType": "addFlat" }
+    },
+    {
+      "id": "swift_boots",
+      "name": "Botas Rápidas",
+      "description": "+0.5 m/s de velocidad",
+      "price": 20,
+      "icon": "boots",
+      "effect": { "type": "statModifier", "stat": "speed", "value": 0.5, "modType": "addFlat" }
+    },
+    {
+      "id": "vital_amulet",
+      "name": "Amuleto Vital",
+      "description": "+25 HP máximo permanente",
+      "price": 30,
+      "icon": "amulet",
+      "effect": { "type": "statModifier", "stat": "maxHp", "value": 25, "modType": "addFlat" }
+    },
+    {
+      "id": "swift_dagger",
+      "name": "Daga Rápida",
+      "description": "+0.3 velocidad de ataque",
+      "price": 35,
+      "icon": "dagger",
+      "effect": { "type": "statModifier", "stat": "attackSpeed", "value": 0.3, "modType": "addFlat" }
+    },
+    {
+      "id": "strength_scroll",
+      "name": "Pergamino de Fuerza",
+      "description": "+15 daño permanente",
+      "price": 40,
+      "icon": "scroll",
+      "effect": { "type": "statModifier", "stat": "damage", "value": 15, "modType": "addFlat" }
+    },
+    {
+      "id": "wind_cloak",
+      "name": "Capa del Viento",
+      "description": "+1.0 m/s de velocidad",
+      "price": 45,
+      "icon": "cloak",
+      "effect": { "type": "statModifier", "stat": "speed", "value": 1.0, "modType": "addFlat" }
+    },
+    {
+      "id": "double_elixir",
+      "name": "Elixir Doble",
+      "description": "×2 drops de monedas la próxima ronda",
+      "price": 50,
+      "icon": "elixir",
+      "effect": { "type": "special", "specialId": "double_drop_next_wave", "params": { "multiplier": 2 } }
+    }
+  ]
+}

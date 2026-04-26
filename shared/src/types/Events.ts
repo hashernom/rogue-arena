@@ -15,7 +15,7 @@ export interface GameEvents {
   'player:attack': { playerId: string; damage: number; position: Vector3Like };
   'player:attack:start': { playerId: string };
   // Enemigos
-  'enemy:died': { enemyId: string; position: Vector3Like; reward: number };
+  'enemy:died': { enemyId: string; position: Vector3Like; reward: number; attackerId?: string };
   'enemy:damage': { enemyId: string; damage: number; attackerId: string; position: Vector3Like; isCritical?: boolean };
   // Oleadas
   'wave:started': { round: number; enemyCount: number };
@@ -24,6 +24,8 @@ export interface GameEvents {
   'shop:opened': void;
   'shop:closed': void;
   'shop:itemBought': { itemId: string; playerId: string };
+  // Dinero
+  'money:changed': { playerId: string; newBalance: number; delta: number; reason: string };
   // Estado del juego
   'game:over': { rounds: number };
 }

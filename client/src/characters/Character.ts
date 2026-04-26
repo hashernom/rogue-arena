@@ -47,6 +47,20 @@ export interface StatModifier {
 }
 
 /**
+ * Ítem aplicado a un personaje (para tracking en HUD).
+ */
+export interface AppliedItem {
+  /** ID del ítem en el catálogo (ej: 'gauntlet_of_strength') */
+  itemId: string;
+  /** Nombre mostrable del ítem (ej: 'Guantelete') */
+  itemName: string;
+  /** Ronda en la que se compró */
+  round: number;
+  /** IDs de los modificadores creados en StatsSystem */
+  modifierIds: string[];
+}
+
+/**
  * Estados posibles de un personaje.
  */
 export enum CharacterState {
@@ -79,6 +93,12 @@ export abstract class Character {
   public readonly id: string;
   /** EventBus para emitir eventos de personaje */
   protected eventBus: EventBus;
+  /** Ítems comprados y aplicados a este personaje (para HUD de M10) */
+  public appliedItems: AppliedItem[] = [];
+  /** Flag para ×2 drops la próxima ronda (efecto Elixir Doble) */
+  public doubleDropNextWave: boolean = false;
+  /** Flag para forzar el próximo ataque como crítico (efecto reactivo onHit) */
+  public nextAttackIsCrit: boolean = false;
 
   constructor(
     id: string,
@@ -137,16 +157,23 @@ export abstract class Character {
   }
 
   /**
-   * Elimina un modificador por su ID (legacy API).
+   * Elimina un modificador por su ID o source (legacy API).
+   * Busca en el array legacy por ID, y también remueve del StatsSystem
+   * filtrando por coincidencia de source.
    */
   removeModifier(id: string): void {
-    // Buscar el modificador en el array legacy
-    const legacyMod = this.modifiers.find(m => m.id === id);
-    if (legacyMod) {
-      // Para remover del nuevo sistema necesitaríamos mapear el ID legacy
-      // Por ahora, solo removemos del array legacy
-      // En una implementación completa, necesitaríamos guardar el mapping de IDs
-      this.modifiers = this.modifiers.filter(m => m.id !== id);
+    // Remover del array legacy
+    this.modifiers = this.modifiers.filter(m => m.id !== id);
+
+    // Remover del StatsSystem: obtener todos los modificadores,
+    // filtrar los que NO coinciden con el source, limpiar y re-aplicar
+    const allMods = this.statsSystem.getModifiers();
+    const remainingMods = allMods.filter(m => !m.source.includes(id));
+    if (remainingMods.length < allMods.length) {
+      this.statsSystem.clearAllModifiers();
+      for (const mod of remainingMods) {
+        this.statsSystem.addModifier(mod);
+      }
     }
   }
 

@@ -391,7 +391,7 @@ export class MeleeAttack {
 
     // Aplicar daño a través del pipeline
     const result = this.damagePipeline.applyDamage(
-      { id: this.playerId }, // attacker
+      this.character, // attacker (instancia de Character para nextAttackIsCrit)
       enemyEntity, // target (debe tener takeDamage e id)
       baseDamage,
       {

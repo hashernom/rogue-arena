@@ -2,6 +2,7 @@ import { EventBus } from '../engine/EventBus';
 import { EnemyType } from '../enemies/Enemy';
 import { Spawner } from './Spawner';
 import { Character } from '../characters/Character';
+import { MoneySystem } from '../progression/MoneySystem';
 
 /**
  * Configuración de una oleada de enemigos.
@@ -32,42 +33,46 @@ export enum WaveState {
  * @returns Configuración de la oleada
  */
 export function generateWaveConfig(round: number): WaveConfig {
-  const enemyCount = 5 + round * 2;
+  // Progresión suave de cantidad de enemigos:
+  // Ronda 1: 4 enemigos, Ronda 5: 10, Ronda 10: 18, Ronda 20: 34
+  const enemyCount = 3 + Math.floor(round * 1.5);
 
-  // Progresión de enemigos especiales:
-  // - Rondas 1-2: solo Básicos (100%)
-  // - Ronda 3: aparecen primeros Fast (10%)
-  // - Ronda 5: aparecen primeros Tank (5%)
-  // - Ronda 7: aparecen primeros Ranged (5%)
-  // - Las ratios escalan lentamente hasta rondas altas
-  const basicRatio = round <= 2 ? 1.0 : Math.max(0.35, 0.85 - (round - 2) * 0.04);
-  const fastRatio = round < 3 ? 0 : Math.min(0.30, (round - 2) * 0.04);
-  const tankRatio = round < 5 ? 0 : Math.min(0.20, (round - 4) * 0.025);
-  const rangedRatio = round < 7 ? 0 : Math.min(0.15, (round - 6) * 0.02);
+  // Progresión de enemigos especiales (más lenta y controlada):
+  // - Rondas 1-3: solo Básicos (100%)
+  // - Ronda 4: primeros Fast (1 por cada ~8 enemigos)
+  // - Ronda 7: primeros Tank (1 por cada ~10 enemigos)
+  // - Ronda 10: primeros Ranged (1 por cada ~12 enemigos)
+  // - Las ratios escalan muy lentamente
+  const basicRatio = round <= 3 ? 1.0 : Math.max(0.40, 0.90 - (round - 3) * 0.035);
+  const fastRatio = round < 4 ? 0 : Math.min(0.25, (round - 3) * 0.03);
+  const tankRatio = round < 7 ? 0 : Math.min(0.18, (round - 6) * 0.02);
+  const rangedRatio = round < 10 ? 0 : Math.min(0.12, (round - 9) * 0.015);
 
   const groups: { type: EnemyType; count: number; spawnDelay: number }[] = [];
 
   const addGroup = (type: EnemyType, ratio: number) => {
-    const count = Math.max(1, Math.round(enemyCount * ratio));
-    if (count > 0) {
-      groups.push({ type, count, spawnDelay: 0.5 });
+    if (ratio <= 0) return;
+    const rawCount = Math.round(enemyCount * ratio);
+    // Solo agregar el grupo si produce al menos 1 enemigo de forma natural
+    if (rawCount >= 1) {
+      groups.push({ type, count: rawCount, spawnDelay: 0.5 });
     }
   };
 
-  addGroup(EnemyType.Basic, basicRatio);
+  // Siempre agregar Básicos primero
+  const basicCount = Math.max(1, Math.round(enemyCount * basicRatio));
+  groups.push({ type: EnemyType.Basic, count: basicCount, spawnDelay: 0.5 });
+
   addGroup(EnemyType.Fast, fastRatio);
   addGroup(EnemyType.Tank, tankRatio);
   addGroup(EnemyType.Ranged, rangedRatio);
 
   // Ajustar para que la suma total sea exacta
-  // Si hay muy pocos básicos, los faltantes van a Básicos
   const currentTotal = groups.reduce((sum, g) => sum + g.count, 0);
   if (currentTotal < enemyCount) {
     const basicGroup = groups.find(g => g.type === EnemyType.Basic);
     if (basicGroup) {
       basicGroup.count += enemyCount - currentTotal;
-    } else {
-      groups.push({ type: EnemyType.Basic, count: enemyCount - currentTotal, spawnDelay: 0.5 });
     }
   }
 
@@ -77,11 +82,9 @@ export function generateWaveConfig(round: number): WaveConfig {
   // - Spawnear 1 MiniBoss con delay inicial
   // - Reducir a la mitad los enemigos normales
   if (isBossWave) {
-    // Reducir todos los grupos existentes a la mitad
     for (let i = 0; i < groups.length; i++) {
       groups[i].count = Math.max(1, Math.floor(groups[i].count / 2));
     }
-    // Agregar el MiniBoss con delay mayor
     groups.push({ type: EnemyType.MiniBoss, count: 1, spawnDelay: 2.0 });
   }
 
@@ -89,7 +92,7 @@ export function generateWaveConfig(round: number): WaveConfig {
     round,
     isBossWave,
     enemyGroups: groups,
-    betweenRoundDuration: 15, // 15 segundos entre rondas
+    betweenRoundDuration: 15,
   };
 }
 
@@ -128,9 +131,20 @@ export class WaveManager {
   private player2Ready: boolean = false;
   private players: Character[] = [];
 
+  // Sistema de economía
+  private moneySystem: MoneySystem | null = null;
+
   constructor(eventBus: EventBus, spawner: Spawner) {
     this.eventBus = eventBus;
     this.spawner = spawner;
+  }
+
+  /**
+   * Vincula el sistema de economía al WaveManager.
+   * @param moneySystem - Instancia del MoneySystem
+   */
+  setMoneySystem(moneySystem: MoneySystem): void {
+    this.moneySystem = moneySystem;
   }
 
   /**
@@ -335,6 +349,11 @@ export class WaveManager {
       `[WaveManager] Ronda ${this.currentRound} completada. Recompensa: ${reward} monedas`
     );
 
+    // Aplicar recompensa de ronda a ambos jugadores (con protección contra duplicación)
+    if (this.moneySystem) {
+      this.moneySystem.applyWaveReward(this.currentRound, reward);
+    }
+
     // Emitir wave:ended con la recompensa
     this.eventBus.emit('wave:ended', {
       round: this.currentRound,
@@ -350,6 +369,16 @@ export class WaveManager {
         console.log(
           `[WaveManager] ${player.constructor.name} curado ${healAmount} HP (20% de ${maxHp})`
         );
+      }
+    }
+
+    // Limpiar efectos de una sola ronda (ej: Elixir Doble)
+    for (const player of this.players) {
+      if (player) {
+        if (player.doubleDropNextWave) {
+          console.log(`[WaveManager] Limpiando doubleDropNextWave de ${player.id}`);
+          player.doubleDropNextWave = false;
+        }
       }
     }
 
