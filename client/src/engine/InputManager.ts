@@ -41,6 +41,10 @@ export class InputManager {
 
     // Debug keys (solo en modo desarrollo)
     debug_toggle_melee: 'KeyM',
+    debug_toggle_physics: 'F1',
+
+    // Skip round key (fuerza inicio de siguiente ronda)
+    skip_round: 'F2',
   } as const;
 
   /** Tipo de todas las teclas de juego posibles */

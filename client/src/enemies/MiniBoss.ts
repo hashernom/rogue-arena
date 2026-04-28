@@ -784,48 +784,30 @@ export class MiniBoss extends Enemy {
   }
 
   /**
-   * Actualiza el ítem dropeado: animación de flotación y detección de recolección.
+   * Actualiza el item dropeado: animacion de flotacion y rotacion.
+   * La recoleccion se hace mediante tecla [E] desde main.ts.
    */
-  private updateItemDrop(dt: number, players: any[]): void {
+  private updateItemDrop(dt: number, _players: any[]): void {
     if (!this.droppedItem || this.itemCollected) return;
 
-    // Animación de flotación suave
+    // Animacion de flotacion suave
     const floatOffset = Math.sin(Date.now() * 0.003) * 0.1;
     this.droppedItem.position.y = -1.6 + floatOffset;
 
-    // Rotación lenta
+    // Rotacion lenta
     this.droppedItem.rotation.y += dt * 1.5;
-
-    // Verificar si algún jugador está cerca para recoger
-    for (let i = 0; i < players.length; i++) {
-      const player = players[i];
-      if (!player || !player.getPosition || !player.isAlive) continue;
-      if (!player.isAlive()) continue;
-
-      const playerPos = player.getPosition();
-      if (!playerPos) continue;
-
-      const dx = playerPos.x - this.droppedItem.position.x;
-      const dz = playerPos.z - this.droppedItem.position.z;
-      const distSq = dx * dx + dz * dz;
-
-      if (distSq <= this.ITEM_PICKUP_RADIUS * this.ITEM_PICKUP_RADIUS) {
-        this.collectItem(player);
-        return;
-      }
-    }
   }
 
   /**
-   * Recolecta el ítem: otorga recompensa y efectos visuales.
+   * Recolecta el item: otorga recompensa y efectos visuales.
    */
   private collectItem(player: any): void {
     if (this.itemCollected) return;
     this.itemCollected = true;
 
-    console.log(`[MiniBoss ${this.id}] Ítem recogido por ${player.id}`);
+    console.log(`[MiniBoss ${this.id}] Item recogido por ${player.id}`);
 
-    // Efecto visual de recolección (desaparecer con escala)
+    // Efecto visual de recoleccion (desaparecer con escala)
     if (this.droppedItem) {
       const scene = this.sceneManager.getScene();
       scene.remove(this.droppedItem);
@@ -840,11 +822,11 @@ export class MiniBoss extends Enemy {
       this.droppedItem = null;
     }
 
-    // Emitir evento de ítem recogido (para reward adicional)
+    // Emitir evento de item recogido (para reward adicional)
     this.eventBus.emit('enemy:died', {
       enemyId: this.id,
       position: { x: 0, y: 0, z: 0 },
-      reward: 10, // Bonus por recoger el ítem
+      reward: 10, // Bonus por recoger el item
     });
   }
 
@@ -1062,6 +1044,55 @@ export class MiniBoss extends Enemy {
    */
   update(dt: number): void {
     super.update(dt);
+  }
+
+  // =================================================================
+  // MUERTE (override) - dropear item al morir
+  // =================================================================
+
+  /**
+   * Override de die() para dropear el item antes de la animacion de muerte.
+   */
+  die(): void {
+    // Dropear item antes de que el modelo desaparezca
+    this.spawnItemDrop();
+    super.die();
+  }
+
+  /**
+   * Retorna la posicion del item dropeado (para la UI de recoleccion).
+   */
+  getDroppedItemPosition(): THREE.Vector3 | null {
+    if (!this.droppedItem) return null;
+    return this.droppedItem.position.clone();
+  }
+
+  /**
+   * Indica si hay un item disponible para recoger.
+   */
+  hasDroppedItemAvailable(): boolean {
+    return this.droppedItem !== null && !this.itemCollected;
+  }
+
+  /**
+   * Intenta recoger el item si el jugador esta cerca.
+   */
+  tryCollectItem(player: any): boolean {
+    if (!this.droppedItem || this.itemCollected) return false;
+    if (!player || !player.getPosition) return false;
+
+    const playerPos = player.getPosition();
+    if (!playerPos) return false;
+
+    const dx = playerPos.x - this.droppedItem.position.x;
+    const dz = playerPos.z - this.droppedItem.position.z;
+    const distSq = dx * dx + dz * dz;
+
+    if (distSq <= this.ITEM_PICKUP_RADIUS * this.ITEM_PICKUP_RADIUS) {
+      this.collectItem(player);
+      return true;
+    }
+    return false;
   }
 
   // =================================================================

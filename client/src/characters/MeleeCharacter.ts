@@ -60,10 +60,10 @@ export class MeleeCharacter extends Character {
   static readonly BASE_STATS: CharacterStats = {
     hp: 150,
     maxHp: 150,
-    speed: 4,
+    speed: 8,
     damage: 25,
     attackSpeed: 0.8,
-    range: 1.5,
+    range: 3.0,
     armor: 10,
   };
 

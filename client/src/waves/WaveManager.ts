@@ -3,6 +3,7 @@ import { EnemyType } from '../enemies/Enemy';
 import { Spawner } from './Spawner';
 import { Character } from '../characters/Character';
 import { MoneySystem } from '../progression/MoneySystem';
+import { EnemyPool } from '../enemies/EnemyPool';
 
 /**
  * Configuración de una oleada de enemigos.
@@ -134,6 +135,13 @@ export class WaveManager {
   // Sistema de economía
   private moneySystem: MoneySystem | null = null;
 
+  // Pool de enemigos (para limpiar enemigos al forzar avance de ronda)
+  private enemyPool: EnemyPool | null = null;
+
+  // Límite de tiempo por ronda
+  private roundTimeLimit: number = 0;
+  private roundTimer: number = 0;
+
   constructor(eventBus: EventBus, spawner: Spawner) {
     this.eventBus = eventBus;
     this.spawner = spawner;
@@ -154,6 +162,15 @@ export class WaveManager {
    */
   setPlayers(players: Character[]): void {
     this.players = players;
+  }
+
+  /**
+   * Vincula el pool de enemigos al WaveManager para poder
+   * limpiar enemigos al forzar el avance de ronda.
+   * @param enemyPool - Instancia del EnemyPool
+   */
+  setEnemyPool(enemyPool: EnemyPool): void {
+    this.enemyPool = enemyPool;
   }
 
   /**
@@ -196,6 +213,11 @@ export class WaveManager {
     );
     this.remainingEnemies = this.totalEnemiesInWave;
 
+    // Inicializar timer de límite de tiempo por ronda
+    // Base: 60s + 10s por ronda (ronda 1 = 70s, ronda 5 = 110s, etc.)
+    this.roundTimeLimit = 60 + round * 10;
+    this.roundTimer = this.roundTimeLimit;
+
     // Comunicar la ronda actual al Spawner para escalado de dificultad
     this.spawner.setCurrentRound(round);
 
@@ -204,7 +226,8 @@ export class WaveManager {
 
     console.log(
       `[WaveManager] Ronda ${round} iniciada: ${this.totalEnemiesInWave} enemigos` +
-      (this.currentWaveConfig.isBossWave ? ' [BOSS WAVE]' : '')
+      (this.currentWaveConfig.isBossWave ? ' [BOSS WAVE]' : '') +
+      ` | Tiempo límite: ${this.roundTimeLimit}s`
     );
 
     this.eventBus.emit('wave:started', {
@@ -269,6 +292,21 @@ export class WaveManager {
   }
 
   /**
+   * Obtiene el timer restante de la ronda actual (en segundos).
+   * @returns Tiempo restante en segundos, o 0 si no hay ronda activa
+   */
+  getRoundTimer(): number {
+    return this.state === WaveState.WaveInProgress ? Math.max(0, this.roundTimer) : 0;
+  }
+
+  /**
+   * Obtiene el tiempo límite total de la ronda actual (en segundos).
+   */
+  getRoundTimeLimit(): number {
+    return this.roundTimeLimit;
+  }
+
+  /**
    * Obtiene el estado de ready de los jugadores.
    */
   getReadyState(): { player1Ready: boolean; player2Ready: boolean } {
@@ -277,6 +315,42 @@ export class WaveManager {
       player2Ready: this.player2Ready,
     };
   }
+/**
+ * Fuerza el inicio de la siguiente ronda inmediatamente.
+ * Funciona en cualquier estado:
+ * - WaveInProgress: fuerza el fin de la ronda actual (mata enemigos restantes)
+ *   y automáticamente inicia la siguiente.
+ * - BetweenRound: salta el timer de espera.
+ * Útil para testing y depuración.
+ */
+forceNextWave(): void {
+  if (this.state === WaveState.Inactive) {
+    console.warn('[WaveManager] No se puede forzar: el juego no ha iniciado');
+    return;
+  }
+
+  console.log(`[WaveManager] Forzando avance de ronda ${this.currentRound} → ${this.currentRound + 1}...`);
+
+  // Limpiar todos los enemigos actuales de la escena
+  if (this.enemyPool) {
+    this.enemyPool.releaseAll();
+    console.log('[WaveManager] Enemigos actuales eliminados de la escena');
+  }
+
+  if (this.state === WaveState.WaveInProgress) {
+    // Forzar fin de la ronda actual
+    this.remainingEnemies = 0;
+    this.isSpawning = false;
+    this.endWave();
+    // Poner timer a 0 para que en el próximo update() se inicie
+    // la siguiente ronda automáticamente (sin esperar 15s)
+    this.betweenRoundTimer = 0;
+  } else if (this.state === WaveState.BetweenRound) {
+    // Saltar timer entre rondas
+    this.betweenRoundTimer = 0;
+  }
+}
+
 
   /**
    * Actualiza el WaveManager cada frame.
@@ -286,6 +360,16 @@ export class WaveManager {
     switch (this.state) {
       case WaveState.WaveInProgress:
         this.updateSpawning(dt);
+        // Decrementar timer de límite de tiempo
+        this.roundTimer -= dt;
+        if (this.roundTimer <= 0) {
+          this.roundTimer = 0;
+          console.log(`[WaveManager] ⏰ Tiempo límite de ronda ${this.currentRound} agotado!`);
+          // Forzar fin de ronda: marcar remainingEnemies a 0
+          this.remainingEnemies = 0;
+          this.isSpawning = false;
+          this.endWave();
+        }
         break;
       case WaveState.BetweenRound:
         this.updateBetweenRound(dt);
@@ -413,6 +497,8 @@ export class WaveManager {
     this.player1Ready = false;
     this.player2Ready = false;
     this.players = [];
+    this.roundTimeLimit = 0;
+    this.roundTimer = 0;
     this.spawner.reset();
   }
 }

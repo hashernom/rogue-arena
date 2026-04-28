@@ -17,7 +17,7 @@ import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
 import { ENEMY_FAST_STATS } from './enemies/EnemyFast';
 import { ENEMY_TANK_STATS, ensureWarriorModelLoaded } from './enemies/EnemyTank';
 import { ENEMY_RANGED_STATS, ensureMageModelLoaded } from './enemies/EnemyRanged';
-import { MINIBOSS_STATS, ensureMiniBossModelLoaded } from './enemies/MiniBoss';
+import { MiniBoss, MINIBOSS_STATS, ensureMiniBossModelLoaded } from './enemies/MiniBoss';
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
 import { ProjectilePool } from './combat/ProjectilePool';
@@ -100,6 +100,8 @@ let passiveEffects: PassiveEffects | null = null;
 let spawner: Spawner | null = null;
 // HP bars para jugadores (sprites flotantes)
 let playerHpBars: Map<string, THREE.Sprite> = new Map();
+// Referencia al MiniBoss actual para item drop y F3
+let currentMiniBoss: MiniBoss | null = null;
 
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
@@ -126,6 +128,48 @@ let debugRenderer: DebugRenderer | null = null;
 let player1BodyHandle: RigidBodyHandle | null = null;
 let player2BodyHandle: RigidBodyHandle | null = null;
 let planeBodyHandle: RigidBodyHandle | null = null;
+
+// Listener global para F2: forzar avance de ronda (skip wave)
+// Funciona en cualquier estado: durante una ronda la termina instantáneamente,
+// entre rondas salta el timer. Útil para testing rápido (ej: llegar al boss ronda 5).
+// También limpia enemigos y proyectiles actuales de la escena.
+// Usamos listener directo en window (mismo patrón que F1 en DebugRenderer)
+// para evitar que el navegador intercepte la tecla de función.
+window.addEventListener('keydown', event => {
+  if (event.code === 'F2') {
+    event.preventDefault();
+
+    // Limpiar proyectiles enemigos activos
+    if (enemyProjectilePool) {
+      enemyProjectilePool.releaseAll();
+    }
+
+    if (waveManager) {
+      const currentRound = waveManager.getCurrentRound();
+      waveManager.forceNextWave();
+      console.log(`[Skip] Avance forzado de ronda ${currentRound} → ${currentRound + 1} con F2`);
+      showNotification(`⏩ Ronda ${currentRound + 1} forzada con F2`, 'info');
+    }
+  }
+
+  // F3: dejar al MiniBoss con 1 HP (testing)
+  if (event.code === 'F3') {
+    event.preventDefault();
+
+    if (currentMiniBoss && currentMiniBoss.isAlive()) {
+      const currentHp = currentMiniBoss.getEffectiveStat('hp');
+      const damageToApply = Math.max(0, currentHp - 1);
+      if (damageToApply > 0) {
+        currentMiniBoss.takeDamage(damageToApply);
+        console.log(`[F3] MiniBoss reducido a 1 HP (daño aplicado: ${damageToApply})`);
+        showNotification(`⚔️ MiniBoss reducido a 1 HP con F3`, 'info');
+      }
+    } else {
+      console.log('[F3] No hay MiniBoss vivo');
+      showNotification(`❌ No hay MiniBoss vivo`, 'error');
+    }
+  }
+});
 
 // Función asíncrona que inicializa Rapier3D WASM y luego inicia el juego
 async function initGameWithPhysics(): Promise<void> {
@@ -431,6 +475,11 @@ async function initGameWithPhysics(): Promise<void> {
       // Crear WaveManager que orquesta el progreso de rondas
       waveManager = new WaveManager(eventBus, spawner);
 
+      // Vincular EnemyPool al WaveManager para limpiar enemigos al forzar avance
+      if (enemyPool) {
+        waveManager.setEnemyPool(enemyPool);
+      }
+
       // Vincular MoneySystem al WaveManager para recompensas de ronda
       waveManager.setMoneySystem(moneySystem);
 
@@ -529,6 +578,49 @@ async function initGameWithPhysics(): Promise<void> {
     // Actualizar enemigos del pool
     if (enemyPool) {
       enemyPool.update(dt, players);
+    }
+
+    // Rastrear MiniBoss activo para item drop y F3
+    // Buscar en los enemigos activos del tipo MiniBoss
+    if (enemyPool) {
+      const activeEnemies = enemyPool.getAllActiveEnemies();
+      let foundMiniBoss: MiniBoss | null = null;
+      for (const enemy of activeEnemies) {
+        if (enemy.type === EnemyType.MiniBoss && enemy.isAlive()) {
+          foundMiniBoss = enemy as MiniBoss;
+          break;
+        }
+      }
+      currentMiniBoss = foundMiniBoss;
+    }
+
+    // Tecla [E] para recoger item del MiniBoss
+    if (inputManager.isKeyJustPressed('KeyE')) {
+      if (currentMiniBoss && currentMiniBoss.hasDroppedItemAvailable()) {
+        // Intentar recoger con el jugador mas cercano
+        let closestPlayer: any = null;
+        let closestDistSq = Infinity;
+        for (const p of players) {
+          if (!p || !p.getPosition || !p.isAlive) continue;
+          if (!p.isAlive()) continue;
+          const pos = p.getPosition();
+          if (!pos) continue;
+          const itemPos = currentMiniBoss.getDroppedItemPosition();
+          if (!itemPos) continue;
+          const dx = pos.x - itemPos.x;
+          const dz = pos.z - itemPos.z;
+          const distSq = dx * dx + dz * dz;
+          if (distSq < closestDistSq) {
+            closestDistSq = distSq;
+            closestPlayer = p;
+          }
+        }
+        if (closestPlayer && currentMiniBoss.tryCollectItem(closestPlayer)) {
+          const playerLabel = closestPlayer.id === 'player1' ? 'P1' : 'P2';
+          showNotification(`${playerLabel} recogio el item del MiniBoss! 🏆`, 'success');
+          console.log(`[Pickup] ${closestPlayer.id} recogio el item del MiniBoss`);
+        }
+      }
     }
 
     // Actualizar WaveManager (timers entre rondas)
@@ -675,6 +767,9 @@ async function initGameWithPhysics(): Promise<void> {
       displayBetweenRoundHud(waveManager);
     }
 
+    // Actualizar UI de recoleccion de item del MiniBoss
+    updatePickupPrompt();
+
     // Mostrar FPS en modo desarrollo
     if (import.meta.env.DEV) {
       displayFps(gameLoop.fps);
@@ -691,6 +786,8 @@ async function initGameWithPhysics(): Promise<void> {
     (window as any).physicsWorld = physicsWorld;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).debugRenderer = debugRenderer;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).waveManager = waveManager;
   }
 }
 
@@ -780,6 +877,95 @@ function showNotification(message: string, type: 'success' | 'error' | 'info' = 
 }
 
 // =================================================================
+// UI DE RECOLECCION DE ITEM DEL MINIBOSS
+// =================================================================
+
+/**
+ * Actualiza el prompt visual para recoger el item del MiniBoss.
+ * Aparece cuando un jugador esta cerca del item dropeado.
+ * Misma estetica que la tienda (dark theme, bordes dorados, monospace).
+ */
+function updatePickupPrompt(): void {
+  let promptEl = document.getElementById('pickup-prompt');
+
+  // Verificar si hay item disponible y si algun jugador esta cerca
+  let showPrompt = false;
+  let closestPlayerLabel = '';
+
+  if (currentMiniBoss && currentMiniBoss.hasDroppedItemAvailable()) {
+    const itemPos = currentMiniBoss.getDroppedItemPosition();
+    if (itemPos) {
+      // Verificar distancia a cada jugador
+      const players = [];
+      if (meleeCharacter) players.push({ ref: meleeCharacter, label: 'P1' });
+      if (adcCharacter) players.push({ ref: adcCharacter, label: 'P2' });
+
+      for (const p of players) {
+        const pos = p.ref.getPosition();
+        if (!pos) continue;
+        const dx = pos.x - itemPos.x;
+        const dz = pos.z - itemPos.z;
+        const distSq = dx * dx + dz * dz;
+        if (distSq <= 1.5 * 1.5) { // ITEM_PICKUP_RADIUS
+          showPrompt = true;
+          closestPlayerLabel = p.label;
+          break;
+        }
+      }
+    }
+  }
+
+  if (showPrompt) {
+    if (!promptEl) {
+      promptEl = document.createElement('div');
+      promptEl.id = 'pickup-prompt';
+      document.body.appendChild(promptEl);
+    }
+
+    promptEl.innerHTML = `
+      <div style="
+        position:fixed; bottom:120px; left:50%; transform:translateX(-50%);
+        background:linear-gradient(180deg, rgba(20,20,30,0.95) 0%, rgba(10,10,18,0.98) 100%);
+        border:1px solid rgba(255,170,0,0.3);
+        border-radius:12px;
+        padding:14px 28px;
+        box-shadow:0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+        font-family:monospace;
+        display:flex;
+        align-items:center;
+        gap:14px;
+        z-index:2000;
+        animation:fadeIn 0.2s ease;
+      ">
+        <span style="font-size:22px;">🏆</span>
+        <div>
+          <div style="font-size:13px;color:#ffd700;font-weight:bold;margin-bottom:2px;">
+            Item del MiniBoss
+          </div>
+          <div style="font-size:11px;color:#aaa;">
+            Presiona <span style="color:#ffaa00;font-weight:bold;border:1px solid rgba(255,170,0,0.3);padding:1px 6px;border-radius:4px;font-size:12px;">E</span> para recoger
+          </div>
+        </div>
+        <span style="font-size:11px;color:#666;border-left:1px solid rgba(255,255,255,0.1);padding-left:12px;">
+          ${closestPlayerLabel}
+        </span>
+      </div>
+      <style>
+        @keyframes fadeIn {
+          from { opacity:0; transform:translateX(-50%) translateY(10px); }
+          to { opacity:1; transform:translateX(-50%) translateY(0); }
+        }
+      </style>
+    `;
+    promptEl.style.display = '';
+  } else {
+    if (promptEl) {
+      promptEl.style.display = 'none';
+    }
+  }
+}
+
+// =================================================================
 // BARRA SUPERIOR DE ESTADO (MONEDAS PERMANENTES)
 // =================================================================
 
@@ -817,6 +1003,7 @@ function updateTopBar(): void {
       </div>
       <div style="display:flex;align-items:center;gap:16px;">
         <span id="topbar-round" style="color:#888;font-size:12px;">RONDA 0</span>
+        <span id="topbar-timer" style="color:#ff4444;font-size:13px;font-weight:bold;">⏱ --:--</span>
       </div>
       <div id="topbar-p2" style="display:flex;align-items:center;gap:8px;color:#44aaff;">
         <span style="font-weight:bold;">P2</span>
@@ -833,11 +1020,35 @@ function updateTopBar(): void {
   const p1El = document.getElementById('coin-p1');
   const p2El = document.getElementById('coin-p2');
   const roundEl = document.getElementById('topbar-round');
+  const timerEl = document.getElementById('topbar-timer');
 
   if (p1El) p1El.textContent = String(p1Balance);
   if (p2El) p2El.textContent = String(p2Balance);
   if (roundEl && waveManager) {
     roundEl.textContent = `RONDA ${waveManager.getCurrentRound()}`;
+  }
+
+  // Actualizar contador de tiempo de ronda
+  if (timerEl && waveManager) {
+    const remaining = waveManager.getRoundTimer();
+    if (remaining > 0) {
+      const minutes = Math.floor(remaining / 60);
+      const seconds = Math.floor(remaining % 60);
+      timerEl.textContent = `⏱ ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      // Cambiar color cuando quedan menos de 15s
+      if (remaining <= 15) {
+        timerEl.style.color = '#ff2222';
+        timerEl.style.textShadow = '0 0 8px rgba(255,0,0,0.6)';
+      } else if (remaining <= 30) {
+        timerEl.style.color = '#ffaa00';
+        timerEl.style.textShadow = 'none';
+      } else {
+        timerEl.style.color = '#ff4444';
+        timerEl.style.textShadow = 'none';
+      }
+    } else {
+      timerEl.textContent = '';
+    }
   }
 }
 
@@ -1049,6 +1260,8 @@ function createBetweenRoundHud(): HTMLElement {
 
       <div style="text-align:center; margin-top:16px; font-size:11px; color:#555;">
         Presiona <span style="color:#888;">[R]</span> (P1) o <span style="color:#888;">[/]</span> (P2) cuando estés listo
+        &nbsp;·&nbsp; <span style="color:#888;">[F2]</span> saltar ronda
+        &nbsp;·&nbsp; <span style="color:#888;">[F3]</span> boss 1HP
       </div>
     </div>
   `;
