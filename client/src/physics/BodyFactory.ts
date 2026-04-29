@@ -194,9 +194,32 @@ export class BodyFactory {
     pos: THREE.Vector3,
     size: THREE.Vector3
   ): RigidBodyHandle {
-    const bodyDesc = RAPIER.RigidBodyDesc.fixed();
-    bodyDesc.setTranslation(pos.x, pos.y, pos.z);
+    const halfExtents = new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2);
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z);
+    const groups = makeCollisionGroups(Groups.WALL, Masks.WALL);
+    colliderDesc.setCollisionGroups(groups);
 
+    return world.createBody({
+      type: 'static',
+      position: pos,
+      collider: colliderDesc,
+      collisionGroup: Groups.WALL,
+      collisionMask: Masks.WALL,
+    });
+  }
+
+  /**
+   * Crea un cuerpo físico estático para el suelo de la arena.
+   * El suelo es un cuboide delgado que evita que los personajes caigan.
+   * @param world Mundo físico
+   * @param pos Posición del centro del suelo
+   * @param size Tamaño del suelo (ancho, alto, profundidad)
+   */
+  static createFloorBody(
+    world: PhysicsWorld,
+    pos: THREE.Vector3,
+    size: THREE.Vector3
+  ): RigidBodyHandle {
     const halfExtents = new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2);
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z);
     const groups = makeCollisionGroups(Groups.WALL, Masks.WALL);

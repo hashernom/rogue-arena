@@ -761,6 +761,8 @@ export class AdcCharacter extends Character {
 
     // 1. Recolectar todos los impactos del rayo
     const hits: { id: number; entity: any; toi: number }[] = [];
+    // Distancia al muro más cercano (-1 = no hay muro en el camino)
+    let wallHitToi = -1;
 
     world.intersectionsWithRay(
       ray,
@@ -769,12 +771,29 @@ export class AdcCharacter extends Character {
       (intersection: RAPIER.RayColliderIntersection) => {
         const collider = intersection.collider;
 
-        // Filtrar por grupo ENEMY (igual que en MeleeAttack)
+        // Extraer grupos de colisión
         const groups = collider.collisionGroups();
         const membership = (groups >> 16) & 0xffff; // Extraer bits de membership
+
+        // Si es un muro, registrar la distancia de impacto
+        if ((membership & Groups.WALL) !== 0) {
+          const intersectionAny = intersection as any;
+          const toi =
+            intersectionAny.toi ??
+            intersectionAny.timeOfImpact ??
+            intersectionAny.distance ??
+            intersectionAny.t ??
+            0;
+          // Solo registrar si es el muro más cercano hasta ahora
+          if (wallHitToi < 0 || toi < wallHitToi) {
+            wallHitToi = toi;
+          }
+          return true; // Continuar buscando (puede haber enemigos antes del muro)
+        }
+
+        // Filtrar por grupo ENEMY
         if ((membership & Groups.ENEMY) === 0) {
-          // No es un enemigo, ignorar
-          return true; // Continuar buscando
+          return true; // No es relevante, continuar
         }
 
         const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
@@ -782,8 +801,6 @@ export class AdcCharacter extends Character {
         if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
           const enemyId = userData.id;
           if (enemyId !== undefined) {
-            // Extraer distancia (time of impact) del objeto intersection
-            // Rapier puede usar 'toi', 'timeOfImpact', 'distance' o 't'
             const intersectionAny = intersection as any;
             const toi =
               intersectionAny.toi ??
@@ -806,13 +823,12 @@ export class AdcCharacter extends Character {
           }
         }
 
-        // Retornar TRUE obligatoriamente para que Rapier siga buscando más objetivos en la línea
         return true;
       }
     );
 
     console.log(
-      `[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}`
+      `[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}, wallHitToi: ${wallHitToi}`
     );
     if (hits.length > 0) {
       console.log(`[AdcCharacter] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
@@ -821,10 +837,23 @@ export class AdcCharacter extends Character {
     // 2. ORDENAR MATEMÁTICAMENTE: Del más cercano (menor toi) al más lejano (mayor toi)
     hits.sort((a, b) => a.toi - b.toi);
 
-    // 3. APLICAR DAÑO Y LÓGICA DE PIERCING (usando DamagePipeline)
+    // 3. Verificar si el muro está ANTES que cualquier enemigo
+    // Si el muro está más cerca que el primer enemigo, el proyectil impacta el muro y no pasa
+    if (wallHitToi >= 0 && (hits.length === 0 || wallHitToi < hits[0].toi)) {
+      console.log(`[AdcCharacter] Proyectil impactó muro a distancia ${wallHitToi.toFixed(2)}, destruido`);
+      return; // El proyectil se destruye contra el muro
+    }
+
+    // 4. APLICAR DAÑO Y LÓGICA DE PIERCING (usando DamagePipeline)
     const enemiesHit = new Set<number>();
     for (const hit of hits) {
       if (!enemiesHit.has(hit.id)) {
+        // Verificar si hay un muro entre el origen y este enemigo
+        if (wallHitToi >= 0 && wallHitToi < hit.toi) {
+          console.log(`[AdcCharacter] Muro bloquea el impacto al enemigo ID: ${hit.id} (muro: ${wallHitToi.toFixed(2)} < enemigo: ${hit.toi.toFixed(2)})`);
+          break; // El muro bloquea el proyectil antes de llegar a este enemigo
+        }
+
         // Usar el pipeline centralizado si está disponible
         if (this.damagePipeline) {
           const hitPos = new THREE.Vector3(
@@ -853,7 +882,6 @@ export class AdcCharacter extends Character {
         if (!canPierce) {
           break;
         }
-        // Si SÍ hay piercing, el 'break' se ignora y el ciclo continúa golpeando al 2do, 3ro, etc.
       }
     }
   }

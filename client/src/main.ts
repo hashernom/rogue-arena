@@ -22,7 +22,6 @@ import { MiniBoss, MINIBOSS_STATS, ensureMiniBossModelLoaded } from './enemies/M
 import { DamagePipeline } from './combat/DamagePipeline';
 import { DamageNumberSystem } from './combat/DamageNumber';
 import { ProjectilePool } from './combat/ProjectilePool';
-import RAPIER from '@dimforge/rapier3d-compat';
 import { WaveManager, WaveState } from './waves/WaveManager';
 import { Spawner } from './waves/Spawner';
 import { MoneySystem } from './progression/MoneySystem';
@@ -37,6 +36,7 @@ import { Prediction } from './network/Prediction';
 import { Interpolation } from './network/Interpolation';
 import { HUD } from './ui/HUD';
 import { GameOverScreen } from './ui/GameOverScreen';
+import { Arena } from './map/Arena';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -116,6 +116,8 @@ let gameHUD: HUD | null = null;
 
 // Pantalla de Game Over
 let gameOverScreen: GameOverScreen | null = null;
+// Arena de juego con muros físicos
+let arena: Arena | null = null;
 // Cleanup del listener player:died para evitar duplicados al reiniciar
 let onPlayerDiedCleanup: (() => void) | null = null;
 
@@ -149,14 +151,8 @@ let reconnectCountdownTimer: ReturnType<typeof setInterval> | null = null;
 // Tiempo restante para reconexión (ms)
 let reconnectTimeRemaining = 0;
 
-// Crear un plano para proyectar sombras
-const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
-const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 30 });
-const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-plane.rotation.x = -Math.PI / 2;
-plane.position.y = -2;
-plane.receiveShadow = true;
-sceneManager.add(plane);
+// La Arena se construye dentro de initGameWithPhysics() cuando physicsWorld está listo.
+// Esto asegura que los colliders Rapier se creen con el mundo físico ya inicializado.
 
 // Variables para HMR
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -242,20 +238,11 @@ async function initGameWithPhysics(): Promise<void> {
     physicsWorld = await PhysicsWorld.init();
     console.log('✅ Rapier3D WASM cargado y PhysicsWorld listo');
 
-    // Crear cuerpos físicos para los jugadores y el plano
+    // Crear cuerpos físicos para los jugadores y la arena
     if (physicsWorld) {
-      // Plano estático (suelo) - cuboide delgado SIN rotación para evitar
-      // que el collider invada el espacio de juego (y=0).
-      // El mesh de Three.js tiene rotation.x = -PI/2 para verse horizontal,
-      // pero el collider de Rapier debe estar alineado a ejes para no atrapar
-      // a los enemigos dinámicos dentro de él.
-      const planeCollider = RAPIER.ColliderDesc.cuboid(200, 0.01, 200); // half-extents delgado
-      planeBodyHandle = physicsWorld.createBody({
-        type: 'static',
-        position: new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z),
-        // Sin rotación — el collider queda como cuboide delgado horizontal en y=-2
-        collider: planeCollider,
-      });
+      // Construir la arena con suelo, muros perimetrales y colliders Rapier
+      arena = new Arena(sceneManager, physicsWorld);
+      arena.build();
 
       // Jugador 1: MeleeCharacter (Caballero)
       meleeCharacter = new MeleeCharacter(
@@ -711,13 +698,19 @@ async function initGameWithPhysics(): Promise<void> {
           });
           playerHpBars.clear();
 
-          // 12. Ocultar between-round HUD
+          // 12. Limpiar arena (muros, suelo, colliders)
+          if (arena) {
+            arena.dispose();
+            arena = null;
+          }
+
+          // 13. Ocultar between-round HUD
           const betweenRoundEl = document.getElementById('between-round-hud');
           if (betweenRoundEl) {
             betweenRoundEl.remove();
           }
 
-          // 13. Reiniciar variables de sincronización
+          // 14. Reiniciar variables de sincronización
           isOnlineMatch = false;
           localPlayerId = null;
           remotePlayerId = null;

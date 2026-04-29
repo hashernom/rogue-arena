@@ -234,11 +234,20 @@ export class Projectile {
       identity,
       sphereShape,
       (collider: RAPIER.Collider) => {
-        // Filtrar por el grupo objetivo
+        // Filtrar por el grupo objetivo O por WALL
         const groups = collider.collisionGroups();
         const membership = (groups >> 16) & 0xffff;
+
+        // Si es un muro, destruir el proyectil inmediatamente
+        if ((membership & Groups.WALL) !== 0) {
+          console.log(`[Projectile] Colisión con muro detectada (overlap)`);
+          this.handleWallCollision();
+          return true;
+        }
+
+        // Si no es el grupo objetivo, ignorar
         if ((membership & targetGroup) === 0) {
-          return true; // No es el objetivo, continuar
+          return true;
         }
 
         const parentBody = collider.parent();
@@ -287,11 +296,20 @@ export class Projectile {
           (intersection: RAPIER.RayColliderIntersection) => {
             const collider = intersection.collider;
 
-            // Filtrar por el grupo objetivo
+            // Filtrar por el grupo objetivo O por WALL
             const groups = collider.collisionGroups();
             const membership = (groups >> 16) & 0xffff;
+
+            // Si es un muro, destruir el proyectil inmediatamente
+            if ((membership & Groups.WALL) !== 0) {
+              console.log(`[Projectile] Colisión con muro detectada (raycast)`);
+              this.handleWallCollision();
+              return true;
+            }
+
+            // Si no es el grupo objetivo, ignorar
             if ((membership & targetGroup) === 0) {
-              return true; // No es el objetivo, continuar
+              return true;
             }
 
             const parentBody = collider.parent();
