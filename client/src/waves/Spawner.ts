@@ -6,9 +6,10 @@ import type { WaveConfig } from './WaveManager';
 import { getEnemyStatsForRound } from './DifficultyScaler';
 
 /**
- * Puntos de spawn fijos en los bordes de la arena 30×30m.
+ * Puntos de spawn por defecto en los bordes de una arena 30×30m.
+ * Se usan cuando no se carga un mapa personalizado desde JSON.
  */
-export const SPAWN_POINTS: { x: number; z: number }[] = [
+export const DEFAULT_SPAWN_POINTS: { x: number; z: number }[] = [
   { x: -14, z: 0 },
   { x: 14, z: 0 },
   { x: 0, z: -14 },
@@ -18,6 +19,11 @@ export const SPAWN_POINTS: { x: number; z: number }[] = [
   { x: -10, z: 10 },
   { x: 10, z: 10 },
 ];
+
+/**
+ * Tipo para un punto de spawn (compatible con MapConfig.SpawnPoint).
+ */
+export type SpawnPoint = { x: number; z: number };
 
 /** Duración del indicador visual antes de que aparezca el enemigo (segundos) */
 const INDICATOR_DURATION = 0.5;
@@ -60,6 +66,8 @@ export class Spawner {
   private scene: THREE.Scene;
   /** Ronda actual para escalado de dificultad */
   private currentRound: number = 1;
+  /** Puntos de spawn activos (por defecto o cargados desde JSON) */
+  private spawnPoints: SpawnPoint[] = DEFAULT_SPAWN_POINTS;
 
   /** Geometría compartida para los indicadores visuales */
   private static indicatorGeometry: THREE.RingGeometry | null = null;
@@ -97,6 +105,25 @@ export class Spawner {
   }
 
   /**
+   * Establece puntos de spawn personalizados (ej: desde un mapa JSON).
+   * Si no se llama, se usan los DEFAULT_SPAWN_POINTS.
+   */
+  setSpawnPoints(points: SpawnPoint[]): void {
+    if (points.length === 0) {
+      console.warn('[Spawner] setSpawnPoints recibió array vacío — usando defaults');
+      this.spawnPoints = DEFAULT_SPAWN_POINTS;
+      return;
+    }
+    this.spawnPoints = points;
+    console.log(`[Spawner] ${points.length} spawn points configurados`);
+  }
+
+  /** Retorna los spawn points activos. */
+  getSpawnPoints(): SpawnPoint[] {
+    return this.spawnPoints;
+  }
+
+  /**
    * Distribuye los enemigos de una WaveConfig entre los puntos de spawn
    * de forma aleatoria pero uniforme, y los encola para spawn.
    * @param config - Configuración de la oleada
@@ -110,8 +137,8 @@ export class Spawner {
       }
     }
 
-    // Distribuir equitativamente entre los 8 puntos
-    const pointCount = SPAWN_POINTS.length;
+    // Distribuir equitativamente entre los puntos de spawn configurados
+    const pointCount = this.spawnPoints.length;
     const shuffledPoints = this.shuffleArray(
       Array.from({ length: pointCount }, (_, i) => i)
     );
@@ -169,7 +196,7 @@ export class Spawner {
   private updateIndicator(spawn: PendingSpawn): void {
     // Crear indicador si no existe
     if (!spawn.indicator) {
-      spawn.indicator = this.createIndicator(SPAWN_POINTS[spawn.pointIndex]);
+      spawn.indicator = this.createIndicator(this.spawnPoints[spawn.pointIndex]);
     }
 
     // Animar opacidad: aparece gradualmente
@@ -212,7 +239,7 @@ export class Spawner {
     spawn.phase = 'spawning';
     spawn.timer = SPAWN_ANIMATION_DURATION;
 
-    const point = SPAWN_POINTS[spawn.pointIndex];
+    const point = this.spawnPoints[spawn.pointIndex];
     const pos = new THREE.Vector3(point.x, 0, point.z);
 
     // Calcular stats escalados para la ronda actual

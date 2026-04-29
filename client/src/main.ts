@@ -33,6 +33,7 @@ import { PassiveEffects } from './progression/PassiveEffects';
 import type { ItemsCatalog, ItemDefinition } from '../../shared/src/types/Items';
 import type { GameStateSnapshot } from '@rogue-arena/shared';
 import { ConnectionManager } from './network/ConnectionManager';
+import { TilemapLoader } from './map/TilemapLoader';
 import { MenuUI } from './network/MenuUI';
 import { Prediction } from './network/Prediction';
 import { Interpolation } from './network/Interpolation';
@@ -125,6 +126,8 @@ let audioEventCleanup: (() => void) | null = null;
 let gameOverScreen: GameOverScreen | null = null;
 // Arena de juego con muros físicos
 let arena: Arena | null = null;
+// Cargador de mapas desde JSON (TilemapLoader)
+let tilemapLoader: TilemapLoader | null = null;
 // Cleanup del listener player:died para evitar duplicados al reiniciar
 let onPlayerDiedCleanup: (() => void) | null = null;
 
@@ -264,6 +267,17 @@ async function initGameWithPhysics(): Promise<void> {
       // Construir la arena con suelo, muros perimetrales y colliders Rapier
       arena = new Arena(sceneManager, physicsWorld);
       arena.build();
+
+      // Cargar mapa desde JSON (obstáculos + spawn points)
+      tilemapLoader = new TilemapLoader(sceneManager, physicsWorld);
+      try {
+        const mapConfig = await tilemapLoader.load('/assets/maps/arena_01.json');
+        console.log(`🗺️ Mapa cargado: "${mapConfig.name}" (${mapConfig.size.width}x${mapConfig.size.height})`);
+      } catch (mapError) {
+        console.warn('⚠️ No se pudo cargar el mapa:', mapError);
+        tilemapLoader.dispose();
+        tilemapLoader = null;
+      }
 
       // Jugador 1: MeleeCharacter (Caballero)
       meleeCharacter = new MeleeCharacter(
@@ -538,6 +552,15 @@ async function initGameWithPhysics(): Promise<void> {
       // Crear Spawner visual con indicadores en el suelo
       spawner = new Spawner(sceneManager, enemyPool);
 
+      // Configurar spawn points desde el mapa cargado (si existe)
+      if (tilemapLoader) {
+        const mapSpawnPoints = tilemapLoader.getSpawnPoints();
+        if (mapSpawnPoints.length > 0) {
+          spawner.setSpawnPoints(mapSpawnPoints);
+          console.log(`📍 Spawner configurado con ${mapSpawnPoints.length} puntos del mapa`);
+        }
+      }
+
       // Crear WaveManager que orquesta el progreso de rondas
       waveManager = new WaveManager(eventBus, spawner);
 
@@ -810,6 +833,12 @@ async function initGameWithPhysics(): Promise<void> {
           if (arena) {
             arena.dispose();
             arena = null;
+          }
+
+          // 12b. Limpiar obstáculos del mapa (TilemapLoader)
+          if (tilemapLoader) {
+            tilemapLoader.dispose();
+            tilemapLoader = null;
           }
 
           // 13. Ocultar between-round HUD
