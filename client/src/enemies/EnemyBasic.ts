@@ -301,8 +301,8 @@ export class EnemyBasic extends Enemy {
     const dz = targetPos.z - enemyPos.z;
     const distSq = dx * dx + dz * dz;
 
-    // 3. Verificar si está en rango de ataque (0.6m)
-    const attackRangeSq = 0.6 * 0.6;
+    // 3. Verificar si está en rango de ataque (0.9m — ajustado al nuevo radio de collider 0.45)
+    const attackRangeSq = 0.9 * 0.9;
     this.isInAttackRange = distSq <= attackRangeSq;
 
     if (this.isInAttackRange) {

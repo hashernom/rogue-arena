@@ -48,7 +48,7 @@ export class AdcCharacter extends Character {
   private currentAction: THREE.AnimationAction | null = null;
   /** Nombre de la animación actualmente en reproducción */
   private currentAnimationName: string = '';
-  
+
   /** Flag para evitar spam de warnings de animaciones */
   private hasShownAnimationWarning: boolean = false;
 
@@ -113,7 +113,7 @@ export class AdcCharacter extends Character {
         this.assetLoader.load('/models/Rig_Medium_CombatRanged.glb'),
         this.assetLoader.load('/models/Rig_Medium_General.glb'),
         this.assetLoader.load('/models/weapons/bow.gltf'),
-        this.assetLoader.load('/models/weapons/quiver.gltf')
+        this.assetLoader.load('/models/weapons/quiver.gltf'),
       ]);
       const modelGltf = assets[0] as GLTF;
       const movementGltf = assets[1] as GLTF;
@@ -127,14 +127,17 @@ export class AdcCharacter extends Character {
         const arrowGltf = await this.assetLoader.load('/models/weapons/arrow_bow.gltf');
         this.arrowGltf = arrowGltf as GLTF;
       } catch (arrowError) {
-        console.warn(`[AdcCharacter ${this.id}] No se pudo cargar el modelo de flecha, usando fallback cónico:`, arrowError);
+        console.warn(
+          `[AdcCharacter ${this.id}] No se pudo cargar el modelo de flecha, usando fallback cónico:`,
+          arrowError
+        );
       }
 
       // 1. Clonado de esqueleto independiente
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
-      
+
       // 2. Configuración de sombras y visibilidad
-      this.innerMesh.traverse((child) => {
+      this.innerMesh.traverse(child => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true;
           child.receiveShadow = true;
@@ -164,16 +167,17 @@ export class AdcCharacter extends Character {
         ...modelGltf.animations,
         ...movementGltf.animations,
         ...combatGltf.animations,
-        ...generalGltf.animations
+        ...generalGltf.animations,
       ];
-      allClips.forEach((clip) => {
+      allClips.forEach(clip => {
         const action = this.mixer!.clipAction(clip);
         this.actions[clip.name] = action;
-        
+
         const name = clip.name.toLowerCase();
         if (name.includes('idle')) this.actions['Idle'] = action;
         if (name.includes('run') || name.includes('walk')) this.actions['Run'] = action;
-        if (name.includes('shoot') || name.includes('attack') || name.includes('ranged')) this.actions['Attack'] = action;
+        if (name.includes('shoot') || name.includes('attack') || name.includes('ranged'))
+          this.actions['Attack'] = action;
         if (name.includes('death') || name.includes('die')) this.actions['Death'] = action;
       });
 
@@ -182,7 +186,6 @@ export class AdcCharacter extends Character {
       }
 
       this.playAnimation('Idle');
-
     } catch (error) {
       console.error('Error cargando ADC:', error);
       this.createFallbackModel();
@@ -199,12 +202,14 @@ export class AdcCharacter extends Character {
     if (Object.keys(this.actions).length === 0) {
       // Solo mostrar warning una vez para evitar spam en consola
       if (!this.hasShownAnimationWarning) {
-        console.warn(`[AdcCharacter ${this.id}] No hay animaciones cargadas. Saltando playAnimation('${name}')`);
+        console.warn(
+          `[AdcCharacter ${this.id}] No hay animaciones cargadas. Saltando playAnimation('${name}')`
+        );
         this.hasShownAnimationWarning = true;
       }
       return;
     }
-    
+
     if (!this.mixer) return;
     if (name === this.currentAnimationName) return;
 
@@ -243,14 +248,14 @@ export class AdcCharacter extends Character {
 
     // 1. La malla interna es el cilindro
     this.innerMesh = mesh;
-    
+
     // 2. Crear contenedor Group
     this.model = new THREE.Group();
     this.model.name = `ADC_Fallback_Container_${this.id}`;
-    
+
     // 3. Meter el cilindro dentro del contenedor
     this.model.add(this.innerMesh);
-    
+
     // 4. Añadir contenedor a la escena
     this.sceneManager.add(this.model);
 
@@ -285,7 +290,7 @@ export class AdcCharacter extends Character {
 
     // 1. Usar moveDir del InputState (ya está normalizado)
     const moveDir = input.moveDir;
-    
+
     // 2. Convertir Vector2 a Vector3 para movimiento isométrico
     const direction = this.inputToIsometric(moveDir);
 
@@ -294,18 +299,21 @@ export class AdcCharacter extends Character {
 
     // 4. LA MAGIA: Aplicar Velocidad Lineal o Frenar en Seco
     const currentVel = body.linvel();
-    
+
     // Si el jugador no está oprimiendo nada (el vector dirección es 0)
     if (direction.lengthSq() === 0) {
       // FRENAR EN SECO (manteniendo la gravedad en Y)
       body.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
     } else {
       // APLICAR VELOCIDAD
-      body.setLinvel({
-        x: direction.x * SPEED,
-        y: currentVel.y, // Respetar la gravedad original en el eje Y
-        z: direction.z * SPEED
-      }, true); // ¡ESTE 'TRUE' ES VITAL! Despierta el cuerpo físico inmediatamente
+      body.setLinvel(
+        {
+          x: direction.x * SPEED,
+          y: currentVel.y, // Respetar la gravedad original en el eje Y
+          z: direction.z * SPEED,
+        },
+        true
+      ); // ¡ESTE 'TRUE' ES VITAL! Despierta el cuerpo físico inmediatamente
     }
 
     // 5. (Opcional) Rotar el modelo hacia donde está caminando
@@ -322,10 +330,14 @@ export class AdcCharacter extends Character {
         if (moveDir.y < 0) keyPressed.push('S (down)');
         if (moveDir.x > 0) keyPressed.push('D (right)');
         if (moveDir.x < 0) keyPressed.push('A (left)');
-        
-        console.log(`[AdcCharacter ${this.id}] moveBody: keys=[${keyPressed.join(', ') || 'none'}], moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), dir3D=(${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)}), vel=(${(direction.x * SPEED).toFixed(2)}, ${(direction.z * SPEED).toFixed(2)})`);
+
+        console.log(
+          `[AdcCharacter ${this.id}] moveBody: keys=[${keyPressed.join(', ') || 'none'}], moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), dir3D=(${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)}), vel=(${(direction.x * SPEED).toFixed(2)}, ${(direction.z * SPEED).toFixed(2)})`
+        );
       } else {
-        console.log(`[AdcCharacter ${this.id}] moveBody: FRENANDO, vel=(0, ${currentVel.y.toFixed(2)}, 0)`);
+        console.log(
+          `[AdcCharacter ${this.id}] moveBody: FRENANDO, vel=(0, ${currentVel.y.toFixed(2)}, 0)`
+        );
       }
     }
   }
@@ -341,7 +353,9 @@ export class AdcCharacter extends Character {
 
     // DEBUG: Mostrar input original
     if (import.meta.env.DEV && moveDir.lengthSq() > 0) {
-      console.log(`[AdcCharacter ${this.id}] inputToIsometric: moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), inputVector=(${inputVector.x.toFixed(2)}, ${inputVector.y.toFixed(2)}, ${inputVector.z.toFixed(2)})`);
+      console.log(
+        `[AdcCharacter ${this.id}] inputToIsometric: moveDir=(${moveDir.x.toFixed(2)}, ${moveDir.y.toFixed(2)}), inputVector=(${inputVector.x.toFixed(2)}, ${inputVector.y.toFixed(2)}, ${inputVector.z.toFixed(2)})`
+      );
     }
 
     // Rotar 45° alrededor del eje Y (perspectiva isométrica)
@@ -351,7 +365,9 @@ export class AdcCharacter extends Character {
 
     // DEBUG: Mostrar resultado
     if (import.meta.env.DEV && moveDir.lengthSq() > 0) {
-      console.log(`[AdcCharacter ${this.id}] inputToIsometric: result=(${inputVector.x.toFixed(2)}, ${inputVector.y.toFixed(2)}, ${inputVector.z.toFixed(2)})`);
+      console.log(
+        `[AdcCharacter ${this.id}] inputToIsometric: result=(${inputVector.x.toFixed(2)}, ${inputVector.y.toFixed(2)}, ${inputVector.z.toFixed(2)})`
+      );
     }
 
     return inputVector.normalize();
@@ -369,15 +385,15 @@ export class AdcCharacter extends Character {
       }
       return;
     }
-    
+
     // Actualizar mixer de animaciones THREE.js
     if (this.mixer) this.mixer.update(dt);
-    
+
     // Actualizar habilidades
     if (this.salvoAbility) {
       this.salvoAbility.update(dt);
     }
-    
+
     // Actualizar proyectiles
     this.updateProjectiles(dt);
 
@@ -404,21 +420,23 @@ export class AdcCharacter extends Character {
     if (direction.lengthSq() > 0) {
       direction.normalize();
       const SPEED = this.getEffectiveStat('speed');
-      
-      body.setLinvel({
-        x: direction.x * SPEED,
-        y: currentVel.y,
-        z: direction.z * SPEED
-      }, true);
+
+      body.setLinvel(
+        {
+          x: direction.x * SPEED,
+          y: currentVel.y,
+          z: direction.z * SPEED,
+        },
+        true
+      );
 
       // Rotar el CONTENEDOR hacia donde caminamos
       if (this.model) {
         this.model.rotation.y = Math.atan2(direction.x, direction.z);
       }
-      
+
       this.playAnimation('Run');
       isMoving = true;
-
     } else {
       // FRENO
       if (Math.abs(currentVel.x) > 0.1 || Math.abs(currentVel.z) > 0.1) {
@@ -426,19 +444,18 @@ export class AdcCharacter extends Character {
       }
       this.playAnimation('Idle');
     }
-
   }
 
   /**
    * Sincroniza el modelo visual con la posición física actual.
    * Debe llamarse DESPUÉS de physicsWorld.stepAll() para evitar desfase de 1 frame.
    */
- public syncToPhysics(): void {
+  public syncToPhysics(): void {
     if (!this.model || this.physicsBody === undefined || !this.physicsWorld) return;
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
     const pos = body.translation();
-    
+
     this.model.position.set(pos.x, pos.y - 0.5, pos.z);
   }
 
@@ -503,7 +520,9 @@ export class AdcCharacter extends Character {
       if (position) {
         this.model.position.copy(position);
         if (import.meta.env.DEV && this.state === CharacterState.Moving) {
-          console.log(`[AdcCharacter ${this.id}] syncModelWithPhysics: pos=(${position.x.toFixed(2)}, ${position.z.toFixed(2)})`);
+          console.log(
+            `[AdcCharacter ${this.id}] syncModelWithPhysics: pos=(${position.x.toFixed(2)}, ${position.z.toFixed(2)})`
+          );
         }
       }
     }
@@ -537,7 +556,9 @@ export class AdcCharacter extends Character {
 
     // Log para depuración
     if (import.meta.env.DEV && this.state !== CharacterState.Idle) {
-      console.log(`[AdcCharacter ${this.id}] Estado: ${this.state}, isAttacking: ${isAttacking}, isDead: ${isDead}`);
+      console.log(
+        `[AdcCharacter ${this.id}] Estado: ${this.state}, isAttacking: ${isAttacking}, isDead: ${isDead}`
+      );
     }
 
     // Sincronizar estado del personaje con animaciones
@@ -568,31 +589,36 @@ export class AdcCharacter extends Character {
     } else if (this.model) {
       this.model.getWorldPosition(spawnPos);
       spawnPos.y += 1.2; // Altura del pecho
-      console.log(`[AdcCharacter ${this.id}] Disparando desde pecho (no hay arma) en posición:`, spawnPos);
+      console.log(
+        `[AdcCharacter ${this.id}] Disparando desde pecho (no hay arma) en posición:`,
+        spawnPos
+      );
     } else {
       spawnPos.set(0, 1.2, 0);
     }
 
     // 2. Calcular dirección de disparo: priorizar mouse targeting si hay inputState con mouseNDC
     let forwardDir = new THREE.Vector3(0, 0, -1);
-    
+
     // Intentar usar mouse targeting si está disponible
     if (inputState?.mouseNDC && this.sceneManager) {
       const camera = this.sceneManager.getCamera();
       if (camera) {
         forwardDir = this.calculateAimDirection(camera, inputState.mouseNDC);
-        console.log(`[AdcCharacter] Usando dirección de mouse: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`);
+        console.log(
+          `[AdcCharacter] Usando dirección de mouse: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`
+        );
       } else {
         console.warn('[AdcCharacter] No hay cámara disponible para mouse targeting');
       }
     }
-    
+
     // Fallback: dirección forward del modelo (comportamiento anterior)
     if (forwardDir.lengthSq() < 0.01 && this.model) {
       // Obtener dirección mundial (hacia Z positivo por defecto en Three.js)
       const worldDirection = new THREE.Vector3();
       this.model.getWorldDirection(worldDirection);
-      
+
       // Determinar si debemos invertir basado en la dirección de movimiento actual
       let shouldNegate = false;
       if (this.moveDirection && this.moveDirection.lengthSq() > 0.01) {
@@ -601,13 +627,15 @@ export class AdcCharacter extends Character {
         const dotWithNegated = moveDir.dot(worldDirection.clone().negate());
         shouldNegate = dotWithNegated > dotWithWorld;
       }
-      
+
       forwardDir = worldDirection.clone();
       if (shouldNegate) {
         forwardDir.negate();
       }
-      
-      console.log(`[AdcCharacter] Usando dirección del modelo: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)}), invertir? ${shouldNegate}`);
+
+      console.log(
+        `[AdcCharacter] Usando dirección del modelo: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)}), invertir? ${shouldNegate}`
+      );
     }
 
     // 3. Offset para que el proyectil no choque con el propio personaje
@@ -616,41 +644,44 @@ export class AdcCharacter extends Character {
 
     // 4. Crear proyectil visual (flecha 3D KayKit)
     let arrowGroup: THREE.Group;
-    
+
     if (this.arrowGltf) {
       // Clonar el modelo GLTF de la flecha (modelo estático, sin skinning)
       try {
         arrowGroup = this.assetLoader.clone(this.arrowGltf);
-        arrowGroup.scale.set(0.8, 0.8, 0.8);
+        arrowGroup.scale.set(1.5, 1.5, 1.5);
         // Teñir la flecha de verde brillante (equipo aliado) con glow
         arrowGroup.traverse(child => {
           if (child instanceof THREE.Mesh && child.material) {
             const materials = Array.isArray(child.material) ? child.material : [child.material];
             materials.forEach(mat => {
-              mat.color.setHex(0x00FF00);
-              mat.emissive = new THREE.Color(0x00FF00);
+              mat.color.setHex(0x00ff00);
+              mat.emissive = new THREE.Color(0x00ff00);
               mat.emissiveIntensity = 0.6;
               mat.needsUpdate = true;
             });
           }
         });
       } catch (cloneError) {
-        console.warn(`[AdcCharacter ${this.id}] Error clonando flecha, usando fallback:`, cloneError);
+        console.warn(
+          `[AdcCharacter ${this.id}] Error clonando flecha, usando fallback:`,
+          cloneError
+        );
         arrowGroup = this.assetLoader.createFallback();
       }
     } else {
       // Fallback: cono amarillo
       arrowGroup = this.assetLoader.createFallback();
     }
-    
+
     // Posición y rotación del contenedor
     arrowGroup.position.copy(spawnPos);
     const lookTarget = spawnPos.clone().add(forwardDir);
     arrowGroup.lookAt(lookTarget);
-    
+
     // Almacenar dirección en userData para uso en updateProjectiles
     arrowGroup.userData = { direction: forwardDir.clone() };
-    
+
     this.sceneManager.add(arrowGroup);
     this.activeProjectiles.push(arrowGroup);
 
@@ -668,7 +699,10 @@ export class AdcCharacter extends Character {
     // Escuchar cuando el AnimationMixer termine el clip de ataque
     const onFinished = (e: THREE.Event) => {
       const action = (e as any).action as THREE.AnimationAction;
-      if (action?.getClip().name.toLowerCase().includes('shoot') || action?.getClip().name.toLowerCase().includes('attack')) {
+      if (
+        action?.getClip().name.toLowerCase().includes('shoot') ||
+        action?.getClip().name.toLowerCase().includes('attack')
+      ) {
         this.setState(CharacterState.Idle);
         this.mixer?.removeEventListener('finished', onFinished);
       }
@@ -677,7 +711,13 @@ export class AdcCharacter extends Character {
 
     // Aplicar pasiva: cada 3 disparos consecutivos aumenta velocidad de ataque temporal
     if (this.consecutiveShots >= 3) {
-      this.applyModifier('attackSpeed', 0.3, ModifierType.Multiplicative, 'adc_passive', 'Pasiva: +30% velocidad de ataque');
+      this.applyModifier(
+        'attackSpeed',
+        0.3,
+        ModifierType.Multiplicative,
+        'adc_passive',
+        'Pasiva: +30% velocidad de ataque'
+      );
       setTimeout(() => {
         this.removeModifier('adc_passive');
       }, 3000);
@@ -696,11 +736,7 @@ export class AdcCharacter extends Character {
    * Detecta colisiones con un rayo (disparo instantáneo) y aplica daño.
    * Soporta piercing: si canPierce es true, el rayo continúa atravesando enemigos.
    */
-  private detectHitsWithRay(
-    origin: THREE.Vector3,
-    direction: THREE.Vector3,
-    damage: number
-  ): void {
+  private detectHitsWithRay(origin: THREE.Vector3, direction: THREE.Vector3, damage: number): void {
     if (!this.physicsWorld) {
       console.warn('[AdcCharacter] No hay physicsWorld disponible para detectar colisiones');
       return;
@@ -716,19 +752,23 @@ export class AdcCharacter extends Character {
     const maxRange = 25.0; // Alcance del ADC
     const solid = false; // Permite detectar el interior de las hitboxes
 
-    console.log(`[AdcCharacter] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) dirección (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`);
+    console.log(
+      `[AdcCharacter] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) dirección (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
+    );
 
     // Determinar si este proyectil tiene piercing (consultar pasiva)
     const canPierce = this.checkPiercePassive();
-    
+
     // 1. Recolectar todos los impactos del rayo
     const hits: { id: number; entity: any; toi: number }[] = [];
 
     world.intersectionsWithRay(
-      ray, maxRange, solid,
+      ray,
+      maxRange,
+      solid,
       (intersection: RAPIER.RayColliderIntersection) => {
         const collider = intersection.collider;
-        
+
         // Filtrar por grupo ENEMY (igual que en MeleeAttack)
         const groups = collider.collisionGroups();
         const membership = (groups >> 16) & 0xffff; // Extraer bits de membership
@@ -736,32 +776,44 @@ export class AdcCharacter extends Character {
           // No es un enemigo, ignorar
           return true; // Continuar buscando
         }
-        
+
         const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
-        
+
         if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
           const enemyId = userData.id;
           if (enemyId !== undefined) {
             // Extraer distancia (time of impact) del objeto intersection
             // Rapier puede usar 'toi', 'timeOfImpact', 'distance' o 't'
             const intersectionAny = intersection as any;
-            const toi = intersectionAny.toi ?? intersectionAny.timeOfImpact ?? intersectionAny.distance ?? intersectionAny.t ?? 0;
-            console.log('[AdcCharacter] Intersection props:', Object.keys(intersectionAny), 'toi:', toi);
-            
+            const toi =
+              intersectionAny.toi ??
+              intersectionAny.timeOfImpact ??
+              intersectionAny.distance ??
+              intersectionAny.t ??
+              0;
+            console.log(
+              '[AdcCharacter] Intersection props:',
+              Object.keys(intersectionAny),
+              'toi:',
+              toi
+            );
+
             hits.push({
               id: enemyId,
               entity: userData.entity,
-              toi
+              toi,
             });
           }
         }
-        
+
         // Retornar TRUE obligatoriamente para que Rapier siga buscando más objetivos en la línea
         return true;
       }
     );
 
-    console.log(`[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}`);
+    console.log(
+      `[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}`
+    );
     if (hits.length > 0) {
       console.log(`[AdcCharacter] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
     }
@@ -780,25 +832,22 @@ export class AdcCharacter extends Character {
             origin.y + direction.y * hit.toi,
             origin.z + direction.z * hit.toi
           );
-          this.damagePipeline.applyDamage(
-            { id: this.id },
-            hit.entity,
-            damage,
-            {
-              position: hitPos,
-              source: 'ranged',
-              attackerId: this.id,
-              canCrit: true,
-              critChance: 0.1,
-              critMultiplier: 1.5,
-            }
-          );
+          this.damagePipeline.applyDamage(this, hit.entity, damage, {
+            position: hitPos,
+            source: 'ranged',
+            attackerId: this.id,
+            canCrit: true,
+            critChance: 0.1,
+            critMultiplier: 1.5,
+          });
         } else {
           // Fallback: aplicar daño directamente (sin pipeline)
           hit.entity.takeDamage(damage);
         }
         enemiesHit.add(hit.id);
-        console.log(`🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`);
+        console.log(
+          `🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`
+        );
 
         // Si NO hay piercing, la bala se destruye al golpear al PRIMER enemigo (el más cercano)
         if (!canPierce) {
@@ -841,7 +890,7 @@ export class AdcCharacter extends Character {
 
       const direction = new THREE.Vector3().subVectors(targetPos, spawnPos);
       direction.y = 0; // Forzar horizontalidad
-      
+
       if (direction.lengthSq() > 0.0001) {
         return direction.normalize();
       }
@@ -851,7 +900,7 @@ export class AdcCharacter extends Character {
     // Si el rayo no choca con el suelo, usamos la dirección de la cámara proyectada en 2D
     const horizonDir = raycaster.ray.direction.clone();
     horizonDir.y = 0;
-    
+
     if (horizonDir.lengthSq() > 0.0001) {
       return horizonDir.normalize();
     }
@@ -890,29 +939,29 @@ export class AdcCharacter extends Character {
   private animateProjectile(projectile: THREE.Object3D, direction: THREE.Vector3): void {
     const speed = 15; // Velocidad del proyectil
     const maxDistance = 20; // Distancia máxima antes de desaparecer
-    
+
     let distanceTraveled = 0;
     const startPosition = projectile.position.clone();
 
     // Función de animación por frame
     const animate = () => {
       if (!projectile.parent) return; // Si el proyectil fue removido
-      
+
       // Mover proyectil
       const moveDistance = speed * 0.016; // Asumiendo 60 FPS
       projectile.position.add(direction.clone().multiplyScalar(moveDistance));
       distanceTraveled = startPosition.distanceTo(projectile.position);
-      
+
       // Verificar si ha alcanzado la distancia máxima
       if (distanceTraveled >= maxDistance) {
         this.removeProjectile(projectile);
         return;
       }
-      
+
       // Continuar animación
       requestAnimationFrame(animate);
     };
-    
+
     // Iniciar animación
     animate();
   }
@@ -923,7 +972,7 @@ export class AdcCharacter extends Character {
   private removeProjectile(projectile: THREE.Object3D): void {
     if (projectile.parent) {
       this.sceneManager.remove(projectile);
-      
+
       // Si es un Group, buscar y eliminar la malla interna
       if (projectile instanceof THREE.Group && projectile.children.length > 0) {
         const mesh = projectile.children[0];
@@ -936,7 +985,7 @@ export class AdcCharacter extends Character {
         projectile.geometry.dispose();
         (projectile.material as THREE.Material).dispose();
       }
-      
+
       // Eliminar de la lista de proyectiles activos
       const index = this.activeProjectiles.indexOf(projectile);
       if (index !== -1) {
@@ -974,7 +1023,9 @@ export class AdcCharacter extends Character {
           direction.set(0, 0, -1);
         }
       }
-      console.log(`[AdcCharacter] updateProjectiles: direction (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`);
+      console.log(
+        `[AdcCharacter] updateProjectiles: direction (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
+      );
       projectile.position.add(direction.multiplyScalar(speed * dt));
 
       // Verificar colisión (placeholder)
@@ -993,7 +1044,7 @@ export class AdcCharacter extends Character {
    */
   private abilityQ(inputState?: InputState): void {
     if (!this.salvoAbility) return;
-    
+
     // Activar la habilidad de salva pasando el inputState para mouse targeting
     this.salvoAbility.activate(inputState);
   }
@@ -1003,6 +1054,40 @@ export class AdcCharacter extends Character {
    */
   isAlive(): boolean {
     return this.state !== CharacterState.Dead;
+  }
+
+  /**
+   * Contador de kills para estadísticas de fin de partida.
+   */
+  private killCount: number = 0;
+
+  /**
+   * Incrementa el contador de kills.
+   */
+  incrementKillCount(): void {
+    this.killCount++;
+  }
+
+  /**
+   * Obtiene el contador de kills actual.
+   */
+  getKillCount(): number {
+    return this.killCount;
+  }
+
+  /**
+   * Reinicia las estadísticas de la partida (para "Jugar de nuevo").
+   */
+  resetMatchStats(): void {
+    super.resetMatchStats();
+    this.killCount = 0;
+  }
+
+  /**
+   * Expone la habilidad de salva para el HUD.
+   */
+  getSalvoAbility(): SalvoAbility | null {
+    return this.salvoAbility;
   }
 
   /**
@@ -1067,14 +1152,16 @@ export class AdcCharacter extends Character {
     try {
       // Clonar el modelo del arma
       const weaponModel = SkeletonUtils.clone(weaponGltf.scene);
-      
+
       // Buscar el hueso de la mano derecha en el esqueleto del personaje
       let handBone: any = null;
       this.innerMesh!.traverse((child: any) => {
         if (child.isBone) {
           // Buscar huesos de la mano (puede variar según el modelo)
-          if (child.name.toLowerCase().includes('hand') &&
-              (child.name.toLowerCase().includes('right') || child.name.toLowerCase().includes('r_'))) {
+          if (
+            child.name.toLowerCase().includes('hand') &&
+            (child.name.toLowerCase().includes('right') || child.name.toLowerCase().includes('r_'))
+          ) {
             handBone = child;
           }
         }
@@ -1095,11 +1182,11 @@ export class AdcCharacter extends Character {
         weaponModel.position.set(0.1, 0, 0.1);
         weaponModel.rotation.set(0, Math.PI, 0);
         weaponModel.scale.set(0.8, 0.8, 0.8);
-        
+
         // Añadir el arma como hijo del hueso de la mano
         handBone.add(weaponModel);
         this.weapon = weaponModel;
-        
+
         console.log(`[AdcCharacter ${this.id}] Arma asignada a la mano: ${handBone.name}`);
       } else {
         // Si no encontramos hueso, adjuntar al modelo general
@@ -1108,7 +1195,9 @@ export class AdcCharacter extends Character {
         weaponModel.scale.set(0.8, 0.8, 0.8);
         this.innerMesh!.add(weaponModel);
         this.weapon = weaponModel;
-        console.log(`[AdcCharacter ${this.id}] Arma asignada al modelo general (no se encontró hueso de mano)`);
+        console.log(
+          `[AdcCharacter ${this.id}] Arma asignada al modelo general (no se encontró hueso de mano)`
+        );
       }
 
       // Configurar sombras y propiedades del arma
@@ -1119,9 +1208,8 @@ export class AdcCharacter extends Character {
           console.log(`[AdcCharacter ${this.id}] Mesh del arma: ${child.name}`);
         }
       });
-      
-      console.log(`[AdcCharacter ${this.id}] Arma cargada y asignada exitosamente`);
 
+      console.log(`[AdcCharacter ${this.id}] Arma cargada y asignada exitosamente`);
     } catch (error) {
       console.error(`[AdcCharacter ${this.id}] Error cargando el arma:`, error);
     }
@@ -1140,7 +1228,12 @@ export class AdcCharacter extends Character {
       this.innerMesh!.traverse((child: any) => {
         if (child.isBone) {
           const name = child.name.toLowerCase();
-          if (name.includes('spine') || name.includes('chest') || name.includes('upper') || name.includes('hips')) {
+          if (
+            name.includes('spine') ||
+            name.includes('chest') ||
+            name.includes('upper') ||
+            name.includes('hips')
+          ) {
             spineBone = child;
           }
         }
@@ -1169,7 +1262,6 @@ export class AdcCharacter extends Character {
       });
 
       this.quiver = quiverModel;
-
     } catch (error) {
       console.error(`[AdcCharacter ${this.id}] Error cargando la aljaba:`, error);
     }
@@ -1184,60 +1276,60 @@ export class AdcCharacter extends Character {
       const bowRadius = 0.8;
       const tubeRadius = 0.03;
       const bowGeometry = new THREE.TorusGeometry(bowRadius, tubeRadius, 8, 24, Math.PI); // Media circunferencia (180 grados)
-      
+
       // Cuerda del arco (línea recta entre los extremos del arco)
       const stringGeometry = new THREE.CylinderGeometry(0.01, 0.01, bowRadius * 2, 6);
-      
+
       // Empuñadura (cilindro corto en el centro)
       const gripGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.2, 8);
-      
+
       // Materiales
       const bowMaterial = new THREE.MeshStandardMaterial({
         color: 0x8b4513, // Marrón madera
         metalness: 0.1,
-        roughness: 0.9
+        roughness: 0.9,
       });
       const stringMaterial = new THREE.MeshStandardMaterial({
         color: 0xf5f5f5, // Blanco hueso
         metalness: 0.0,
         roughness: 0.5,
-        emissive: 0x111111
+        emissive: 0x111111,
       });
       const gripMaterial = new THREE.MeshStandardMaterial({
         color: 0x4e342e, // Marrón oscuro
         metalness: 0.2,
-        roughness: 0.8
+        roughness: 0.8,
       });
-      
+
       // Crear mallas
       const bow = new THREE.Mesh(bowGeometry, bowMaterial);
       const string = new THREE.Mesh(stringGeometry, stringMaterial);
       const grip = new THREE.Mesh(gripGeometry, gripMaterial);
-      
+
       // Posicionar y rotar las partes para formar un arco vertical
       // El torus por defecto está en el plano XY, lo rotamos para que esté vertical
       bow.rotation.x = Math.PI / 2; // Rotar 90 grados para que el anillo quede vertical
       bow.rotation.z = Math.PI / 2; // Rotar para que la apertura quede hacia el jugador
       bow.position.set(0, 0, 0);
-      
+
       // Cuerda: línea recta entre los extremos del arco (en el plano YZ)
       string.position.set(0, 0, 0);
       string.rotation.x = Math.PI / 2; // Horizontal
       string.rotation.z = Math.PI / 2; // Alineada con la apertura del arco
-      
+
       // Empuñadura: en el centro del arco, ligeramente desplazada
       grip.position.set(0, 0, -0.1);
       grip.rotation.x = Math.PI / 2;
-      
+
       // Crear un grupo para el arma
       const weaponGroup = new THREE.Group();
       weaponGroup.add(bow);
       weaponGroup.add(string);
       weaponGroup.add(grip);
-      
+
       // Escala general del arma (más grande)
       weaponGroup.scale.set(0.4, 0.4, 0.4);
-      
+
       // Buscar hueso de la mano derecha (o cualquier mano)
       let handBone: any = null;
       this.innerMesh!.traverse((child: any) => {
@@ -1248,12 +1340,12 @@ export class AdcCharacter extends Character {
           }
         }
       });
-      
+
       if (handBone) {
         // Ajustar posición y orientación para que se sostenga naturalmente
         weaponGroup.position.set(0.15, 0.05, 0.1);
         weaponGroup.rotation.set(-Math.PI / 6, Math.PI / 4, Math.PI / 12);
-        
+
         handBone.add(weaponGroup);
         this.weapon = weaponGroup;
         console.log(`[AdcCharacter ${this.id}] Arco curvo creado y asignado a la mano`);
@@ -1264,13 +1356,12 @@ export class AdcCharacter extends Character {
         this.weapon = weaponGroup;
         console.log(`[AdcCharacter ${this.id}] Arco curvo creado (sin hueso de mano)`);
       }
-      
+
       // Configurar sombras para todas las partes
       [bow, string, grip].forEach(part => {
         part.castShadow = true;
         part.receiveShadow = true;
       });
-      
     } catch (error) {
       console.error(`[AdcCharacter ${this.id}] Error creando arma simple:`, error);
     }

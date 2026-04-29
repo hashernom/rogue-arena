@@ -1,0 +1,411 @@
+/* ============================================================
+   MENÚ DE CONEXIÓN - Rogue Arena
+   ============================================================ */
+
+/* --- Overlay del menú principal --- */
+#menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  transition: opacity 0.5s ease;
+}
+
+#menu-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --- Contenedor del menú --- */
+.menu-container {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 48px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+}
+
+.menu-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  text-align: center;
+  margin: 0 0 8px 0;
+  background: linear-gradient(135deg, #f7971e, #ffd200);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.menu-subtitle {
+  text-align: center;
+  color: #888;
+  font-size: 0.9rem;
+  margin: 0 0 32px 0;
+  letter-spacing: 1px;
+}
+
+/* --- Botón Local (modo sin conexión) --- */
+.menu-btn.local-btn {
+  width: 100%;
+  padding: 16px;
+  border: 2px solid rgba(76, 175, 80, 0.3);
+  border-radius: 16px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05));
+  color: #4caf50;
+  margin-bottom: 4px;
+}
+
+.menu-btn.local-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(76, 175, 80, 0.2);
+  border-color: rgba(76, 175, 80, 0.6);
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.1));
+}
+
+/* --- Divisor "o" entre Local y Online --- */
+.menu-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: #555;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.menu-divider::before,
+.menu-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* --- Estado de conexión --- */
+.connection-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.connection-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #555;
+  transition: background 0.3s ease;
+}
+
+.connection-dot.connected {
+  background: #4caf50;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+}
+
+.connection-dot.disconnected {
+  background: #f44336;
+  box-shadow: 0 0 8px rgba(244, 67, 54, 0.5);
+}
+
+.connection-dot.connecting {
+  background: #ff9800;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- Pestañas: Crear / Unirse --- */
+.menu-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 4px;
+}
+
+.menu-tab {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #888;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.menu-tab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.menu-tab.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* --- Paneles de formulario --- */
+.menu-panel {
+  display: none;
+}
+
+.menu-panel.active {
+  display: block;
+}
+
+/* --- Inputs --- */
+.menu-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.menu-input:focus {
+  border-color: #f7971e;
+}
+
+.menu-input::placeholder {
+  color: #666;
+}
+
+.menu-input.code-input {
+  font-size: 1.5rem;
+  text-align: center;
+  letter-spacing: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* --- Botones --- */
+.menu-btn {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.menu-btn.primary {
+  background: linear-gradient(135deg, #f7971e, #ffd200);
+  color: #1a1a2e;
+}
+
+.menu-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(247, 151, 30, 0.3);
+}
+
+.menu-btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.menu-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.menu-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* --- Código de sala (después de crear) --- */
+.room-code-display {
+  text-align: center;
+  margin: 16px 0;
+}
+
+.room-code-display .code-label {
+  font-size: 0.8rem;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.room-code-display .code-value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: 12px;
+  color: #ffd200;
+  text-shadow: 0 0 20px rgba(255, 210, 0, 0.3);
+  font-family: 'Courier New', monospace;
+}
+
+/* --- Waiting / Lobby --- */
+.lobby-info {
+  text-align: center;
+  margin: 16px 0;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+}
+
+.lobby-info .player-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.lobby-info .player-list li {
+  padding: 8px 12px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.lobby-info .player-list li .player-name {
+  font-weight: 600;
+}
+
+.lobby-info .player-list li .player-character {
+  font-size: 0.8rem;
+  color: #ffd200;
+  padding: 2px 8px;
+  background: rgba(255, 210, 0, 0.1);
+  border-radius: 4px;
+}
+
+.lobby-info .waiting-text {
+  color: #888;
+  font-style: italic;
+  margin: 8px 0;
+}
+
+/* --- Selección de personaje --- */
+.character-select {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.character-card {
+  flex: 1;
+  padding: 20px 12px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.character-card:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.character-card.selected {
+  border-color: #f7971e;
+  background: rgba(247, 151, 30, 0.1);
+  box-shadow: 0 0 20px rgba(247, 151, 30, 0.2);
+}
+
+.character-card .char-icon {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+}
+
+.character-card .char-name {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.character-card .char-desc {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+/* --- Mensajes de error --- */
+.menu-error {
+  color: #f44336;
+  font-size: 0.85rem;
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: rgba(244, 67, 54, 0.1);
+  border-radius: 8px;
+  display: none;
+}
+
+.menu-error.visible {
+  display: block;
+}
+
+/* --- Ready check --- */
+.ready-check {
+  text-align: center;
+  margin: 16px 0;
+  padding: 20px;
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 12px;
+}
+
+.ready-check .ready-text {
+  color: #4caf50;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+/* --- Responsive --- */
+@media (max-width: 600px) {
+  .menu-container {
+    padding: 24px;
+  }
+  .menu-title {
+    font-size: 1.8rem;
+  }
+  .room-code-display .code-value {
+    font-size: 1.8rem;
+    letter-spacing: 8px;
+  }
+  .character-select {
+    flex-direction: column;
+  }
+}

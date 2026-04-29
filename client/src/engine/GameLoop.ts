@@ -53,6 +53,9 @@ export class GameLoop {
   /** Estado de ejecución */
   private isRunning = false;
 
+  /** Indica si el loop está pausado (no ejecuta fixed updates ni render) */
+  private _paused = false;
+
   /**
    * Inicia el game loop
    */
@@ -62,6 +65,7 @@ export class GameLoop {
     }
 
     this.isRunning = true;
+    this._paused = false;
     this.lastTime = performance.now();
     this.fpsCounter.lastFpsUpdate = 0; // Inicializar en 0 segundos
     this.tick(this.lastTime);
@@ -72,10 +76,39 @@ export class GameLoop {
    */
   stop(): void {
     this.isRunning = false;
+    this._paused = false;
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+  }
+
+  /**
+   * Pausa el game loop temporalmente (no ejecuta fixed updates ni render).
+   * Útil para cuando un jugador se desconecta y estamos esperando reconexión.
+   */
+  pause(): void {
+    if (!this.isRunning) return;
+    this._paused = true;
+    console.log('[GameLoop] Paused');
+  }
+
+  /**
+   * Reanuda el game loop después de una pausa.
+   */
+  resume(): void {
+    if (!this.isRunning) return;
+    this._paused = false;
+    this.lastTime = performance.now(); // Resetear lastTime para evitar deltaTime enorme
+    this.accumulator = 0;
+    console.log('[GameLoop] Resumed');
+  }
+
+  /**
+   * Indica si el loop está pausado.
+   */
+  get paused(): boolean {
+    return this._paused;
   }
 
   /**
@@ -120,6 +153,12 @@ export class GameLoop {
    */
   private tick(now: number): void {
     if (!this.isRunning) {
+      return;
+    }
+
+    // Si está pausado, seguir solicitando frames pero no ejecutar lógica
+    if (this._paused) {
+      this.animationFrameId = requestAnimationFrame(time => this.tick(time));
       return;
     }
 

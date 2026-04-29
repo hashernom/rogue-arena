@@ -84,20 +84,20 @@ export class BodyFactory {
     let colliderOffsetY: number;
     switch (enemyType) {
       case 'small':
-        radius = 0.3;
-        halfHeight = 0.3;
-        colliderOffsetY = 0.5; // Elevada para que el ADC no tenga que apuntar a los pies
+        radius = 0.45;
+        halfHeight = 0.4;
+        colliderOffsetY = 0.5;
         break;
       case 'large':
-        radius = 0.45;
-        halfHeight = 0.7;
-        colliderOffsetY = 0.9; // Elevada para que el ADC no tenga que apuntar a los pies
+        radius = 0.65;
+        halfHeight = 0.9;
+        colliderOffsetY = 0.9;
         break;
       case 'medium':
       default:
-        radius = 0.35;
-        halfHeight = 0.5;
-        colliderOffsetY = 0.7; // Elevada para que el ADC no tenga que apuntar a los pies
+        radius = 0.55;
+        halfHeight = 0.65;
+        colliderOffsetY = 0.7;
         break;
     }
 
@@ -116,7 +116,7 @@ export class BodyFactory {
     const userData: Record<string, any> = {
       type: 'enemy',
       ...(id ? { id } : {}),
-      ...(entity ? { entity } : {})
+      ...(entity ? { entity } : {}),
     };
 
     const bodyHandle = world.createBody({

@@ -6,7 +6,7 @@ import { DamageNumberSystem } from './DamageNumber';
 // Interfaz mínima para entidades que pueden recibir daño
 interface Damageable {
   id: string;
-  takeDamage(amount: number): void;
+  takeDamage(amount: number, attackerId?: string): void;
   isAlive?(): boolean;
   /** Recompensa en monedas al morir (para enemigos) */
   reward?: number;
@@ -117,7 +117,9 @@ export class DamagePipeline {
       isCrit = true;
       damageMultiplier = critMultiplier;
       (attacker as Character).nextAttackIsCrit = false; // Consumir el flag
-      console.log(`[DamagePipeline] Crítico forzado por efecto reactivo (onHit) para ${attacker.id}`);
+      console.log(
+        `[DamagePipeline] Crítico forzado por efecto reactivo (onHit) para ${attacker.id}`
+      );
     } else if (canCrit && Math.random() < critChance) {
       isCrit = true;
       damageMultiplier = critMultiplier;
@@ -135,9 +137,14 @@ export class DamagePipeline {
 
     const finalDamage = damageBeforeArmor * (100 / (100 + armor));
 
-    // 3. Aplicar daño al objetivo
+    // 3. Acumular daño infligido en el atacante (para estadísticas de fin de partida)
+    if (attacker instanceof Character) {
+      attacker.damageDealt += finalDamage;
+    }
+
+    // 4. Aplicar daño al objetivo (pasar attackerId para tracking de kills)
     const wasAlive = target.isAlive ? target.isAlive() : true;
-    target.takeDamage(finalDamage);
+    target.takeDamage(finalDamage, attackerId);
     const isNowDead = target.isAlive ? !target.isAlive() : false;
 
     // 4. Emitir eventos correspondientes
@@ -193,11 +200,7 @@ export class DamagePipeline {
   /**
    * Emite evento de muerte con reward calculado según tipo de enemigo.
    */
-  private emitDeathEvent(
-    target: Damageable,
-    position: THREE.Vector3,
-    attackerId: string
-  ): void {
+  private emitDeathEvent(target: Damageable, position: THREE.Vector3, attackerId: string): void {
     if (target instanceof Character) {
       this.eventBus.emit('player:died', { playerId: target.id });
     } else {

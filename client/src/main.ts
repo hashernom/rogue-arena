@@ -1,4 +1,5 @@
 import './style.css';
+import './menu.css';
 import * as THREE from 'three';
 import { GameLoop } from './engine/GameLoop';
 import { SceneManager } from './engine/SceneManager';
@@ -8,7 +9,7 @@ import { InputManager } from './engine/InputManager';
 import { PhysicsWorld, type RigidBodyHandle } from './physics/PhysicsWorld';
 import { DebugRenderer } from './physics/DebugRenderer';
 import { EventBus } from './engine/EventBus';
-import { Character } from './characters/Character';
+import { Character, CharacterState } from './characters/Character';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
 import { EnemyPool } from './enemies/EnemyPool';
@@ -29,6 +30,13 @@ import { Shop } from './progression/Shop';
 import { UpgradeApplier } from './progression/UpgradeApplier';
 import { PassiveEffects } from './progression/PassiveEffects';
 import type { ItemsCatalog, ItemDefinition } from '../../shared/src/types/Items';
+import type { GameStateSnapshot } from '@rogue-arena/shared';
+import { ConnectionManager } from './network/ConnectionManager';
+import { MenuUI } from './network/MenuUI';
+import { Prediction } from './network/Prediction';
+import { Interpolation } from './network/Interpolation';
+import { HUD } from './ui/HUD';
+import { GameOverScreen } from './ui/GameOverScreen';
 
 // Obtener elemento canvas existente o crear uno nuevo
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -103,6 +111,44 @@ let playerHpBars: Map<string, THREE.Sprite> = new Map();
 // Referencia al MiniBoss actual para item drop y F3
 let currentMiniBoss: MiniBoss | null = null;
 
+// HUD superpuesto al canvas
+let gameHUD: HUD | null = null;
+
+// Pantalla de Game Over
+let gameOverScreen: GameOverScreen | null = null;
+// Cleanup del listener player:died para evitar duplicados al reiniciar
+let onPlayerDiedCleanup: (() => void) | null = null;
+
+// ================================================================
+// VARIABLES DE SINCRONIZACIÓN MULTIJUGADOR
+// ================================================================
+// Indica si estamos en una partida online (vs local)
+let isOnlineMatch = false;
+// ID del jugador local (coincide con socket.id del servidor)
+let localPlayerId: string | null = null;
+// ID del jugador remoto
+let remotePlayerId: string | null = null;
+// Último snapshot recibido del servidor
+let lastSnapshot: GameStateSnapshot | null = null;
+
+// Sistema de Client-Side Prediction
+let prediction: Prediction | null = null;
+// Sistema de Interpolación de entidades remotas
+let interpolation: Interpolation | null = null;
+
+// Referencia al GameLoop (se asigna en initGameWithPhysics)
+let gameLoop: GameLoop | null = null;
+
+// ================================================================
+// VARIABLES DE DESCONEXIÓN / RECONEXIÓN
+// ================================================================
+// Overlay de desconexión (elemento DOM)
+let disconnectOverlay: HTMLElement | null = null;
+// Timer para la cuenta regresiva de reconexión
+let reconnectCountdownTimer: ReturnType<typeof setInterval> | null = null;
+// Tiempo restante para reconexión (ms)
+let reconnectTimeRemaining = 0;
+
 // Crear un plano para proyectar sombras
 const planeGeometry = new THREE.PlaneGeometry(30, 30); // Arena 30x30 metros
 const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 30 });
@@ -173,11 +219,19 @@ window.addEventListener('keydown', event => {
 
 // Función asíncrona que inicializa Rapier3D WASM y luego inicia el juego
 async function initGameWithPhysics(): Promise<void> {
+  // Limpiar TODOS los listeners residuales del EventBus para evitar
+  // duplicados al reiniciar la partida (Jugar de nuevo).
+  // Cada llamada a initGameWithPhysics registra nuevos listeners;
+  // sin este cleanup, se acumulan y causan comportamientos erráticos
+  // como Game Over prematuro o personajes duplicados.
+  eventBus.clear();
+  console.log('🧹 EventBus limpiado — listeners residuales eliminados');
+
   try {
     // Cargar catálogo de ítems desde JSON (declarativo, extensible sin modificar código)
     try {
       const response = await fetch('/assets/items.json');
-      itemCatalog = await response.json() as ItemsCatalog;
+      itemCatalog = (await response.json()) as ItemsCatalog;
       console.log(`📦 Catálogo de ítems cargado: ${itemCatalog.items.length} ítems definidos`);
     } catch (itemError) {
       console.warn('⚠️ No se pudo cargar items.json, catálogo vacío:', itemError);
@@ -216,24 +270,18 @@ async function initGameWithPhysics(): Promise<void> {
       player1BodyHandle = meleeCharacter.getPhysicsBody() ?? null;
 
       // Jugador 2: AdcCharacter (Arquero) - reemplaza el cubo rojo
-      adcCharacter = new AdcCharacter(
-        'player2',
-        eventBus,
-        sceneManager,
-        assetLoader,
-        physicsWorld
-      );
+      adcCharacter = new AdcCharacter('player2', eventBus, sceneManager, assetLoader, physicsWorld);
       // Crear cuerpo físico para el arquero en posición inicial (3, 0, 0)
       adcCharacter.createPhysicsBody(new THREE.Vector3(3, 0, 0));
       player2BodyHandle = adcCharacter.getPhysicsBody() ?? null;
 
       // Remover el cubo rojo de la escena
       sceneManager.remove(cubeP2);
-// NOTA: No sincronizamos el mesh del plano con Rapier porque:
-// 1. El collider no tiene rotación (cuboide alineado a ejes)
-// 2. El mesh tiene rotation.x = -PI/2 para verse horizontal
-// 3. syncToThree sobrescribiría la rotación visual del mesh
-// 4. Al ser static, su posición nunca cambia
+      // NOTA: No sincronizamos el mesh del plano con Rapier porque:
+      // 1. El collider no tiene rotación (cuboide alineado a ejes)
+      // 2. El mesh tiene rotation.x = -PI/2 para verse horizontal
+      // 3. syncToThree sobrescribiría la rotación visual del mesh
+      // 4. Al ser static, su posición nunca cambia
 
       // Crear DebugRenderer para visualizar colliders (solo en desarrollo)
       if (import.meta.env.DEV) {
@@ -286,7 +334,11 @@ async function initGameWithPhysics(): Promise<void> {
         return sprite;
       }
 
-      function updatePlayerHpBar(sprite: THREE.Sprite, ratio: number, position: THREE.Vector3): void {
+      function updatePlayerHpBar(
+        sprite: THREE.Sprite,
+        ratio: number,
+        position: THREE.Vector3
+      ): void {
         const spriteMaterial = sprite.material as THREE.SpriteMaterial;
         const texture = spriteMaterial.map as THREE.CanvasTexture;
         const canvas = texture.image as HTMLCanvasElement;
@@ -394,13 +446,13 @@ async function initGameWithPhysics(): Promise<void> {
 
       // Inicializar EnemyPool para gestión eficiente de instancias de enemigos
       enemyPool = new EnemyPool(eventBus, sceneManager, physicsWorld, enemyProjectilePool);
-      
+
       // Registrar tipo de enemigo básico (seek melee)
       enemyPool.registerEnemyType({
         type: EnemyType.Basic,
         stats: ENEMY_BASIC_STATS,
         initialCount: 5,
-        maxSize: 30
+        maxSize: 30,
       });
       console.log('🔴 EnemyPool inicializado con tipo basic');
 
@@ -409,7 +461,7 @@ async function initGameWithPhysics(): Promise<void> {
         type: EnemyType.Fast,
         stats: ENEMY_FAST_STATS,
         initialCount: 3,
-        maxSize: 20
+        maxSize: 20,
       });
       console.log('🔵 EnemyPool inicializado con tipo fast');
 
@@ -418,7 +470,7 @@ async function initGameWithPhysics(): Promise<void> {
         type: EnemyType.Tank,
         stats: ENEMY_TANK_STATS,
         initialCount: 2,
-        maxSize: 10
+        maxSize: 10,
       });
       console.log('🟤 EnemyPool inicializado con tipo tank');
 
@@ -427,7 +479,7 @@ async function initGameWithPhysics(): Promise<void> {
         type: EnemyType.Ranged,
         stats: ENEMY_RANGED_STATS,
         initialCount: 3,
-        maxSize: 15
+        maxSize: 15,
       });
       console.log('🔴 EnemyPool inicializado con tipo ranged');
 
@@ -436,9 +488,15 @@ async function initGameWithPhysics(): Promise<void> {
         type: EnemyType.MiniBoss,
         stats: MINIBOSS_STATS,
         initialCount: 1,
-        maxSize: 3
+        maxSize: 3,
       });
       console.log('🟣 EnemyPool inicializado con tipo mini_boss');
+
+      // Vincular EnemyPool a los personajes para detección de proximidad en habilidades
+      if (enemyPool && meleeCharacter) {
+        meleeCharacter.setGetActiveEnemies(() => enemyPool!.getAllActiveEnemies());
+        console.log('⚔️ MeleeCharacter vinculado a EnemyPool para ChargeAbility');
+      }
 
       // ================================================================
       // SISTEMA DE ECONOMÍA (MoneySystem)
@@ -525,20 +583,162 @@ async function initGameWithPhysics(): Promise<void> {
       });
 
       // ================================================================
-      // LIMPIEZA DE EFECTOS REACTIVOS EN GAME OVER
+      // GAME OVER — DETECCIÓN DE MUERTE EN MODO LOCAL
       // ================================================================
-      // Cuando un jugador muere, limpiar todos los efectos reactivos
-      // para evitar memory leaks en la próxima partida
-      eventBus.on('player:died', () => {
+      // NOTA: `player:died` se emite DOS VECES por cada muerte:
+      //   1. DamagePipeline.emitDeathEvent() (línea 204)
+      //   2. Character.die() (línea 250)
+      // Por eso NO podemos usar un contador — en su lugar, verificamos
+      // directamente si AMBOS personajes están muertos consultando su estado.
+      if (onPlayerDiedCleanup) {
+        onPlayerDiedCleanup();
+        onPlayerDiedCleanup = null;
+      }
+
+      onPlayerDiedCleanup = eventBus.on('player:died', () => {
+        console.log(`💀 Jugador muerto — verificando estado de ambos personajes...`);
+
+        // Limpiar efectos reactivos
         if (passiveEffects) {
           passiveEffects.unregisterAll();
           console.log('🧹 Efectos reactivos limpiados por muerte de jugador');
+        }
+
+        // Verificar si AMBOS personajes están muertos consultando su estado directamente
+        const meleeDead = meleeCharacter?.getState() === CharacterState.Dead;
+        const adcDead = adcCharacter?.getState() === CharacterState.Dead;
+
+        console.log(`📊 Estado: Melee=${meleeDead ? '💀' : '👍'}, ADC=${adcDead ? '💀' : '👍'}`);
+
+        // En modo local, solo mostrar Game Over si ambos están muertos
+        if (!isOnlineMatch && meleeDead && adcDead) {
+          const rounds = waveManager?.getCurrentRound() ?? 0;
+          console.log(`🎮 Game Over — ambos jugadores muertos en ronda ${rounds}`);
+          eventBus.emit('game:over', { rounds });
+        }
+      });
+
+      // ================================================================
+      // TRACKING DE KILLS — Incrementar kill count según quién mató
+      // ================================================================
+      eventBus.on('enemy:died', (data: { attackerId?: string }) => {
+        if (!isOnlineMatch) {
+          // Usar el attackerId del evento para dar crédito al jugador correcto
+          if (data.attackerId === 'player1' && meleeCharacter) {
+            meleeCharacter.incrementKillCount();
+          } else if (data.attackerId === 'player2' && adcCharacter) {
+            adcCharacter.incrementKillCount();
+          } else {
+            // Fallback: si no hay attackerId, incrementar ambos (compatibilidad)
+            if (meleeCharacter) meleeCharacter.incrementKillCount();
+            if (adcCharacter) adcCharacter.incrementKillCount();
+          }
         }
       });
 
       // Iniciar el juego con oleadas (ronda 1 automáticamente)
       waveManager.startGame();
       console.log('🌊 WaveManager + Spawner iniciados con sistema de oleadas');
+
+      // Inicializar HUD superpuesto
+      gameHUD = new HUD(eventBus);
+      gameHUD.setCharacters(meleeCharacter, adcCharacter, waveManager, moneySystem);
+      console.log('🖥️ HUD de juego inicializado');
+
+      // Inicializar pantalla de Game Over
+      gameOverScreen = new GameOverScreen(eventBus, {
+        onPlayAgain: () => {
+          console.log('[Main] Jugar de nuevo — reiniciando estado...');
+
+          // 1. Detener el game loop
+          if (gameLoop) {
+            gameLoop.stop();
+          }
+
+          // 2. Limpiar enemigos
+          if (enemyPool) {
+            enemyPool.releaseAll();
+          }
+
+          // 3. Limpiar proyectiles enemigos
+          if (enemyProjectilePool) {
+            enemyProjectilePool.releaseAll();
+          }
+
+          // 4. Reiniciar WaveManager
+          if (waveManager) {
+            waveManager.reset();
+          }
+
+          // 5. Reiniciar MoneySystem
+          if (moneySystem) {
+            moneySystem.reset();
+          }
+
+          // 6. Reiniciar estadísticas de personajes
+          if (meleeCharacter) {
+            meleeCharacter.resetMatchStats();
+          }
+          if (adcCharacter) {
+            adcCharacter.resetMatchStats();
+          }
+
+          // 7. Limpiar tienda
+          if (shop) {
+            shop.clearOffers();
+          }
+
+          // 8. Limpiar efectos reactivos
+          if (passiveEffects) {
+            passiveEffects.unregisterAll();
+          }
+
+          // 9. Limpiar HUD
+          if (gameHUD) {
+            gameHUD.dispose();
+            gameHUD = null;
+          }
+
+          // 10. Limpiar GameOverScreen
+          if (gameOverScreen) {
+            gameOverScreen.dispose();
+            gameOverScreen = null;
+          }
+
+          // 11. Remover HP bars de jugadores
+          playerHpBars.forEach(sprite => {
+            sceneManager.remove(sprite);
+          });
+          playerHpBars.clear();
+
+          // 12. Ocultar between-round HUD
+          const betweenRoundEl = document.getElementById('between-round-hud');
+          if (betweenRoundEl) {
+            betweenRoundEl.remove();
+          }
+
+          // 13. Reiniciar variables de sincronización
+          isOnlineMatch = false;
+          localPlayerId = null;
+          remotePlayerId = null;
+          lastSnapshot = null;
+          prediction = null;
+          interpolation = null;
+
+          // 14. Mostrar el menú principal
+          menuUI.showMenu();
+
+          console.log('[Main] Estado reiniciado — menú principal visible');
+        },
+      });
+      gameOverScreen.setReferences(
+        meleeCharacter,
+        adcCharacter,
+        waveManager,
+        moneySystem,
+        enemyPool
+      );
+      console.log('🖥️ GameOverScreen inicializado');
     }
   } catch (error) {
     console.error('❌ Error al inicializar Rapier3D:', error);
@@ -547,11 +747,11 @@ async function initGameWithPhysics(): Promise<void> {
   }
 
   // Crear Game Loop con Fixed Timestep
-  const gameLoop = new GameLoop();
+  gameLoop = new GameLoop();
 
   // Fixed Update: física a 60Hz
   let meleeDebugKeyPressed = false; // Para debounce de tecla 'M'
-  
+
   gameLoop.setFixedUpdate((dt: number) => {
     // Actualizar estado de input (una vez por tick)
     inputManager.update();
@@ -560,14 +760,84 @@ async function initGameWithPhysics(): Promise<void> {
     const p1State = inputManager.getState(1);
     const p2State = inputManager.getState(2);
 
-    // Actualizar MeleeCharacter (Player 1) con input
-    if (meleeCharacter) {
-      meleeCharacter.update(dt, p1State);
-    }
+    if (isOnlineMatch && localPlayerId && remotePlayerId) {
+      // ============================================================
+      // MODO ONLINE: Client-Side Prediction + Server Reconciliation
+      // ============================================================
 
-    // Actualizar AdcCharacter (Player 2) con input
-    if (adcCharacter) {
-      adcCharacter.update(dt, p2State);
+      // Determinar qué personaje es local según el último snapshot
+      const localSnapshotPlayer = lastSnapshot?.players.find(p => p.id === localPlayerId);
+      const localCharacterType = localSnapshotPlayer?.name; // 'melee' o 'adc'
+
+      // Actualizar el personaje LOCAL con input (aplicación local inmediata)
+      if (localCharacterType === 'melee' || !localCharacterType) {
+        if (meleeCharacter) {
+          meleeCharacter.update(dt, p1State);
+        }
+      } else {
+        if (adcCharacter) {
+          adcCharacter.update(dt, p2State);
+        }
+      }
+
+      // Enviar input al servidor con Client-Side Prediction
+      if (prediction) {
+        const seq = prediction.nextSeq();
+        const localChar = localCharacterType === 'melee' ? meleeCharacter : adcCharacter;
+        if (localChar && localChar.isAlive()) {
+          const pos = localChar.getPosition();
+          if (pos) {
+            // Enviar al servidor
+            connectionManager.sendPlayerMove({ x: pos.x, y: pos.y, z: pos.z }, 0, seq);
+
+            // Almacenar en el historial de predicción
+            // Usamos la dirección de input actual como moveDir
+            const inputDir =
+              localCharacterType === 'melee' || !localCharacterType
+                ? p1State.moveDir
+                : p2State.moveDir;
+            prediction.storeInput(seq, inputDir, pos.clone());
+          }
+        }
+      }
+
+      // Aplicar estado del jugador REMOTO usando Entity Interpolation (render delay 100ms)
+      if (interpolation && remotePlayerId) {
+        const remoteState = interpolation.getPlayerState(remotePlayerId);
+        if (remoteState && remoteState.alive) {
+          const remoteChar = localCharacterType === 'melee' ? adcCharacter : meleeCharacter;
+          if (remoteChar && physicsWorld) {
+            const remoteBodyHandle = remoteChar.getPhysicsBody();
+            if (remoteBodyHandle !== undefined) {
+              const remoteBody = physicsWorld.getBody(remoteBodyHandle);
+              if (remoteBody) {
+                remoteBody.setTranslation(
+                  {
+                    x: remoteState.position.x,
+                    y: remoteState.position.y,
+                    z: remoteState.position.z,
+                  },
+                  true
+                );
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // ============================================================
+      // MODO LOCAL: Ambos personajes se controlan con input directo
+      // ============================================================
+
+      // Actualizar MeleeCharacter (Player 1) con input
+      if (meleeCharacter) {
+        meleeCharacter.update(dt, p1State);
+      }
+
+      // Actualizar AdcCharacter (Player 2) con input
+      if (adcCharacter) {
+        adcCharacter.update(dt, p2State);
+      }
     }
 
     // Construir array de jugadores para IA de enemigos
@@ -691,10 +961,13 @@ async function initGameWithPhysics(): Promise<void> {
     // para que las overlap queries usen posiciones actualizadas.
     // También pasar los players como targets para distance check directo.
     if (enemyProjectilePool) {
-      enemyProjectilePool.update(dt, players.map(p => ({
-        entity: p,
-        getPosition: () => p.getPosition(),
-      })));
+      enemyProjectilePool.update(
+        dt,
+        players.map(p => ({
+          entity: p,
+          getPosition: () => p.getPosition(),
+        }))
+      );
     }
 
     // Sincronizar modelos DESPUÉS del step (mismo frame que el debug)
@@ -738,12 +1011,14 @@ async function initGameWithPhysics(): Promise<void> {
         // Solo activar una vez por presión (debounce simple)
         if (!meleeDebugKeyPressed) {
           meleeDebugKeyPressed = true;
-          
+
           if (meleeCharacter) {
             const meleeAttack = meleeCharacter.getMeleeAttack();
             if (meleeAttack) {
               const newState = meleeAttack.toggleDebugVisible();
-              console.log(`🔧 Debug mesh del ataque melee: ${newState ? 'ACTIVADO' : 'DESACTIVADO'}`);
+              console.log(
+                `🔧 Debug mesh del ataque melee: ${newState ? 'ACTIVADO' : 'DESACTIVADO'}`
+              );
             }
           }
         }
@@ -762,6 +1037,11 @@ async function initGameWithPhysics(): Promise<void> {
     // Actualizar barra superior de monedas (siempre visible)
     updateTopBar();
 
+    // Actualizar HUD superpuesto (HP bars, cooldowns, contadores)
+    if (gameHUD) {
+      gameHUD.update();
+    }
+
     // Mostrar HUD de entre-roundas (timer + ready-up + tienda)
     if (waveManager) {
       displayBetweenRoundHud(waveManager);
@@ -771,7 +1051,7 @@ async function initGameWithPhysics(): Promise<void> {
     updatePickupPrompt();
 
     // Mostrar FPS en modo desarrollo
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && gameLoop) {
       displayFps(gameLoop.fps);
     }
   });
@@ -791,8 +1071,164 @@ async function initGameWithPhysics(): Promise<void> {
   }
 }
 
-// Llamar a la inicialización asíncrona (ignoramos la promesa intencionalmente)
-void initGameWithPhysics();
+// ================================================================
+// SISTEMA DE CONEXIÓN MULTIJUGADOR (Menú + Socket.io)
+// ================================================================
+// El juego ahora espera a que el usuario cree/una sala y ambos
+// jugadores estén listos antes de inicializar la partida.
+
+let gameStarted = false;
+
+// Crear ConnectionManager con callbacks que actualizan la UI
+const connectionManager = new ConnectionManager(
+  // Por defecto se conecta a localhost:3001.
+  // Para jugar en LAN, cambiar esta URL a la IP local del servidor.
+  // Ej: 'http://192.168.1.100:3001'
+  'http://localhost:3001',
+  {
+    onStatusChange: status => {
+      menuUI.updateConnectionStatus(status);
+    },
+    onRoomCreated: data => {
+      console.log(`[Main] Sala creada: ${data.code}`);
+    },
+    onRoomPlayers: data => {
+      menuUI.updatePlayers(data.players);
+    },
+    onRoomReady: data => {
+      console.log(`[Main] Sala lista: ${data.code}`);
+      menuUI.updatePlayers(data.players);
+    },
+    onRoomClosed: data => {
+      console.log(`[Main] Sala cerrada: ${data.reason}`);
+      menuUI.backToMainMenu();
+    },
+    onPlayerLeft: data => {
+      menuUI.updatePlayers(data.players);
+    },
+    onCharacterSelected: data => {
+      menuUI.updatePlayers(data.players);
+    },
+    onCharactersReady: data => {
+      console.log(`[Main] Personajes listos: ${data.message}`);
+      menuUI.updatePlayers(data.players);
+      menuUI.showReadyCheck();
+    },
+    onGameStarted: data => {
+      console.log(`[Main] ¡Juego iniciado en sala ${data.code}!`);
+      menuUI.hideMenu();
+      gameStarted = true;
+      isOnlineMatch = true;
+
+      // Inicializar sistemas de sincronización
+      prediction = new Prediction();
+      interpolation = new Interpolation();
+
+      // Determinar qué personaje es local y cuál remoto
+      const myId = connectionManager.getSocketId();
+      if (myId) {
+        localPlayerId = myId;
+        // El remoto es el otro jugador en la sala
+        const remotePlayer = data.players.find(p => p.id !== myId);
+        if (remotePlayer) {
+          remotePlayerId = remotePlayer.id;
+        }
+        console.log(`[Sync] Local: ${localPlayerId}, Remoto: ${remotePlayerId}`);
+      }
+
+      // Iniciar el juego real (Three.js, Rapier, etc.)
+      void initGameWithPhysics();
+    },
+    onGameState: snapshot => {
+      // Guardar el último snapshot para procesarlo en el fixed update
+      lastSnapshot = snapshot;
+
+      // Alimentar el buffer de interpolación para entidades remotas
+      if (interpolation) {
+        interpolation.pushSnapshot(snapshot);
+      }
+
+      // Ejecutar Server Reconciliation para el jugador local
+      if (prediction && localPlayerId) {
+        const localSnapshot = snapshot.players.find(p => p.id === localPlayerId);
+        if (localSnapshot) {
+          // Determinar qué personaje es el local
+          const localCharacterType = localSnapshot.name; // 'melee' o 'adc'
+          const localChar = localCharacterType === 'melee' ? meleeCharacter : adcCharacter;
+          if (localChar) {
+            const currentPos = localChar.getPosition();
+            if (currentPos) {
+              const correctedPos = prediction.reconcile(localSnapshot, currentPos);
+              if (correctedPos && physicsWorld) {
+                const bodyHandle = localChar.getPhysicsBody();
+                if (bodyHandle !== undefined) {
+                  const body = physicsWorld.getBody(bodyHandle);
+                  if (body) {
+                    body.setTranslation(
+                      { x: correctedPos.x, y: correctedPos.y, z: correctedPos.z },
+                      true
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    // --- Desconexión / Reconexión ---
+    onPlayerDisconnected: data => {
+      console.log(`[Main] Jugador desconectado: ${data.playerName}`);
+      showNotification(data.message, 'error');
+      // Pausar el game loop local
+      if (gameLoop) {
+        gameLoop.pause();
+      }
+      // Mostrar overlay de reconexión con cuenta regresiva
+      showDisconnectOverlay(data.message, data.reconnectTimeoutMs);
+    },
+    onPlayerReconnected: data => {
+      console.log(`[Main] Jugador reconectado: ${data.playerName}`);
+      showNotification(data.message, 'success');
+      // Ocultar overlay de desconexión
+      hideDisconnectOverlay();
+      // Reanudar el game loop local
+      if (gameLoop) {
+        gameLoop.resume();
+      }
+    },
+    onGameOver: data => {
+      console.log(`[Main] Partida terminada: ${data.reason}`);
+      showNotification(data.message, 'error');
+      hideDisconnectOverlay();
+      // Detener el game loop
+      if (gameLoop) {
+        gameLoop.stop();
+      }
+      // Mostrar GameOverScreen con las rondas actuales
+      const rounds = waveManager?.getCurrentRound() ?? 0;
+      if (gameOverScreen) {
+        gameOverScreen.show(rounds);
+      }
+    },
+    onError: error => {
+      console.error(`[Main] Error: ${error}`);
+    },
+  }
+);
+
+// Crear la UI del menú y pasarle el ConnectionManager
+const menuUI = new MenuUI(connectionManager, {
+  onLocalPlay: () => {
+    console.log('[Main] Modo local seleccionado — iniciando juego sin servidor');
+    gameStarted = true;
+    void initGameWithPhysics();
+  },
+});
+
+// Conectar automáticamente al servidor al cargar la página
+console.log('[Main] Conectando al servidor...');
+connectionManager.connect();
 
 // Manejo de redimensionado: actualizar CameraController y SceneManager
 window.addEventListener('resize', () => {
@@ -906,7 +1342,8 @@ function updatePickupPrompt(): void {
         const dx = pos.x - itemPos.x;
         const dz = pos.z - itemPos.z;
         const distSq = dx * dx + dz * dz;
-        if (distSq <= 1.5 * 1.5) { // ITEM_PICKUP_RADIUS
+        if (distSq <= 1.5 * 1.5) {
+          // ITEM_PICKUP_RADIUS
           showPrompt = true;
           closestPlayerLabel = p.label;
           break;
@@ -1062,7 +1499,9 @@ function executePurchase(playerId: string, itemIndex: number): void {
     return;
   }
   const items = shop.getOfferItems(playerId);
-  console.log(`[Shop] ${playerId} intenta comprar item[${itemIndex}], items disponibles: ${items.length}`);
+  console.log(
+    `[Shop] ${playerId} intenta comprar item[${itemIndex}], items disponibles: ${items.length}`
+  );
   if (items.length <= itemIndex) {
     console.log(`[Shop] ${playerId} no hay item en índice ${itemIndex}`);
     showNotification(`No hay oferta disponible`, 'error');
@@ -1122,7 +1561,12 @@ window.buyItem = executePurchase;
 /**
  * Renderiza las tarjetas de ítems de la tienda para un jugador.
  */
-function renderShopItems(playerId: string, label: string, items: ItemDefinition[], balance: number): string {
+function renderShopItems(
+  playerId: string,
+  label: string,
+  items: ItemDefinition[],
+  balance: number
+): string {
   if (items.length === 0) {
     return `
       <div class="shop-panel-empty" style="
@@ -1136,8 +1580,8 @@ function renderShopItems(playerId: string, label: string, items: ItemDefinition[
   }
 
   const keyHints: Record<string, string[]> = {
-    'player1': ['1', '2', '3'],
-    'player2': ['J', 'K', 'L'],
+    player1: ['1', '2', '3'],
+    player2: ['J', 'K', 'L'],
   };
   const keys = keyHints[playerId] || ['?', '?', '?'];
 
@@ -1311,7 +1755,12 @@ function displayBetweenRoundHud(wm: WaveManager): void {
     const p2Items = shop?.getOfferItems('player2') ?? [];
     const p1Balance = moneySystem?.getBalance('player1') ?? 0;
     const p2Balance = moneySystem?.getBalance('player2') ?? 0;
-    const offerKey = JSON.stringify({ p1: p1Items.map(i => i.id), p2: p2Items.map(i => i.id), p1b: p1Balance, p2b: p2Balance });
+    const offerKey = JSON.stringify({
+      p1: p1Items.map(i => i.id),
+      p2: p2Items.map(i => i.id),
+      p1b: p1Balance,
+      p2b: p2Balance,
+    });
 
     if (offerKey !== lastShopOffer) {
       lastShopOffer = offerKey;
@@ -1429,6 +1878,172 @@ if (import.meta.hot) {
       console.log(`[Ready] Player ${playerIndex + 1} listo (click)`);
     }
   };
+}
+
+// =================================================================
+// OVERLAY DE DESCONEXIÓN / RECONEXIÓN
+// =================================================================
+
+/**
+ * Muestra un overlay de desconexión con cuenta regresiva.
+ * El jugador reconectado automáticamente intentará reconectarse.
+ */
+function showDisconnectOverlay(message: string, timeoutMs: number): void {
+  // Ocultar overlay existente si lo hay
+  hideDisconnectOverlay();
+
+  // Crear overlay
+  disconnectOverlay = document.createElement('div');
+  disconnectOverlay.id = 'disconnect-overlay';
+  Object.assign(disconnectOverlay.style, {
+    position: 'fixed',
+    top: '0',
+    left: '0',
+    right: '0',
+    bottom: '0',
+    background: 'rgba(0, 0, 0, 0.85)',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: '2147483646',
+    fontFamily: 'monospace',
+    color: '#fff',
+  });
+
+  // Título
+  const title = document.createElement('h2');
+  title.textContent = '🔌 Jugador Desconectado';
+  Object.assign(title.style, {
+    fontSize: '28px',
+    marginBottom: '16px',
+    color: '#ff4444',
+    textShadow: '0 0 20px rgba(255,68,68,0.5)',
+  });
+
+  // Mensaje
+  const msgEl = document.createElement('p');
+  msgEl.textContent = message;
+  Object.assign(msgEl.style, {
+    fontSize: '18px',
+    marginBottom: '24px',
+    opacity: '0.8',
+  });
+
+  // Cuenta regresiva
+  const countdownEl = document.createElement('div');
+  countdownEl.id = 'reconnect-countdown';
+  reconnectTimeRemaining = timeoutMs;
+  updateCountdownDisplay(countdownEl);
+  Object.assign(countdownEl.style, {
+    fontSize: '48px',
+    fontWeight: 'bold',
+    color: '#ffaa00',
+    marginBottom: '16px',
+    textShadow: '0 0 30px rgba(255,170,0,0.5)',
+  });
+
+  // Texto de estado
+  const statusEl = document.createElement('p');
+  statusEl.textContent = 'Intentando reconectar automáticamente...';
+  Object.assign(statusEl.style, {
+    fontSize: '14px',
+    opacity: '0.6',
+    marginBottom: '24px',
+  });
+
+  // Botón de reconexión manual
+  const reconnectBtn = document.createElement('button');
+  reconnectBtn.textContent = '🔄 Reconectar Ahora';
+  Object.assign(reconnectBtn.style, {
+    padding: '12px 32px',
+    fontSize: '16px',
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+    background: 'linear-gradient(135deg, #ffaa00, #ff6600)',
+    color: '#000',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    boxShadow: '0 4px 20px rgba(255,170,0,0.4)',
+  });
+  reconnectBtn.addEventListener('click', () => {
+    attemptReconnect();
+  });
+
+  disconnectOverlay.appendChild(title);
+  disconnectOverlay.appendChild(msgEl);
+  disconnectOverlay.appendChild(countdownEl);
+  disconnectOverlay.appendChild(statusEl);
+  disconnectOverlay.appendChild(reconnectBtn);
+  document.body.appendChild(disconnectOverlay);
+
+  // Iniciar cuenta regresiva
+  if (reconnectCountdownTimer) {
+    clearInterval(reconnectCountdownTimer);
+  }
+  reconnectCountdownTimer = setInterval(() => {
+    reconnectTimeRemaining -= 1000;
+    if (reconnectTimeRemaining <= 0) {
+      clearInterval(reconnectCountdownTimer!);
+      reconnectCountdownTimer = null;
+      countdownEl.textContent = '00:00';
+      statusEl.textContent = 'Tiempo de reconexión expirado';
+      reconnectBtn.textContent = '❌ Partida Finalizada';
+      reconnectBtn.style.background = 'linear-gradient(135deg, #666, #444)';
+      reconnectBtn.style.cursor = 'not-allowed';
+      reconnectBtn.style.pointerEvents = 'none';
+    } else {
+      updateCountdownDisplay(countdownEl);
+    }
+  }, 1000);
+
+  // Intentar reconexión automática inmediatamente
+  attemptReconnect();
+}
+
+/**
+ * Actualiza el texto de la cuenta regresiva.
+ */
+function updateCountdownDisplay(el: HTMLElement): void {
+  const totalSec = Math.max(0, Math.ceil(reconnectTimeRemaining / 1000));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  el.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Intenta reconectar al servidor usando el token de sesión.
+ */
+function attemptReconnect(): void {
+  console.log('[Main] Intentando reconexión...');
+  connectionManager.reconnect().then(result => {
+    if (result.success) {
+      console.log(`[Main] Reconexión exitosa: ${result.playerId}`);
+      showNotification('✅ Reconectado exitosamente', 'success');
+      hideDisconnectOverlay();
+      if (gameLoop) {
+        gameLoop.resume();
+      }
+    } else {
+      console.log(`[Main] Reconexión fallida: ${result.error}`);
+      // No mostrar error aquí, el countdown sigue corriendo
+    }
+  });
+}
+
+/**
+ * Oculta el overlay de desconexión.
+ */
+function hideDisconnectOverlay(): void {
+  if (reconnectCountdownTimer) {
+    clearInterval(reconnectCountdownTimer);
+    reconnectCountdownTimer = null;
+  }
+  if (disconnectOverlay) {
+    disconnectOverlay.remove();
+    disconnectOverlay = null;
+  }
 }
 
 // Tipos globales para HMR y funciones del juego

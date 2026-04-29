@@ -82,7 +82,7 @@ export const SKELETON_MINION_STATS: EnemyStats = {
 /**
  * Enemigo con modelo 3D de esqueleto, animaciones, hitboxes funcionales
  * y sistema de ciclo de vida (spawn, pool, muerte).
- * 
+ *
  * Originalmente TestEnemy, ahora es la clase Enemy definitiva que
  * reemplaza tanto al TestEnemy original (cubos) como al SkeletonEnemy.
  */
@@ -132,7 +132,7 @@ export abstract class Enemy extends Character {
           Enemy.assetLoader.load('/models/enemies/Skeleton_Minion.glb'),
           Enemy.assetLoader.load('/models/Rig_Medium_General.glb'),
           Enemy.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
-          Enemy.assetLoader.load('/models/Rig_Medium_CombatMelee.glb')
+          Enemy.assetLoader.load('/models/Rig_Medium_CombatMelee.glb'),
         ]);
 
         const skeletonGltf = assets[0] as GLTF;
@@ -146,13 +146,16 @@ export abstract class Enemy extends Character {
         Enemy.modelAnimations = [
           ...(generalGltf.animations || []),
           ...(movementGltf.animations || []),
-          ...(combatGltf.animations || [])
+          ...(combatGltf.animations || []),
         ];
 
         if (Enemy.modelAnimations.length === 0) {
           console.error('⚠️ LOS RIGS NO TIENEN ANIMACIONES. Revisa los archivos Rig.');
         } else {
-          console.log(`[Enemy] Cargadas ${Enemy.modelAnimations.length} animaciones desde los Rigs:`, Enemy.modelAnimations.map(a => a.name));
+          console.log(
+            `[Enemy] Cargadas ${Enemy.modelAnimations.length} animaciones desde los Rigs:`,
+            Enemy.modelAnimations.map(a => a.name)
+          );
         }
 
         model.scale.set(1.0, 1.0, 1.0);
@@ -289,7 +292,7 @@ export abstract class Enemy extends Character {
     this.spawnStartTime = Date.now();
 
     // Crear promesa que resuelve cuando el modelo termine de cargar
-    this.readyPromise = new Promise((resolve) => {
+    this.readyPromise = new Promise(resolve => {
       this.resolveReady = resolve;
     });
 
@@ -333,7 +336,7 @@ export abstract class Enemy extends Character {
           Enemy.assetLoader.load('/models/enemies/Skeleton_Minion.glb'),
           Enemy.assetLoader.load('/models/Rig_Medium_General.glb'),
           Enemy.assetLoader.load('/models/Rig_Medium_MovementBasic.glb'),
-          Enemy.assetLoader.load('/models/Rig_Medium_CombatMelee.glb')
+          Enemy.assetLoader.load('/models/Rig_Medium_CombatMelee.glb'),
         ]);
 
         const skeletonGltf = assets[0] as GLTF;
@@ -347,13 +350,16 @@ export abstract class Enemy extends Character {
         Enemy.modelAnimations = [
           ...(generalGltf.animations || []),
           ...(movementGltf.animations || []),
-          ...(combatGltf.animations || [])
+          ...(combatGltf.animations || []),
         ];
 
         if (Enemy.modelAnimations.length === 0) {
           console.error('⚠️ LOS RIGS NO TIENEN ANIMACIONES. Revisa los archivos Rig.');
         } else {
-          console.log(`[Enemy] Cargadas ${Enemy.modelAnimations.length} animaciones desde los Rigs:`, Enemy.modelAnimations.map(a => a.name));
+          console.log(
+            `[Enemy] Cargadas ${Enemy.modelAnimations.length} animaciones desde los Rigs:`,
+            Enemy.modelAnimations.map(a => a.name)
+          );
         }
 
         // 3. Ajustar escala y orientación UNA SOLA VEZ en la escena original
@@ -406,7 +412,7 @@ export abstract class Enemy extends Character {
     this.model.add(clonedScene);
 
     // 3. Configurar Frustum Culling + sombras + clonar materiales
-    clonedScene.traverse((child) => {
+    clonedScene.traverse(child => {
       if (child instanceof THREE.Mesh) {
         child.frustumCulled = false;
         child.castShadow = true;
@@ -448,17 +454,19 @@ export abstract class Enemy extends Character {
 
       // DEBUG: Loggear detalles de cada clip de animación
       Enemy.modelAnimations.forEach((anim, i) => {
-        console.log(`[Enemy ${this.id}] Anim[${i}]: name="${anim.name}", duration=${anim.duration}s, tracks=${anim.tracks.length}, blendMode=${anim.blendMode}`);
+        console.log(
+          `[Enemy ${this.id}] Anim[${i}]: name="${anim.name}", duration=${anim.duration}s, tracks=${anim.tracks.length}, blendMode=${anim.blendMode}`
+        );
         anim.tracks.forEach((track, j) => {
           const t = track as any;
-          console.log(`  track[${j}]: path="${t.path}", type=${track.constructor.name}, times=${track.times.length}, values=${track.values.length}`);
+          console.log(
+            `  track[${j}]: path="${t.path}", type=${track.constructor.name}, times=${track.times.length}, values=${track.values.length}`
+          );
         });
       });
 
       // Buscar animación idle por nombre (case-insensitive)
-      const idleClip = Enemy.modelAnimations.find(a =>
-        a.name.toLowerCase().includes('idle')
-      );
+      const idleClip = Enemy.modelAnimations.find(a => a.name.toLowerCase().includes('idle'));
       if (idleClip) {
         const idleAction = this.mixer.clipAction(idleClip);
         idleAction.reset();
@@ -468,7 +476,10 @@ export abstract class Enemy extends Character {
         this.currentAnimation = idleAction;
         console.log(`[Enemy ${this.id}] Reproduciendo idle: "${idleClip.name}"`);
       } else {
-        console.warn(`[Enemy ${this.id}] No se encontró animación idle. Nombres:`, Enemy.modelAnimations.map(a => a.name));
+        console.warn(
+          `[Enemy ${this.id}] No se encontró animación idle. Nombres:`,
+          Enemy.modelAnimations.map(a => a.name)
+        );
         if (this.animations.length > 0) {
           const firstAction = this.animations[0];
           firstAction.reset().play();
@@ -493,7 +504,9 @@ export abstract class Enemy extends Character {
     // 10. Resolver la promesa readyPromise
     this.resolveReady?.();
 
-    console.log(`[Enemy ${this.id}] Modelo configurado en (${this.targetPosition.x}, ${this.targetPosition.y}, ${this.targetPosition.z})`);
+    console.log(
+      `[Enemy ${this.id}] Modelo configurado en (${this.targetPosition.x}, ${this.targetPosition.y}, ${this.targetPosition.z})`
+    );
   }
 
   // =================================================================
@@ -668,7 +681,7 @@ export abstract class Enemy extends Character {
   /**
    * Aplica daño al enemigo con feedback visual
    */
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, attackerId?: string): void {
     // Solo puede recibir daño si está activo
     if (this.enemyState !== EnemyState.Active) return;
 
@@ -691,7 +704,7 @@ export abstract class Enemy extends Character {
     this.eventBus.emit('enemy:damage', {
       enemyId: this.id,
       damage: amount,
-      attackerId: 'player',
+      attackerId: attackerId ?? 'player',
       position: { x: position.x, y: position.y, z: position.z } as THREE.Vector3,
     });
 
@@ -701,6 +714,7 @@ export abstract class Enemy extends Character {
         enemyId: this.id,
         position: { x: position.x, y: position.y, z: position.z } as THREE.Vector3,
         reward: this.reward,
+        attackerId,
       });
 
       this.die();
@@ -960,10 +974,10 @@ export abstract class Enemy extends Character {
   protected storeOriginalColor(): void {
     if (!this.model || this.originalModelColor.size > 0) return;
 
-    this.model.traverse((child) => {
+    this.model.traverse(child => {
       if (child instanceof THREE.Mesh && child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((mat) => {
+        materials.forEach(mat => {
           if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
             if (mat.color) {
               this.originalModelColor.set(child, mat.color.clone());
@@ -980,10 +994,10 @@ export abstract class Enemy extends Character {
   protected applyColorToMeshes(color: THREE.Color): void {
     if (!this.model) return;
 
-    this.model.traverse((child) => {
+    this.model.traverse(child => {
       if (child instanceof THREE.Mesh && child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((mat) => {
+        materials.forEach(mat => {
           if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
             mat.color.copy(color);
             mat.needsUpdate = true;
@@ -1002,7 +1016,7 @@ export abstract class Enemy extends Character {
     this.originalModelColor.forEach((originalColor, mesh) => {
       if (mesh.material) {
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        materials.forEach((mat) => {
+        materials.forEach(mat => {
           if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
             mat.color.copy(originalColor);
             mat.needsUpdate = true;
@@ -1197,7 +1211,9 @@ export abstract class Enemy extends Character {
       }
     }
 
-    console.log(`[Enemy ${this.id}] Spawneado en ${options.position.x}, ${options.position.y}, ${options.position.z}`);
+    console.log(
+      `[Enemy ${this.id}] Spawneado en ${options.position.x}, ${options.position.y}, ${options.position.z}`
+    );
   }
 
   /**
@@ -1356,5 +1372,4 @@ export abstract class Enemy extends Character {
 
     console.log(`[Enemy ${this.id}] Recursos liberados completamente`);
   }
-
 }

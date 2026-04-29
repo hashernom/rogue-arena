@@ -7,7 +7,7 @@ import { InputState } from '../../engine/InputManager';
 
 /**
  * Habilidad activa "Salva" para el Tirador (AdcCharacter).
- * 
+ *
  * Mecánica:
  * - Dispara 3 proyectiles en un abanico de 60° (20° entre cada proyectil)
  * - Cada proyectil hace daño normal
@@ -18,21 +18,21 @@ export class SalvoAbility {
   private eventBus: EventBus;
   private character: Character;
   private playerId: string;
-  
+
   // Estado de la salva
   private isSalvoActive: boolean = false;
   private salvoProjectiles: number = 3;
   private salvoAngle: number = 60; // grados totales del abanico
   private projectilesFired: number = 0;
-  
+
   // Cooldown
   private cooldownTimer: number = 0;
   private cooldownDuration: number = 4; // segundos
   private isOnCooldown: boolean = false;
-  
+
   // Para feedback visual (placeholder)
   private visualEffectActive: boolean = false;
-  
+
   // Referencia a la escena (necesaria para añadir proyectiles)
   private sceneManager: any;
 
@@ -41,7 +41,7 @@ export class SalvoAbility {
     this.character = character;
     this.playerId = playerId;
     this.sceneManager = sceneManager;
-    
+
     this.setupEventListeners();
   }
 
@@ -59,13 +59,15 @@ export class SalvoAbility {
   private handleAbilityActivation(data: any): void {
     // Verificar que sea el jugador correcto
     if (data.playerId !== this.playerId) return;
-    
+
     // Verificar cooldown
     if (this.isOnCooldown) {
-      console.log(`[SalvoAbility] ${this.playerId} - Habilidad en cooldown (${this.cooldownTimer.toFixed(1)}s restantes)`);
+      console.log(
+        `[SalvoAbility] ${this.playerId} - Habilidad en cooldown (${this.cooldownTimer.toFixed(1)}s restantes)`
+      );
       return;
     }
-    
+
     // Activar salva con inputState (si está disponible)
     this.activateSalvo(data.inputState);
   }
@@ -75,26 +77,26 @@ export class SalvoAbility {
    */
   private activateSalvo(inputState?: InputState): void {
     if (this.isSalvoActive) return;
-    
+
     console.log(`[SalvoAbility] ${this.playerId} - ¡Salva activada!`);
-    
+
     // Iniciar estado de salva
     this.isSalvoActive = true;
     this.projectilesFired = 0;
-    
+
     // Iniciar cooldown
     this.isOnCooldown = true;
     this.cooldownTimer = this.cooldownDuration;
-    
+
     // Emitir evento para feedback visual
     (this.eventBus as any).emit('ability:salvo:activated', {
       playerId: this.playerId,
-      position: this.getCharacterPosition()
+      position: this.getCharacterPosition(),
     });
-    
+
     // Feedback visual (placeholder)
     this.activateVisualEffect();
-    
+
     // Disparar los proyectiles en secuencia rápida con inputState para mouse targeting
     this.fireSalvoProjectiles(inputState);
   }
@@ -139,8 +141,10 @@ export class SalvoAbility {
 
     const forward = worldDirection.clone();
     if (shouldNegate) forward.negate();
-    
-    console.log(`[SalvoAbility] Dirección mundial: (${worldDirection.x.toFixed(2)}, ${worldDirection.y.toFixed(2)}, ${worldDirection.z.toFixed(2)}), invertir? ${shouldNegate}, forward final: (${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)})`);
+
+    console.log(
+      `[SalvoAbility] Dirección mundial: (${worldDirection.x.toFixed(2)}, ${worldDirection.y.toFixed(2)}, ${worldDirection.z.toFixed(2)}), invertir? ${shouldNegate}, forward final: (${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)})`
+    );
     return forward;
   }
 
@@ -171,7 +175,7 @@ export class SalvoAbility {
 
       const direction = new THREE.Vector3().subVectors(targetPos, spawnPos);
       direction.y = 0; // Forzar horizontalidad
-      
+
       if (direction.lengthSq() > 0.0001) {
         return direction.normalize();
       }
@@ -181,7 +185,7 @@ export class SalvoAbility {
     // Si el rayo no choca con el suelo, usamos la dirección de la cámara proyectada en 2D
     const horizonDir = raycaster.ray.direction.clone();
     horizonDir.y = 0;
-    
+
     if (horizonDir.lengthSq() > 0.0001) {
       return horizonDir.normalize();
     }
@@ -196,10 +200,10 @@ export class SalvoAbility {
   private fireSalvoProjectiles(inputState?: InputState): void {
     const characterAny = this.character as any;
     if (!characterAny.model) return;
-    
+
     // Obtener dirección base: mouse targeting si hay inputState, sino dirección forward del personaje
     let baseForward = this.getCharacterForwardDirection();
-    
+
     // Intentar usar mouse targeting si está disponible
     if (inputState?.mouseNDC && this.sceneManager) {
       const camera = this.sceneManager.getCamera();
@@ -208,31 +212,33 @@ export class SalvoAbility {
         const mouseDir = this.calculateAimDirection(camera, inputState.mouseNDC);
         if (mouseDir.lengthSq() > 0.01) {
           baseForward = mouseDir;
-          console.log(`[SalvoAbility] Usando dirección de mouse: (${baseForward.x.toFixed(2)}, ${baseForward.y.toFixed(2)}, ${baseForward.z.toFixed(2)})`);
+          console.log(
+            `[SalvoAbility] Usando dirección de mouse: (${baseForward.x.toFixed(2)}, ${baseForward.y.toFixed(2)}, ${baseForward.z.toFixed(2)})`
+          );
         }
       }
     }
-    
+
     // Calcular ángulo entre proyectiles (en radianes)
     const totalAngleRad = THREE.MathUtils.degToRad(this.salvoAngle);
     const angleBetweenProjectiles = totalAngleRad / (this.salvoProjectiles - 1);
     const startAngle = -totalAngleRad / 2; // Empezar desde el extremo izquierdo
-    
+
     // Crear y disparar cada proyectil
     for (let i = 0; i < this.salvoProjectiles; i++) {
       // Calcular ángulo para este proyectil
-      const angle = startAngle + (i * angleBetweenProjectiles);
-      
+      const angle = startAngle + i * angleBetweenProjectiles;
+
       // Crear dirección rotada (rotar alrededor del eje Y mundial)
       const projectileDirection = baseForward.clone();
       const rotationAxis = new THREE.Vector3(0, 1, 0); // Rotar alrededor del eje Y
       projectileDirection.applyAxisAngle(rotationAxis, angle);
-      
+
       // Disparar proyectil con un pequeño retraso para efecto visual
       setTimeout(() => {
         this.createProjectile(projectileDirection);
         this.projectilesFired++;
-        
+
         // Verificar si todos los proyectiles han sido disparados
         if (this.projectilesFired >= this.salvoProjectiles) {
           this.endSalvo();
@@ -247,37 +253,39 @@ export class SalvoAbility {
   private createProjectile(direction: THREE.Vector3): void {
     const characterAny = this.character as any;
     if (!characterAny.model || !this.sceneManager) return;
-    
+
     // 1. Posición real en el mundo
     const spawnPos = new THREE.Vector3();
     characterAny.model.getWorldPosition(spawnPos);
     spawnPos.y += 1.2; // Subir el origen a la altura del pecho/arma
-    
+
     // 2. Dirección real en el mundo (ya viene corregida desde getCharacterForwardDirection)
     const forwardDir = direction.clone().normalize();
-    
+
     // 3. Offset: Adelantar el proyectil un poco para que no choque con el propio ADC al nacer
     const spawnOffset = 1.0;
     spawnPos.add(forwardDir.clone().multiplyScalar(spawnOffset));
-    
-    console.log(`[SalvoAbility] Creando proyectil en posición mundial: (${spawnPos.x.toFixed(2)}, ${spawnPos.y.toFixed(2)}, ${spawnPos.z.toFixed(2)}) con dirección: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`);
-    
+
+    console.log(
+      `[SalvoAbility] Creando proyectil en posición mundial: (${spawnPos.x.toFixed(2)}, ${spawnPos.y.toFixed(2)}, ${spawnPos.z.toFixed(2)}) con dirección: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`
+    );
+
     // Crear geometría de proyectil (flecha)
     const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
     const material = new THREE.MeshStandardMaterial({ color: 0xffaa00 }); // Color naranja para diferenciar
     const projectile = new THREE.Mesh(geometry, material);
     projectile.castShadow = true;
-    
+
     // Posición inicial
     projectile.position.copy(spawnPos);
-    
+
     // Orientar el proyectil en la dirección de disparo
     projectile.lookAt(projectile.position.clone().add(forwardDir));
     projectile.rotateX(Math.PI / 2); // Ajustar orientación para cono
-    
+
     // Añadir a la escena
     this.sceneManager.add(projectile);
-    
+
     // Emitir evento de creación de proyectil
     (this.eventBus as any).emit('projectile:created', {
       playerId: this.playerId,
@@ -285,12 +293,12 @@ export class SalvoAbility {
       position: [projectile.position.x, projectile.position.y, projectile.position.z],
       direction: [forwardDir.x, forwardDir.y, forwardDir.z],
       damage: this.character.getEffectiveStat('damage'),
-      source: 'salvo'
+      source: 'salvo',
     });
-    
+
     // Detectar colisiones con raycast (disparo instantáneo)
     this.detectHitsWithRay(spawnPos, forwardDir, this.character.getEffectiveStat('damage'));
-    
+
     // Animar el proyectil (movimiento lineal visual)
     this.animateProjectile(projectile, forwardDir);
   }
@@ -302,35 +310,35 @@ export class SalvoAbility {
   private animateProjectile(projectile: THREE.Mesh, direction: THREE.Vector3): void {
     const speed = 50; // Velocidad aumentada para que el proyectil sea más rápido
     const maxDistance = 40; // Distancia máxima aumentada
-    
+
     let distanceTraveled = 0;
     const startPosition = projectile.position.clone();
     let lastTime: number | null = null;
-    
+
     // Función de animación por frame
     const animate = (timestamp: number) => {
       if (!projectile.parent) return; // Si el proyectil fue removido
-      
+
       // Calcular deltaTime en segundos
       if (lastTime === null) lastTime = timestamp;
       const deltaTime = (timestamp - lastTime) / 1000;
       lastTime = timestamp;
-      
+
       // Mover proyectil con deltaTime real
       const moveDistance = speed * deltaTime;
       projectile.position.add(direction.clone().multiplyScalar(moveDistance));
       distanceTraveled = startPosition.distanceTo(projectile.position);
-      
+
       // Verificar si ha alcanzado la distancia máxima
       if (distanceTraveled >= maxDistance) {
         this.removeProjectile(projectile);
         return;
       }
-      
+
       // Continuar animación
       requestAnimationFrame(animate);
     };
-    
+
     // Iniciar animación
     requestAnimationFrame(animate);
   }
@@ -339,11 +347,7 @@ export class SalvoAbility {
    * Detecta colisiones con un rayo (disparo instantáneo) y aplica daño.
    * Soporta piercing: si canPierce es true, el rayo continúa atravesando enemigos.
    */
-  private detectHitsWithRay(
-    origin: THREE.Vector3,
-    direction: THREE.Vector3,
-    damage: number
-  ): void {
+  private detectHitsWithRay(origin: THREE.Vector3, direction: THREE.Vector3, damage: number): void {
     const characterAny = this.character as any;
     if (!characterAny.physicsWorld) {
       console.warn('[SalvoAbility] No hay physicsWorld disponible para detectar colisiones');
@@ -360,19 +364,23 @@ export class SalvoAbility {
     const maxRange = 25.0; // Alcance del ADC
     const solid = false; // Permite detectar el interior de las hitboxes
 
-    console.log(`[SalvoAbility] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) dirección (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`);
+    console.log(
+      `[SalvoAbility] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) dirección (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
+    );
 
     // Determinar si este proyectil tiene piercing (consultar pasiva)
     const canPierce = this.checkPiercePassive();
-    
+
     // 1. Recolectar todos los impactos del rayo
     const hits: { id: number; entity: any; toi: number }[] = [];
 
     world.intersectionsWithRay(
-      ray, maxRange, solid,
+      ray,
+      maxRange,
+      solid,
       (intersection: RAPIER.RayColliderIntersection) => {
         const collider = intersection.collider;
-        
+
         // Filtrar por grupo ENEMY (igual que en MeleeAttack)
         const groups = collider.collisionGroups();
         const membership = (groups >> 16) & 0xffff; // Extraer bits de membership
@@ -380,32 +388,44 @@ export class SalvoAbility {
           // No es un enemigo, ignorar
           return true; // Continuar buscando
         }
-        
+
         const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
-        
+
         if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
           const enemyId = userData.id;
           if (enemyId !== undefined) {
             // Extraer distancia (time of impact) del objeto intersection
             // Rapier puede usar 'toi', 'timeOfImpact', 'distance' o 't'
             const intersectionAny = intersection as any;
-            const toi = intersectionAny.toi ?? intersectionAny.timeOfImpact ?? intersectionAny.distance ?? intersectionAny.t ?? 0;
-            console.log('[SalvoAbility] Intersection props:', Object.keys(intersectionAny), 'toi:', toi);
-            
+            const toi =
+              intersectionAny.toi ??
+              intersectionAny.timeOfImpact ??
+              intersectionAny.distance ??
+              intersectionAny.t ??
+              0;
+            console.log(
+              '[SalvoAbility] Intersection props:',
+              Object.keys(intersectionAny),
+              'toi:',
+              toi
+            );
+
             hits.push({
               id: enemyId,
               entity: userData.entity,
-              toi
+              toi,
             });
           }
         }
-        
+
         // Retornar TRUE obligatoriamente para que Rapier siga buscando más objetivos en la línea
         return true;
       }
     );
 
-    console.log(`[SalvoAbility] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}`);
+    console.log(
+      `[SalvoAbility] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}`
+    );
     if (hits.length > 0) {
       console.log(`[SalvoAbility] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
     }
@@ -417,9 +437,16 @@ export class SalvoAbility {
     const enemiesHit = new Set<number>();
     for (const hit of hits) {
       if (!enemiesHit.has(hit.id)) {
-        hit.entity.takeDamage(damage);
+        // Pasamos this.playerId como attackerId para tracking de kills
+        hit.entity.takeDamage(damage, this.playerId);
         enemiesHit.add(hit.id);
-        console.log(`🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`);
+
+        // Acumular daño infligido para estadísticas de fin de partida
+        this.character.damageDealt += damage;
+
+        console.log(
+          `🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`
+        );
 
         // Si NO hay piercing, la bala se destruye al golpear al PRIMER enemigo (el más cercano)
         if (!canPierce) {
@@ -459,6 +486,21 @@ export class SalvoAbility {
   }
 
   /**
+   * Retorna la proporción de cooldown completado (0 = listo, 1 = cooldown completo).
+   */
+  getCooldownRatio(): number {
+    if (!this.isOnCooldown) return 0;
+    return Math.min(1, Math.max(0, this.cooldownTimer / this.cooldownDuration));
+  }
+
+  /**
+   * Indica si la habilidad está lista para usarse.
+   */
+  isReady(): boolean {
+    return !this.isOnCooldown && !this.isSalvoActive;
+  }
+
+  /**
    * Actualiza el estado del cooldown.
    * Debe llamarse en cada frame desde el game loop.
    */
@@ -479,16 +521,16 @@ export class SalvoAbility {
    */
   private endSalvo(): void {
     console.log(`[SalvoAbility] ${this.playerId} - Salva finalizada`);
-    
+
     this.isSalvoActive = false;
     this.projectilesFired = 0;
-    
+
     // Desactivar efecto visual
     this.deactivateVisualEffect();
-    
+
     // Emitir evento de finalización
     (this.eventBus as any).emit('ability:salvo:ended', {
-      playerId: this.playerId
+      playerId: this.playerId,
     });
   }
 
@@ -498,7 +540,7 @@ export class SalvoAbility {
   private activateVisualEffect(): void {
     this.visualEffectActive = true;
     console.log(`[SalvoAbility] ${this.playerId} - Efecto visual activado (aura/partículas)`);
-    
+
     // En una implementación real, aquí se crearían partículas o se modificarían materiales
   }
 
@@ -552,7 +594,7 @@ export class SalvoAbility {
   public dispose(): void {
     // Limpiar listeners
     (this.eventBus as any).off('player:abilityQ', this.handleAbilityActivation.bind(this));
-    
+
     // Limpiar cualquier proyectil pendiente
     // (En una implementación real, se deberían limpiar todos los proyectiles activos)
   }

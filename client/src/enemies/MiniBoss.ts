@@ -922,8 +922,8 @@ export class MiniBoss extends Enemy {
     const dz = targetPos.z - enemyPos.z;
     const distSq = dx * dx + dz * dz;
 
-    // Rango de ataque (0.8m)
-    const attackRangeSq = 0.8 * 0.8;
+    // Rango de ataque (1.1m — ajustado al nuevo radio de collider 0.65)
+    const attackRangeSq = 1.1 * 1.1;
     this.isInAttackRange = distSq <= attackRangeSq;
 
     if (this.isInAttackRange) {

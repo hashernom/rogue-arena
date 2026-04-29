@@ -95,6 +95,10 @@ export abstract class Character {
   protected eventBus: EventBus;
   /** Ítems comprados y aplicados a este personaje (para HUD de M10) */
   public appliedItems: AppliedItem[] = [];
+  /** Daño total infligido por este personaje (para estadísticas de fin de partida) */
+  public damageDealt: number = 0;
+  /** Daño total recibido por este personaje (para estadísticas de fin de partida) */
+  public damageReceived: number = 0;
   /** Flag para ×2 drops la próxima ronda (efecto Elixir Doble) */
   public doubleDropNextWave: boolean = false;
   /** Flag para forzar el próximo ataque como crítico (efecto reactivo onHit) */
@@ -148,10 +152,10 @@ export abstract class Character {
 
     const source = description || `legacy_mod_${stat}`;
     const newModifier: NewStatModifier = { stat, value, type: modType, source };
-    
+
     // Si se proporciona un ID, usarlo como parte del source para poder removerlo después
     const modifierId = this.statsSystem.addModifier(newModifier);
-    
+
     // Mantener compatibilidad con el array legacy
     this.modifiers.push({ stat, value, type, id: id || modifierId, description });
   }
@@ -201,7 +205,10 @@ export abstract class Character {
 
     const armor = this.getEffectiveStat('armor');
     const finalDamage = amount * (100 / (100 + armor));
-    
+
+    // Acumular daño recibido para estadísticas de fin de partida
+    this.damageReceived += finalDamage;
+
     // Usar el nuevo sistema para aplicar daño
     this.statsSystem.takeDamage(finalDamage);
 
@@ -259,6 +266,18 @@ export abstract class Character {
    */
   getState(): CharacterState {
     return this.state;
+  }
+
+  /**
+   * Reinicia las estadísticas de partida (daño infligido, daño recibido, ítems).
+   * Se usa al comenzar una nueva partida para limpiar datos de la anterior.
+   */
+  resetMatchStats(): void {
+    this.damageDealt = 0;
+    this.damageReceived = 0;
+    this.appliedItems = [];
+    this.doubleDropNextWave = false;
+    this.nextAttackIsCrit = false;
   }
 
   /**
