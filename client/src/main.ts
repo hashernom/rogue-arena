@@ -130,6 +130,10 @@ let arena: Arena | null = null;
 let tilemapLoader: TilemapLoader | null = null;
 // Cleanup del listener player:died para evitar duplicados al reiniciar
 let onPlayerDiedCleanup: (() => void) | null = null;
+// Semilla para generación procedural de obstáculos (M12)
+// En multiplayer: enviada por el servidor en game:started
+// En local: generada con Date.now()
+let obstacleSeed: number | undefined;
 
 // ================================================================
 // INICIALIZACIÓN DE AUDIO (LAZY — primer gesto del usuario)
@@ -268,11 +272,15 @@ async function initGameWithPhysics(): Promise<void> {
       arena = new Arena(sceneManager, physicsWorld);
       arena.build();
 
-      // Cargar mapa desde JSON (obstáculos + spawn points)
+      // Cargar mapa desde JSON (spawn points) + obstáculos procedurales si hay seed (M12)
       tilemapLoader = new TilemapLoader(sceneManager, physicsWorld);
       try {
-        const mapConfig = await tilemapLoader.load('/assets/maps/arena_01.json');
-        console.log(`🗺️ Mapa cargado: "${mapConfig.name}" (${mapConfig.size.width}x${mapConfig.size.height})`);
+        // Si obstacleSeed está definido (multiplayer o local), se pasan obstáculos procedurales
+        // Si no, se cargan los obstáculos estáticos del JSON
+        const mapConfig = await tilemapLoader.load('/assets/maps/arena_01.json', obstacleSeed);
+        console.log(`🗺️ Mapa cargado: "${mapConfig.name}" (${mapConfig.size.width}x${mapConfig.size.height})${obstacleSeed !== undefined ? ` [seed=${obstacleSeed}]` : ''}`);
+        // Resetear la seed para que no afecte reinicios accidentales
+        obstacleSeed = undefined;
       } catch (mapError) {
         console.warn('⚠️ No se pudo cargar el mapa:', mapError);
         tilemapLoader.dispose();
@@ -1247,6 +1255,13 @@ const connectionManager = new ConnectionManager(
       gameStarted = true;
       isOnlineMatch = true;
 
+      // Guardar la seed para obstáculos procedurales (M12)
+      // El servidor la genera y ambos clientes la reciben idéntica
+      if (data.seed !== undefined) {
+        obstacleSeed = data.seed;
+        console.log(`[Main] Seed recibida del servidor: ${obstacleSeed}`);
+      }
+
       // Inicializar sistemas de sincronización
       prediction = new Prediction();
       interpolation = new Interpolation();
@@ -1349,6 +1364,9 @@ const menuUI = new MenuUI(connectionManager, {
   onLocalPlay: () => {
     console.log('[Main] Modo local seleccionado — iniciando juego sin servidor');
     gameStarted = true;
+    // En modo local también generamos una seed para tener obstáculos procedurales
+    obstacleSeed = Math.floor(Math.random() * 2147483647);
+    console.log(`[Main] Seed local: ${obstacleSeed}`);
     void initGameWithPhysics();
   },
 });

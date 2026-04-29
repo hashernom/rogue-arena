@@ -1,11 +1,13 @@
 /**
- * Cargador de mapas desde archivos JSON.
+ * Cargador de mapas desde archivos JSON + generación procedural de obstáculos.
  *
  * Responsabilidades:
  * 1. Fetch del JSON desde /public/assets/maps/
  * 2. Validación estricta de la estructura (errores descriptivos)
  * 3. Construcción de meshes Three.js para cada obstáculo
  * 4. Creación de colliders Rapier con grupo WALL para cada obstáculo
+ * 5. Generación procedural de obstáculos con seeded random (Mulberry32)
+ *    para layout determinístico entre ambos jugadores
  *
  * Los spawn points se devuelven para que el Spawner los consuma.
  */
@@ -16,6 +18,7 @@ import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import { BodyFactory } from '../physics/BodyFactory';
 import type { MapConfig, MapObstacle, SpawnPoint } from './MapConfig';
 import type { RigidBodyHandle } from '../physics/PhysicsWorld';
+import { seededRandom } from '../utils/seededRandom';
 
 // ---------------------------------------------------------------------------
 // Colores para obstáculos según tipo (estética low-poly)
@@ -58,18 +61,44 @@ export class TilemapLoader {
    * Carga un archivo de mapa desde una URL relativa a /public.
    * Ejemplo: load('/assets/maps/arena_01.json')
    *
+   * Construye los obstáculos definidos en el JSON. Si se proporciona un seed,
+   * genera obstáculos procedurales en lugar de los estáticos del JSON.
+   *
    * @param url - Ruta al archivo JSON del mapa
+   * @param seed - Opcional. Semilla para generar obstáculos procedurales
    * @returns La configuración validada del mapa
    * @throws Error descriptivo si el JSON es inválido o no se puede cargar
    */
-  async load(url: string): Promise<MapConfig> {
+  async load(url: string, seed?: number): Promise<MapConfig> {
     const config = await this.fetchAndValidate(url);
-    this.buildObstacles(config.obstacles);
     this.spawnPoints = [...config.spawnPoints];
+
+    if (seed !== undefined) {
+      // Generación procedural con seeded random
+      const playerSpawns: { x: number; z: number }[] = [
+        { x: -3, z: 0 },
+        { x: 3, z: 0 },
+      ];
+      const procObstacles = this.generateObstacleLayout(
+        10,
+        seed,
+        config.size.width,
+        playerSpawns,
+        this.spawnPoints,
+      );
+      this.buildObstacles(procObstacles);
+      console.log(
+        `[TilemapLoader] Mapa "${config.name}" — ${procObstacles.length} obstáculos procedurales (seed=${seed})`,
+      );
+    } else {
+      // Obstáculos estáticos desde el JSON
+      this.buildObstacles(config.obstacles);
+      console.log(
+        `[TilemapLoader] Mapa "${config.name}" cargado: ${config.obstacles.length} obstáculos, ${config.spawnPoints.length} spawn points`,
+      );
+    }
+
     this.sceneManager.add(this.obstacleGroup);
-    console.log(
-      `[TilemapLoader] Mapa "${config.name}" cargado: ${config.obstacles.length} obstáculos, ${config.spawnPoints.length} spawn points`,
-    );
     return config;
   }
 
@@ -80,6 +109,7 @@ export class TilemapLoader {
 
   /**
    * Limpia todos los obstáculos de la escena y libera cuerpos físicos.
+   * Reinicia spawnPoints a un array vacío.
    */
   dispose(): void {
     // Remover meshes
@@ -105,6 +135,105 @@ export class TilemapLoader {
 
     this.spawnPoints = [];
     console.log('[TilemapLoader] Obstáculos liberados');
+  }
+
+  // -----------------------------------------------------------------------
+  // Generación procedural de obstáculos (seeded random)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Genera un layout de N obstáculos con distribución pseudo-aleatoria
+   * determinística usando el algoritmo Mulberry32.
+   *
+   * Reglas de colocación:
+   * - Mínimo 2 metros de separación entre obstáculos
+   * - Mínimo 3 metros de distancia a los spawn points de jugadores
+   * - Mínimo 2 metros de distancia a los spawn points de enemigos
+   * - Mínimo 1 metro de distancia a las paredes de la arena
+   * - Máximo 200 intentos por obstáculo para evitar loops infinitos
+   * - Tamaños entre 1×1 y 3×2, altura fija de 1.5m
+   *
+   * @param count   - Número de obstáculos a generar (N=10)
+   * @param seed    - Semilla entera para el PRNG
+   * @param arenaSize - Tamaño de la arena (ancho = alto = arenaSize)
+   * @param playerSpawns - Puntos de spawn de jugadores [(x,z)]
+   * @param enemySpawns  - Puntos de spawn de enemigos [(x,z)]
+   * @returns Array de MapObstacle listos para construir
+   */
+  generateObstacleLayout(
+    count: number,
+    seed: number,
+    arenaSize: number,
+    playerSpawns: { x: number; z: number }[],
+    enemySpawns: { x: number; z: number }[],
+  ): MapObstacle[] {
+    const rng = seededRandom(seed);
+    const obstacles: MapObstacle[] = [];
+    const halfSize = arenaSize / 2;
+    const wallMargin = 1.5; // distancia mínima a paredes
+
+    // Reunir todos los puntos prohibidos (spawns de jugadores y enemigos)
+    const forbiddenPoints: { x: number; z: number }[] = [
+      ...playerSpawns,
+      ...enemySpawns,
+    ];
+
+    for (let i = 0; i < count; i++) {
+      let placed = false;
+
+      for (let attempt = 0; attempt < 200; attempt++) {
+        // Tamaño aleatorio: ancho 1..3, profundidad 1..2
+        const w = Math.floor(rng() * 3) + 1; // 1, 2, o 3
+        const d = Math.floor(rng() * 2) + 1; // 1 o 2
+        const h = 1.5; // altura fija
+
+        // Posición dentro de la arena (con margen de pared)
+        const margin = wallMargin + Math.max(w, d) / 2;
+        const x = (rng() * (arenaSize - margin * 2)) - (halfSize - margin);
+        const z = (rng() * (arenaSize - margin * 2)) - (halfSize - margin);
+
+        // Validar que no esté sobre spawn points de jugadores (min 3m)
+        let valid = true;
+        for (const fp of forbiddenPoints) {
+          const dx = x - fp.x;
+          const dz = z - fp.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < 3.0) {
+            valid = false;
+            break;
+          }
+        }
+        if (!valid) continue;
+
+        // Validar separación entre obstáculos (min 2m)
+        for (const obs of obstacles) {
+          const dx = x - obs.x;
+          const dz = z - obs.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < 2.0) {
+            valid = false;
+            break;
+          }
+        }
+        if (!valid) continue;
+
+        // Validar que no esté demasiado cerca del centro (0,0) — zona de acción
+        const distCenter = Math.sqrt(x * x + z * z);
+        if (distCenter < 2.0) continue;
+
+        obstacles.push({ type: 'box', x, z, w, h, d });
+        placed = true;
+        break;
+      }
+
+      if (!placed) {
+        console.warn(
+          `[TilemapLoader] No se pudo colocar obstáculo #${i} tras 200 intentos`,
+        );
+      }
+    }
+
+    return obstacles;
   }
 
   // -----------------------------------------------------------------------
@@ -307,3 +436,4 @@ export class TilemapLoader {
     this.obstacleBodies.push(bodyHandle);
   }
 }
+

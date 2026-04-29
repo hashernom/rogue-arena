@@ -37,7 +37,7 @@ export interface ConnectionCallbacks {
     players: RoomData['players'];
     message: string;
   }) => void;
-  onGameStarted?: (data: { code: string; players: RoomData['players'] }) => void;
+  onGameStarted?: (data: { code: string; players: RoomData['players']; seed?: number }) => void;
   /** Recibe el snapshot del estado del juego desde el servidor (~20Hz) */
   onGameState?: (snapshot: GameStateSnapshot) => void;
   /** Un jugador se desconectó durante la partida */
@@ -151,8 +151,8 @@ export class ConnectionManager {
       }
     );
 
-    this.socket.on('game:started', (data: { code: string; players: RoomData['players'] }) => {
-      console.log(`[ConnectionManager] Juego iniciado en sala ${data.code}`);
+    this.socket.on('game:started', (data: { code: string; players: RoomData['players']; seed?: number }) => {
+      console.log(`[ConnectionManager] Juego iniciado en sala ${data.code}${data.seed !== undefined ? ` (seed=${data.seed})` : ''}`);
       this.callbacks.onGameStarted?.(data);
     });
 

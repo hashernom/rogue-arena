@@ -297,6 +297,10 @@ export class RoomManager {
 
     room.state = 'playing';
 
+    // Generar semilla pseudo-aleatoria para obstáculos procedurales (M12)
+    // Ambos clientes reciben la misma seed y generan el mismo layout
+    const seed = Math.floor(Math.random() * 2147483647);
+
     // Agregar jugadores al GameState
     room.players.forEach(p => {
       room.gameState.addPlayer(p.id, p.socketId, p.name);
@@ -312,9 +316,10 @@ export class RoomManager {
     this.broadcastToRoom(room.code, 'game:started', {
       code: room.code,
       players: this.getRoomPlayersData(room),
+      seed,
     });
 
-    logger.info(`Room ${room.code}: game started with ${room.players.length} players`);
+    logger.info(`Room ${room.code}: game started with ${room.players.length} players (seed=${seed})`);
     return { success: true };
   }
 
