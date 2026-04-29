@@ -691,7 +691,8 @@ export class AdcCharacter extends Character {
     }
 
     // 5. Detectar colisiones con raycast (disparo instantáneo)
-    this.detectHitsWithRay(spawnPos, forwardDir, this.getEffectiveStat('damage'));
+    // Se pasa el arrowGroup para que se destruya visualmente si impacta una pared
+    this.detectHitsWithRay(spawnPos, forwardDir, this.getEffectiveStat('damage'), arrowGroup);
 
     // 6. Animación visual del proyectil (movimiento lineal) - ahora se maneja en updateProjectiles()
     // this.animateProjectile(arrowGroup, forwardDir);
@@ -736,7 +737,7 @@ export class AdcCharacter extends Character {
    * Detecta colisiones con un rayo (disparo instantáneo) y aplica daño.
    * Soporta piercing: si canPierce es true, el rayo continúa atravesando enemigos.
    */
-  private detectHitsWithRay(origin: THREE.Vector3, direction: THREE.Vector3, damage: number): void {
+  private detectHitsWithRay(origin: THREE.Vector3, direction: THREE.Vector3, damage: number, arrowGroup?: THREE.Object3D): void {
     if (!this.physicsWorld) {
       console.warn('[AdcCharacter] No hay physicsWorld disponible para detectar colisiones');
       return;
@@ -841,6 +842,10 @@ export class AdcCharacter extends Character {
     // Si el muro está más cerca que el primer enemigo, el proyectil impacta el muro y no pasa
     if (wallHitToi >= 0 && (hits.length === 0 || wallHitToi < hits[0].toi)) {
       console.log(`[AdcCharacter] Proyectil impactó muro a distancia ${wallHitToi.toFixed(2)}, destruido`);
+      // Destruir también la flecha visual si existe
+      if (arrowGroup) {
+        this.removeProjectile(arrowGroup);
+      }
       return; // El proyectil se destruye contra el muro
     }
 
@@ -851,6 +856,10 @@ export class AdcCharacter extends Character {
         // Verificar si hay un muro entre el origen y este enemigo
         if (wallHitToi >= 0 && wallHitToi < hit.toi) {
           console.log(`[AdcCharacter] Muro bloquea el impacto al enemigo ID: ${hit.id} (muro: ${wallHitToi.toFixed(2)} < enemigo: ${hit.toi.toFixed(2)})`);
+          // Destruir la flecha visual al impactar el muro
+          if (arrowGroup) {
+            this.removeProjectile(arrowGroup);
+          }
           break; // El muro bloquea el proyectil antes de llegar a este enemigo
         }
 
@@ -880,6 +889,10 @@ export class AdcCharacter extends Character {
 
         // Si NO hay piercing, la bala se destruye al golpear al PRIMER enemigo (el más cercano)
         if (!canPierce) {
+          // Destruir la flecha visual al impactar al enemigo
+          if (arrowGroup) {
+            this.removeProjectile(arrowGroup);
+          }
           break;
         }
       }

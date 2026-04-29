@@ -40,14 +40,17 @@ export class BodyFactory {
     colliderDesc.setCollisionGroups(groups);
 
     // Crear el cuerpo en el mundo físico
+    // Para jugadores: Dynamic con alta masa para colisionar con paredes/obstáculos (estáticos).
+    // Rapier3D NO colisiona kinematic vs static, por eso cambiamos a dynamic.
     return world.createBody({
-      type: 'kinematic',
+      type: isPlayer ? 'dynamic' : 'kinematic',
       position: pos,
       collider: colliderDesc,
       lockRotations: true,
       gravityScale: 0,
       linearDamping: 5.0,
-      ccdEnabled: true, // CCD para evitar que el player atraviese enemigos
+      ccdEnabled: true, // CCD para evitar que el player atraviese paredes
+      additionalMass: isPlayer ? 10000 : 0,
       collisionGroup: group,
       collisionMask: mask,
       userData: {

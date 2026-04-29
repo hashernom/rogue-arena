@@ -16,7 +16,7 @@ export class CameraController {
    * @param near - Plano near (default: 0.1).
    * @param far - Plano far (default: 1000).
    */
-  constructor(frustumSize = 20, near = 0.1, far = 1000) {
+  constructor(frustumSize = 26, near = 0.1, far = 1000) {
     this.frustumSize = frustumSize;
     this.near = near;
     this.far = far;
@@ -24,8 +24,8 @@ export class CameraController {
     // Crear cámara con frustum inicial
     this.camera = this.createCamera();
 
-    // Posicionar en ángulo isométrico (45°)
-    this.setIsometricPosition(15, 15, 15);
+    // Posicionar en ángulo isométrico (45°) — más alejado para mejor visión del gameplay
+    this.setIsometricPosition(20, 20, 20);
   }
 
   /**
@@ -54,7 +54,7 @@ export class CameraController {
    * @param y - Coordenada Y (default: 15).
    * @param z - Coordenada Z (default: 15).
    */
-  public setIsometricPosition(x = 15, y = 15, z = 15): void {
+  public setIsometricPosition(x = 20, y = 20, z = 20): void {
     this.camera.position.set(x, y, z);
     this.camera.lookAt(0, 0, 0);
     this.camera.up.set(0, 1, 0); // Eje Y hacia arriba en mundo isométrico
@@ -85,7 +85,7 @@ export class CameraController {
     const center = new THREE.Vector3().addVectors(p1Pos, p2Pos).multiplyScalar(0.5);
 
     // Mantener la misma altura y distancia isométrica
-    const offset = new THREE.Vector3(15, 15, 15);
+    const offset = new THREE.Vector3(20, 20, 20);
     this.camera.position.copy(center).add(offset);
     this.camera.lookAt(center);
   }

@@ -80,7 +80,7 @@ export class TilemapLoader {
         { x: 3, z: 0 },
       ];
       const procObstacles = this.generateObstacleLayout(
-        10,
+        12,
         seed,
         config.size.width,
         playerSpawns,
@@ -170,7 +170,7 @@ export class TilemapLoader {
     const rng = seededRandom(seed);
     const obstacles: MapObstacle[] = [];
     const halfSize = arenaSize / 2;
-    const wallMargin = 1.5; // distancia mínima a paredes
+    const wallMargin = 1.0; // distancia mínima a paredes — reducida para usar más espacio
 
     // Reunir todos los puntos prohibidos (spawns de jugadores y enemigos)
     const forbiddenPoints: { x: number; z: number }[] = [
@@ -182,12 +182,15 @@ export class TilemapLoader {
       let placed = false;
 
       for (let attempt = 0; attempt < 200; attempt++) {
-        // Tamaño aleatorio: ancho 1..3, profundidad 1..2
-        const w = Math.floor(rng() * 3) + 1; // 1, 2, o 3
-        const d = Math.floor(rng() * 2) + 1; // 1 o 2
+        // Tamaño aleatorio con más variedad: ancho 1..4, profundidad 1..3
+        const w = Math.floor(rng() * 4) + 1; // 1, 2, 3, o 4
+        const d = Math.floor(rng() * 3) + 1; // 1, 2, o 3
         const h = 1.5; // altura fija
 
-        // Posición dentro de la arena (con margen de pared)
+        // Alternar entre box y cylinder para variedad visual
+        const type: 'box' | 'cylinder' = rng() > 0.5 ? 'box' : 'cylinder';
+
+        // Posición dentro de la arena usando toda la superficie disponible
         const margin = wallMargin + Math.max(w, d) / 2;
         const x = (rng() * (arenaSize - margin * 2)) - (halfSize - margin);
         const z = (rng() * (arenaSize - margin * 2)) - (halfSize - margin);
@@ -205,23 +208,23 @@ export class TilemapLoader {
         }
         if (!valid) continue;
 
-        // Validar separación entre obstáculos (min 2m)
+        // Validar separación entre obstáculos (min 3.5m para mejor esparcimiento)
         for (const obs of obstacles) {
           const dx = x - obs.x;
           const dz = z - obs.z;
           const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist < 2.0) {
+          if (dist < 3.5) {
             valid = false;
             break;
           }
         }
         if (!valid) continue;
 
-        // Validar que no esté demasiado cerca del centro (0,0) — zona de acción
+        // Reducir zona de exclusión del centro a 1m (más espacio utilizable)
         const distCenter = Math.sqrt(x * x + z * z);
-        if (distCenter < 2.0) continue;
+        if (distCenter < 1.0) continue;
 
-        obstacles.push({ type: 'box', x, z, w, h, d });
+        obstacles.push({ type, x, z, w, h, d });
         placed = true;
         break;
       }

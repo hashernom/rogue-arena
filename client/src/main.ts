@@ -52,8 +52,8 @@ app.appendChild(canvas);
 // Crear SceneManager (maneja escena, renderer, cámara, luces, sombras)
 const sceneManager = new SceneManager(canvas);
 
-// Crear CameraController con cámara isométrica ortográfica
-const cameraController = new CameraController(20); // frustumSize = 20 (arena 30x30 cabe)
+// Crear CameraController con cámara isométrica ortográfica — más alejada para mejor visión del gameplay
+const cameraController = new CameraController(26); // frustumSize = 26 (arena 30x30 con margen)
 sceneManager.setCamera(cameraController.getCamera());
 
 // Crear AssetLoader para gestión centralizada de modelos
