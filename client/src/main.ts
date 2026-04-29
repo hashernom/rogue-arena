@@ -35,6 +35,7 @@ import { MenuUI } from './network/MenuUI';
 import { Prediction } from './network/Prediction';
 import { Interpolation } from './network/Interpolation';
 import { HUD } from './ui/HUD';
+import { NotificationSystem } from './ui/NotificationSystem';
 import { GameOverScreen } from './ui/GameOverScreen';
 import { Arena } from './map/Arena';
 
@@ -113,6 +114,8 @@ let currentMiniBoss: MiniBoss | null = null;
 
 // HUD superpuesto al canvas
 let gameHUD: HUD | null = null;
+// Sistema de notificaciones flotantes
+let notificationSystem: NotificationSystem | null = null;
 
 // Pantalla de Game Over
 let gameOverScreen: GameOverScreen | null = null;
@@ -631,6 +634,10 @@ async function initGameWithPhysics(): Promise<void> {
       gameHUD = new HUD(eventBus);
       gameHUD.setCharacters(meleeCharacter, adcCharacter, waveManager, moneySystem);
       console.log('🖥️ HUD de juego inicializado');
+
+      // Inicializar sistema de notificaciones flotantes
+      notificationSystem = new NotificationSystem(eventBus);
+      console.log('🔔 NotificationSystem inicializado');
 
       // Inicializar pantalla de Game Over
       gameOverScreen = new GameOverScreen(eventBus, {

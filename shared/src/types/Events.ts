@@ -28,4 +28,10 @@ export interface GameEvents {
   'money:changed': { playerId: string; newBalance: number; delta: number; reason: string };
   // Estado del juego
   'game:over': { rounds: number };
+  // Notificaciones del sistema de toasts
+  'notification:show': { message: string; type: 'info' | 'warning' | 'success' | 'error' };
+  // Habilidades de personaje
+  'ability:ready': { playerId: string; abilityName: string };
+  // Conexión
+  'player:disconnected': { playerId: string };
 }
