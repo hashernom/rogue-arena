@@ -44,6 +44,7 @@ export class HUD {
 
   private waveCounter!: HTMLElement;
   private enemyCounter!: HTMLElement;
+  private timerCounter!: HTMLElement;
   private betweenRoundTimer!: HTMLElement;
 
   // Unsubscribe functions
@@ -142,7 +143,7 @@ export class HUD {
     this.container.innerHTML = `
       <!-- P1: Izquierda -->
       <div id="hud-p1" style="
-        position:absolute; left:16px; top:60px;
+        position:absolute; left:16px; top:10px;
         display:flex; flex-direction:column; gap:4px;
         min-width:200px;
       ">
@@ -193,19 +194,18 @@ export class HUD {
         </div>
       </div>
 
-      <!-- P2: Derecha (espejado) -->
+      <!-- P2: Debajo de P1 (ADC) -->
       <div id="hud-p2" style="
-        position:absolute; right:16px; top:60px;
+        position:absolute; left:16px; top:108px;
         display:flex; flex-direction:column; gap:4px;
         min-width:200px;
-        text-align:right;
       ">
         <!-- Fila superior: icono + nombre + dinero -->
-        <div style="display:flex; align-items:center; gap:6px; justify-content:flex-end;">
-          <span id="hud-p2-money" style="color:#ffd700; font-size:12px; text-shadow:0 1px 4px rgba(0,0,0,0.8);">0g</span>
-          <span style="color:#888; font-size:11px;">·</span>
-          <span id="hud-p2-name" style="color:#44aaff; font-weight:bold; font-size:13px; text-shadow:0 1px 4px rgba(0,0,0,0.8);">P2</span>
+        <div style="display:flex; align-items:center; gap:6px;">
           <span id="hud-p2-icon" style="font-size:22px; width:28px; text-align:center;">🏹</span>
+          <span id="hud-p2-name" style="color:#44aaff; font-weight:bold; font-size:13px; text-shadow:0 1px 4px rgba(0,0,0,0.8);">P2</span>
+          <span style="color:#888; font-size:11px;">·</span>
+          <span id="hud-p2-money" style="color:#ffd700; font-size:12px; text-shadow:0 1px 4px rgba(0,0,0,0.8);">0g</span>
         </div>
         <!-- HP Bar -->
         <div style="
@@ -227,8 +227,7 @@ export class HUD {
           <span id="hud-p2-hp-text">100/100</span>
         </div>
         <!-- Habilidad Q -->
-        <div style="display:flex; align-items:center; gap:6px; margin-top:2px; justify-content:flex-end;">
-          <span style="color:#888; font-size:10px;">[Q]</span>
+        <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
           <div id="hud-p2-ability" style="
             position:relative; width:32px; height:32px;
             border-radius:6px;
@@ -244,21 +243,27 @@ export class HUD {
               pointer-events:none;
             "></div>
           </div>
+          <span style="color:#888; font-size:10px;">[Q]</span>
         </div>
       </div>
 
-      <!-- Centro superior: contadores de oleada y enemigos -->
+      <!-- Centro superior: contadores de oleada, timer y enemigos -->
       <div id="hud-center-top" style="
         position:absolute; top:10px; left:50%; transform:translateX(-50%);
         display:flex; flex-direction:column; align-items:center; gap:2px;
+        pointer-events:none;
       ">
         <div id="hud-wave-counter" style="
           font-size:16px; font-weight:bold; color:#ffaa00;
           text-shadow:0 1px 6px rgba(0,0,0,0.9);
           letter-spacing:1px;
         ">Ronda 0</div>
+        <div id="hud-timer-counter" style="
+          font-size:11px; color:#ff6666;
+          text-shadow:0 1px 4px rgba(0,0,0,0.8);
+        "></div>
         <div id="hud-enemy-counter" style="
-          font-size:12px; color:#cc6666;
+          font-size:11px; color:#cc6666;
           text-shadow:0 1px 4px rgba(0,0,0,0.8);
         ">0 enemigos</div>
       </div>
@@ -292,6 +297,7 @@ export class HUD {
 
     this.waveCounter = document.getElementById('hud-wave-counter')!;
     this.enemyCounter = document.getElementById('hud-enemy-counter')!;
+    this.timerCounter = document.getElementById('hud-timer-counter')!;
     this.betweenRoundTimer = document.getElementById('hud-between-timer')!;
   }
 
@@ -399,6 +405,23 @@ export class HUD {
     if (this.waveManager.getState() === WaveState.WaveInProgress) {
       const remaining = this.waveManager.getRemainingEnemies();
       this.enemyCounter.textContent = `${remaining} enemigos`;
+
+      // Mostrar timer de ronda activa
+      const roundTimer = this.waveManager.getRoundTimer();
+      if (roundTimer > 0) {
+        const minutes = Math.floor(roundTimer / 60);
+        const seconds = Math.floor(roundTimer % 60);
+        this.timerCounter.textContent = `⏱ ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        this.timerCounter.style.color = roundTimer <= 15 ? '#ff2222' : roundTimer <= 30 ? '#ffaa00' : '#ff6666';
+      } else {
+        this.timerCounter.textContent = '';
+      }
+    } else if (this.waveManager.getState() === WaveState.BetweenRound) {
+      this.enemyCounter.textContent = '— entre rondas —';
+      this.timerCounter.textContent = '';
+    } else {
+      this.enemyCounter.textContent = '';
+      this.timerCounter.textContent = '';
     }
   }
 

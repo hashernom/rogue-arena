@@ -385,10 +385,11 @@ forceNextWave(): void {
    * El WaveManager solo verifica si ya no hay enemigos por spawnear.
    */
   private updateSpawning(_dt: number): void {
-    // Verificar si el Spawner ya terminó de encolar todos los enemigos
-    // El Spawner procesa su propia cola internamente en su update()
+    // Si todos los enemigos de la wave han muerto, finalizar la ronda.
+    // NOTA: onEnemyDied() también verifica !this.isSpawning para evitar
+    // transición prematura durante el spawning activo, pero este método
+    // es el mecanismo de respaldo cuando isSpawning sigue true.
     if (this.remainingEnemies <= 0) {
-      this.isSpawning = false;
       this.endWave();
     }
   }
@@ -418,6 +419,9 @@ forceNextWave(): void {
    */
   private endWave(): void {
     if (this.state !== WaveState.WaveInProgress) return;
+
+    // Limpiar spawns pendientes del Spawner antes de transicionar
+    this.spawner.reset();
 
     const reward = calculateWaveReward(this.currentRound, this.totalEnemiesInWave);
 

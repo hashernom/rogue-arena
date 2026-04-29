@@ -822,11 +822,11 @@ export class MiniBoss extends Enemy {
       this.droppedItem = null;
     }
 
-    // Emitir evento de item recogido (para reward adicional)
-    this.eventBus.emit('enemy:died', {
+    // Emitir evento de item recogido para que el MoneySystem otorgue bonus
+    this.eventBus.emit('item:collected', {
+      playerId: player.id,
       enemyId: this.id,
-      position: { x: 0, y: 0, z: 0 },
-      reward: 10, // Bonus por recoger el item
+      reward: 10,
     });
   }
 

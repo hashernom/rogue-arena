@@ -34,4 +34,6 @@ export interface GameEvents {
   'ability:ready': { playerId: string; abilityName: string };
   // Conexión
   'player:disconnected': { playerId: string };
+  // Recolección de ítems (MiniBoss)
+  'item:collected': { playerId: string; enemyId: string; reward: number };
 }

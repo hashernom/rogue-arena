@@ -199,20 +199,17 @@ export class DamagePipeline {
 
   /**
    * Emite evento de muerte con reward calculado según tipo de enemigo.
+   *
+   * NOTA: NO emite 'enemy:died' ni 'player:died' porque esos eventos ya son
+   * emitidos por Enemy.takeDamage() y Character.die() respectivamente.
+   * La doble emisión causaba que WaveManager.onEnemyDied() decrementara
+   * remainingEnemies dos veces por cada muerte, rompiendo la contabilidad
+   * de oleadas y causando crashes en la transición entre rondas.
    */
-  private emitDeathEvent(target: Damageable, position: THREE.Vector3, attackerId: string): void {
-    if (target instanceof Character) {
-      this.eventBus.emit('player:died', { playerId: target.id });
-    } else {
-      // Usar reward del target si está definido, si no calcular por tipo
-      const reward = target.reward ?? DamagePipeline.getRewardForType(target.type);
-      this.eventBus.emit('enemy:died', {
-        enemyId: target.id,
-        position: { x: position.x, y: position.y, z: position.z },
-        reward,
-        attackerId: attackerId !== 'unknown' ? attackerId : undefined,
-      });
-    }
+  private emitDeathEvent(_target: Damageable, _position: THREE.Vector3, _attackerId: string): void {
+    // Death events are already emitted by the target's takeDamage()/die() methods.
+    // This method exists as a hook for future death-related logic (e.g., area-of-effect,
+    // kill streaks, etc.) without re-emitting duplicate events.
   }
 
   /**

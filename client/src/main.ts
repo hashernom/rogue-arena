@@ -609,6 +609,16 @@ async function initGameWithPhysics(): Promise<void> {
       });
 
       // ================================================================
+      // RECOLECCIÓN DE ITEMS — Otorgar bonus por recoger item del MiniBoss
+      // ================================================================
+      eventBus.on('item:collected', (data: { playerId: string; reward: number }) => {
+        if (moneySystem && data.playerId) {
+          moneySystem.addMoney(data.playerId, data.reward, 'kill');
+          console.log(`[Item] ${data.playerId} recogio item: +${data.reward} monedas`);
+        }
+      });
+
+      // ================================================================
       // TRACKING DE KILLS — Incrementar kill count según quién mató
       // ================================================================
       eventBus.on('enemy:died', (data: { attackerId?: string }) => {
@@ -1034,10 +1044,7 @@ async function initGameWithPhysics(): Promise<void> {
     // _alpha no se usa porque SceneManager.render() no necesita interpolación
     sceneManager.render();
 
-    // Actualizar barra superior de monedas (siempre visible)
-    updateTopBar();
-
-    // Actualizar HUD superpuesto (HP bars, cooldowns, contadores)
+    // Actualizar HUD superpuesto (HP bars, cooldowns, contadores, monedas)
     if (gameHUD) {
       gameHUD.update();
     }
@@ -1402,92 +1409,6 @@ function updatePickupPrompt(): void {
   }
 }
 
-// =================================================================
-// BARRA SUPERIOR DE ESTADO (MONEDAS PERMANENTES)
-// =================================================================
-
-/**
- * Crea o actualiza la barra superior con los contadores de monedas de cada jugador.
- */
-function updateTopBar(): void {
-  let topBar = document.getElementById('top-status-bar');
-  if (!topBar) {
-    topBar = document.createElement('div');
-    topBar.id = 'top-status-bar';
-    Object.assign(topBar.style, {
-      position: 'fixed',
-      top: '0',
-      left: '0',
-      right: '0',
-      height: '44px',
-      background: 'linear-gradient(180deg, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.8) 100%)',
-      borderBottom: '1px solid rgba(255,170,0,0.2)',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '0 24px',
-      zIndex: '2000',
-      fontFamily: 'monospace',
-      fontSize: '14px',
-      backdropFilter: 'blur(8px)',
-      boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-    });
-    topBar.innerHTML = `
-      <div id="topbar-p1" style="display:flex;align-items:center;gap:8px;color:#ffaa00;">
-        <span style="font-weight:bold;">P1</span>
-        <span id="coin-p1" style="color:#ffd700;">0</span>
-        <span style="color:#ffd700;font-size:12px;">g</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:16px;">
-        <span id="topbar-round" style="color:#888;font-size:12px;">RONDA 0</span>
-        <span id="topbar-timer" style="color:#ff4444;font-size:13px;font-weight:bold;">⏱ --:--</span>
-      </div>
-      <div id="topbar-p2" style="display:flex;align-items:center;gap:8px;color:#44aaff;">
-        <span style="font-weight:bold;">P2</span>
-        <span id="coin-p2" style="color:#ffd700;">0</span>
-        <span style="color:#ffd700;font-size:12px;">g</span>
-      </div>
-    `;
-    document.body.appendChild(topBar);
-  }
-
-  // Actualizar valores
-  const p1Balance = moneySystem?.getBalance('player1') ?? 0;
-  const p2Balance = moneySystem?.getBalance('player2') ?? 0;
-  const p1El = document.getElementById('coin-p1');
-  const p2El = document.getElementById('coin-p2');
-  const roundEl = document.getElementById('topbar-round');
-  const timerEl = document.getElementById('topbar-timer');
-
-  if (p1El) p1El.textContent = String(p1Balance);
-  if (p2El) p2El.textContent = String(p2Balance);
-  if (roundEl && waveManager) {
-    roundEl.textContent = `RONDA ${waveManager.getCurrentRound()}`;
-  }
-
-  // Actualizar contador de tiempo de ronda
-  if (timerEl && waveManager) {
-    const remaining = waveManager.getRoundTimer();
-    if (remaining > 0) {
-      const minutes = Math.floor(remaining / 60);
-      const seconds = Math.floor(remaining % 60);
-      timerEl.textContent = `⏱ ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-      // Cambiar color cuando quedan menos de 15s
-      if (remaining <= 15) {
-        timerEl.style.color = '#ff2222';
-        timerEl.style.textShadow = '0 0 8px rgba(255,0,0,0.6)';
-      } else if (remaining <= 30) {
-        timerEl.style.color = '#ffaa00';
-        timerEl.style.textShadow = 'none';
-      } else {
-        timerEl.style.color = '#ff4444';
-        timerEl.style.textShadow = 'none';
-      }
-    } else {
-      timerEl.textContent = '';
-    }
-  }
-}
 
 // =================================================================
 // FUNCIÓN GLOBAL DE COMPRA (usada por teclas y click en cards del shop)
@@ -1544,8 +1465,7 @@ function executePurchase(playerId: string, itemIndex: number): void {
       card.style.position = 'relative';
       card.appendChild(boughtBadge);
     }
-    // Actualizar top bar inmediatamente
-    updateTopBar();
+    // Las monedas se actualizan via HUD.update() en el render loop
   } else {
     showNotification(`${playerId === 'player1' ? 'P1' : 'P2'}: ${result.message}`, 'error');
   }
