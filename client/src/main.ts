@@ -1,5 +1,7 @@
 import './style.css';
 import './menu.css';
+import { AudioManager } from './audio/AudioManager';
+import { SoundId } from './audio/soundIds';
 import * as THREE from 'three';
 import { GameLoop } from './engine/GameLoop';
 import { SceneManager } from './engine/SceneManager';
@@ -116,6 +118,8 @@ let currentMiniBoss: MiniBoss | null = null;
 let gameHUD: HUD | null = null;
 // Sistema de notificaciones flotantes
 let notificationSystem: NotificationSystem | null = null;
+// Flag para evitar duplicar listeners de audio al reiniciar
+let audioEventCleanup: (() => void) | null = null;
 
 // Pantalla de Game Over
 let gameOverScreen: GameOverScreen | null = null;
@@ -123,6 +127,20 @@ let gameOverScreen: GameOverScreen | null = null;
 let arena: Arena | null = null;
 // Cleanup del listener player:died para evitar duplicados al reiniciar
 let onPlayerDiedCleanup: (() => void) | null = null;
+
+// ================================================================
+// INICIALIZACIÓN DE AUDIO (LAZY — primer gesto del usuario)
+// ================================================================
+const initAudioOnInteraction = (): void => {
+  AudioManager.getInstance().init();
+  document.removeEventListener('keydown', initAudioOnInteraction);
+  document.removeEventListener('click', initAudioOnInteraction);
+  document.removeEventListener('touchstart', initAudioOnInteraction);
+};
+document.addEventListener('keydown', initAudioOnInteraction);
+document.addEventListener('click', initAudioOnInteraction);
+document.addEventListener('touchstart', initAudioOnInteraction);
+console.log('[Audio] AudioManager esperando primera interacción del usuario');
 
 // ================================================================
 // VARIABLES DE SINCRONIZACIÓN MULTIJUGADOR
@@ -648,6 +666,79 @@ async function initGameWithPhysics(): Promise<void> {
       // Inicializar sistema de notificaciones flotantes
       notificationSystem = new NotificationSystem(eventBus);
       console.log('🔔 NotificationSystem inicializado');
+
+      // Precargar todos los sonidos antes de la primera ronda
+      await AudioManager.getInstance().preloadAll();
+
+      // ============================================================
+      // SISTEMA DE AUDIO — Reproducir sonidos según eventos del juego
+      // ============================================================
+      const audio = AudioManager.getInstance();
+
+      // Limpiar listeners previos (para evitar duplicados al reiniciar)
+      if (audioEventCleanup) {
+        audioEventCleanup();
+        audioEventCleanup = null;
+      }
+
+      const cleanups: (() => void)[] = [];
+
+      cleanups.push(
+        eventBus.on('enemy:died', (data) => {
+          // Boss death suena diferente
+          if (data.enemyId && data.enemyId.startsWith('miniboss_')) {
+            audio.play('boss_death' as SoundId);
+          } else {
+            audio.play('enemy_death' as SoundId);
+          }
+        }),
+      );
+
+      cleanups.push(
+        eventBus.on('player:damaged', () => {
+          audio.play('player_hit' as SoundId);
+        }),
+      );
+
+      cleanups.push(
+        eventBus.on('player:died', () => {
+          audio.play('player_death' as SoundId);
+        }),
+      );
+
+      cleanups.push(
+        eventBus.on('wave:started', () => {
+          audio.play('wave_start' as SoundId);
+        }),
+      );
+
+      cleanups.push(
+        eventBus.on('wave:ended', () => {
+          audio.play('wave_complete' as SoundId);
+        }),
+      );
+
+      cleanups.push(
+        eventBus.on('shop:itemBought', () => {
+          audio.play('purchase' as SoundId);
+        }),
+      );
+
+      cleanups.push(
+        eventBus.on('item:collected', () => {
+          audio.play('coin_pickup' as SoundId);
+        }),
+      );
+
+      cleanups.push(
+        eventBus.on('ability:ready', () => {
+          audio.play('ability_ready' as SoundId);
+        }),
+      );
+
+      audioEventCleanup = () => {
+        cleanups.forEach((fn) => fn());
+      };
 
       // Inicializar pantalla de Game Over
       gameOverScreen = new GameOverScreen(eventBus, {
