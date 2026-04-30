@@ -21,12 +21,21 @@ import type { RigidBodyHandle } from '../physics/PhysicsWorld';
 import { seededRandom } from '../utils/seededRandom';
 
 // ---------------------------------------------------------------------------
-// Colores para obstáculos según tipo (estética low-poly)
+// Colores para obstáculos con temática de mazmorra/castillo
 // ---------------------------------------------------------------------------
 
 const OBSTACLE_COLORS = {
-  box: 0x6b5b4e,       // Marrón piedra
-  cylinder: 0x5a6b5a,  // Verde grisáceo
+  box: 0x5a5a5a,           // Piedra gris principal
+  cylinder: 0x6b5b4f,      // Piedra marrón para columnas
+} as const;
+
+/** Colores decorativos para obstáculos de mazmorra */
+const DECORATION_COLORS = {
+  trim: 0x7a6a5e,          // Borde/remate más claro
+  capital: 0x8a7a6e,       // Capitel de columna (más claro)
+  base: 0x4a3a2e,          // Base de columna (más oscuro)
+  accent: 0x3a4a3a,        // Acento verdoso (musgo/hierro)
+  darkStone: 0x3a3a3a,     // Piedra oscura para detalles
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -34,6 +43,9 @@ const OBSTACLE_COLORS = {
 // ---------------------------------------------------------------------------
 
 export class TilemapLoader {
+  /** Posiciones (x,z) de todos los obstáculos, expuesto para obstacle avoidance de enemigos */
+  static obstaclePositions: { x: number; z: number }[] = [];
+
   private sceneManager: SceneManager;
   private physicsWorld: PhysicsWorld;
 
@@ -80,7 +92,7 @@ export class TilemapLoader {
         { x: 3, z: 0 },
       ];
       const procObstacles = this.generateObstacleLayout(
-        12,
+        8,
         seed,
         config.size.width,
         playerSpawns,
@@ -185,7 +197,7 @@ export class TilemapLoader {
         // Tamaño aleatorio con más variedad: ancho 1..4, profundidad 1..3
         const w = Math.floor(rng() * 4) + 1; // 1, 2, 3, o 4
         const d = Math.floor(rng() * 3) + 1; // 1, 2, o 3
-        const h = 1.5; // altura fija
+        const h = 4.0; // altura fija — antes 1.5, parecían pinturas en el piso
 
         // Alternar entre box y cylinder para variedad visual
         const type: 'box' | 'cylinder' = rng() > 0.5 ? 'box' : 'cylinder';
@@ -208,12 +220,12 @@ export class TilemapLoader {
         }
         if (!valid) continue;
 
-        // Validar separación entre obstáculos (min 3.5m para mejor esparcimiento)
+        // Validar separación entre obstáculos (min 4.5m para mejor esparcimiento)
         for (const obs of obstacles) {
           const dx = x - obs.x;
           const dz = z - obs.z;
           const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist < 3.5) {
+          if (dist < 4.5) {
             valid = false;
             break;
           }
@@ -357,12 +369,18 @@ export class TilemapLoader {
    * Cada obstáculo se añade al grupo interno para limpieza posterior.
    */
   private buildObstacles(obstacles: MapObstacle[]): void {
+    // Resetear posiciones de obstáculos para obstacle avoidance
+    TilemapLoader.obstaclePositions = [];
+
     for (let i = 0; i < obstacles.length; i++) {
       const obs = obstacles[i];
       const color = OBSTACLE_COLORS[obs.type] ?? 0x888888;
 
       // Altura: el suelo está en y=-2, el obstáculo se apoya en el suelo
       const yPos = -2 + obs.h / 2;
+
+      // Registrar posición para obstacle avoidance de enemigos
+      TilemapLoader.obstaclePositions.push({ x: obs.x, z: obs.z });
 
       switch (obs.type) {
         case 'box':
@@ -377,6 +395,7 @@ export class TilemapLoader {
 
   /**
    * Construye un obstáculo tipo caja (BoxGeometry + cuboid collider).
+   * Con decoraciones de piedra de mazmorra: remate superior y cantoneras.
    */
   private buildBoxObstacle(
     obs: MapObstacle,
@@ -384,6 +403,7 @@ export class TilemapLoader {
     color: number,
     index: number,
   ): void {
+    // --- Cuerpo principal ---
     const geometry = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
     const material = new THREE.MeshPhongMaterial({
       color,
@@ -397,15 +417,60 @@ export class TilemapLoader {
     mesh.name = `Obstacle_box_${index}`;
     this.obstacleGroup.add(mesh);
 
-    // Collider físico
+    // --- Remate superior (coping) — losa de piedra que sobresale ligeramente ---
+    const trimOverhang = 0.15;
+    const trimHeight = 0.12;
+    const trimGeo = new THREE.BoxGeometry(
+      obs.w + trimOverhang * 2,
+      trimHeight,
+      obs.d + trimOverhang * 2,
+    );
+    const trimMat = new THREE.MeshPhongMaterial({
+      color: DECORATION_COLORS.trim,
+      flatShading: true,
+      shininess: 8,
+    });
+    const trim = new THREE.Mesh(trimGeo, trimMat);
+    trim.position.set(obs.x, yPos + obs.h / 2 - trimHeight / 2, obs.z);
+    trim.castShadow = true;
+    trim.receiveShadow = true;
+    trim.name = `Obstacle_box_${index}_trim`;
+    this.obstacleGroup.add(trim);
+
+    // --- Cantoneras (4 esquinas superiores) — pequeños cubos decorativos ---
+    const cornerSize = 0.2;
+    const cornerMat = new THREE.MeshPhongMaterial({
+      color: DECORATION_COLORS.darkStone,
+      flatShading: true,
+      shininess: 5,
+    });
+    const cornerGeo = new THREE.BoxGeometry(cornerSize, cornerSize, cornerSize);
+    const hw = obs.w / 2;
+    const hd = obs.d / 2;
+    const cy = yPos + obs.h / 2 - trimHeight - cornerSize / 2;
+    const cornerPositions = [
+      [-hw, -hd], [hw, -hd],
+      [-hw, hd], [hw, hd],
+    ];
+    for (const [dx, dz] of cornerPositions) {
+      const corner = new THREE.Mesh(cornerGeo, cornerMat);
+      corner.position.set(obs.x + dx, cy, obs.z + dz);
+      corner.castShadow = true;
+      corner.receiveShadow = true;
+      corner.name = `Obstacle_box_${index}_corner`;
+      this.obstacleGroup.add(corner);
+    }
+
+    // --- Collider físico ---
     const size = new THREE.Vector3(obs.w, obs.h, obs.d);
     const bodyPos = new THREE.Vector3(obs.x, yPos, obs.z);
-    const bodyHandle = BodyFactory.createWallBody(this.physicsWorld, bodyPos, size);
+    const bodyHandle = BodyFactory.createObstacleBody(this.physicsWorld, bodyPos, size);
     this.obstacleBodies.push(bodyHandle);
   }
 
   /**
    * Construye un obstáculo tipo cilindro (CylinderGeometry + ball collider aproximado).
+   * Decorado como columna de mazmorra con capitel y base.
    * NOTA: Rapier3D no tiene collider de cilindro nativo; usamos un ball (esfera)
    * con radio = max(w, d) / 2 como aproximación.
    */
@@ -415,8 +480,11 @@ export class TilemapLoader {
     color: number,
     index: number,
   ): void {
-    // Mesh visual: cilindro con radio = w/2, altura = h, segmentos = 12 (low-poly)
     const radius = obs.w / 2;
+    const topY = yPos + obs.h / 2;
+    const bottomY = yPos - obs.h / 2;
+
+    // --- Fuste (columna principal) ---
     const geometry = new THREE.CylinderGeometry(radius, radius, obs.h, 12);
     const material = new THREE.MeshPhongMaterial({
       color,
@@ -430,13 +498,42 @@ export class TilemapLoader {
     mesh.name = `Obstacle_cylinder_${index}`;
     this.obstacleGroup.add(mesh);
 
+    // --- Capitel (anillo superior decorativo) ---
+    const capitalRadius = radius + 0.12;
+    const capitalHeight = 0.15;
+    const capitalGeo = new THREE.CylinderGeometry(capitalRadius, capitalRadius, capitalHeight, 12);
+    const capitalMat = new THREE.MeshPhongMaterial({
+      color: DECORATION_COLORS.capital,
+      flatShading: true,
+      shininess: 8,
+    });
+    const capital = new THREE.Mesh(capitalGeo, capitalMat);
+    capital.position.set(obs.x, topY - capitalHeight / 2, obs.z);
+    capital.castShadow = true;
+    capital.name = `Obstacle_cylinder_${index}_capital`;
+    this.obstacleGroup.add(capital);
+
+    // --- Base (anillo inferior decorativo) ---
+    const baseRadius = radius + 0.15;
+    const baseHeight = 0.12;
+    const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 12);
+    const baseMat = new THREE.MeshPhongMaterial({
+      color: DECORATION_COLORS.base,
+      flatShading: true,
+      shininess: 5,
+    });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.set(obs.x, bottomY + baseHeight / 2, obs.z);
+    base.castShadow = true;
+    base.name = `Obstacle_cylinder_${index}_base`;
+    this.obstacleGroup.add(base);
+
     // Collider físico: usamos un cuboide con las mismas dimensiones como aproximación
-    // (Rapier3D no tiene CylinderCollider; cuboid es la mejor opción)
-    // Si el cilindro es casi circular en base (w ≈ d), el cuboide funciona bien
     const size = new THREE.Vector3(obs.w, obs.h, obs.d);
     const bodyPos = new THREE.Vector3(obs.x, yPos, obs.z);
-    const bodyHandle = BodyFactory.createWallBody(this.physicsWorld, bodyPos, size);
+    const bodyHandle = BodyFactory.createObstacleBody(this.physicsWorld, bodyPos, size);
     this.obstacleBodies.push(bodyHandle);
   }
 }
+
 

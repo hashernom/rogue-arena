@@ -638,11 +638,7 @@ export class AdcCharacter extends Character {
       );
     }
 
-    // 3. Offset para que el proyectil no choque con el propio personaje
-    const spawnOffset = 1.0;
-    spawnPos.add(forwardDir.clone().multiplyScalar(spawnOffset));
-
-    // 4. Crear proyectil visual (flecha 3D KayKit)
+    // 3. Crear proyectil visual (flecha 3D KayKit)
     let arrowGroup: THREE.Group;
 
     if (this.arrowGltf) {
@@ -679,8 +675,12 @@ export class AdcCharacter extends Character {
     const lookTarget = spawnPos.clone().add(forwardDir);
     arrowGroup.lookAt(lookTarget);
 
-    // Almacenar dirección en userData para uso en updateProjectiles
-    arrowGroup.userData = { direction: forwardDir.clone() };
+    // Almacenar datos en userData para uso en updateProjectiles
+    arrowGroup.userData = {
+      direction: forwardDir.clone(),
+      spawnPosition: spawnPos.clone(),
+      totalDistance: 0,
+    };
 
     this.sceneManager.add(arrowGroup);
     this.activeProjectiles.push(arrowGroup);
@@ -737,6 +737,21 @@ export class AdcCharacter extends Character {
    * Detecta colisiones con un rayo (disparo instantáneo) y aplica daño.
    * Soporta piercing: si canPierce es true, el rayo continúa atravesando enemigos.
    */
+  /**
+   * Detecta impactos del proyectil usando múltiples raycasts a diferentes alturas.
+   *
+   * Debido a la perspectiva isométrica, cuando el jugador apunta a la parte superior
+   * del enemigo en pantalla, el rayo del mouse interseca el suelo DETRÁS del enemigo.
+   * Un solo rayo horizontal a y=1.2 puede pasar por encima de la cápsula del enemigo
+   * (que abarca y[0.05, 1.35]). Para resolver esto, lanzamos 3 rayos a diferentes
+   * alturas simultáneamente, asegurando que al menos uno intersecte al enemigo sin
+   * importar dónde apunte el cursor en el cuerpo del enemigo.
+   *
+   * @param origin Posición de origen del disparo (normalmente a la altura del pecho/arma)
+   * @param direction Dirección horizontal del disparo (sin componente Y)
+   * @param damage Cantidad de daño base del proyectil
+   * @param arrowGroup Grupo visual de la flecha (opcional, para animación de vuelo)
+   */
   private detectHitsWithRay(origin: THREE.Vector3, direction: THREE.Vector3, damage: number, arrowGroup?: THREE.Object3D): void {
     if (!this.physicsWorld) {
       console.warn('[AdcCharacter] No hay physicsWorld disponible para detectar colisiones');
@@ -747,8 +762,7 @@ export class AdcCharacter extends Character {
     if (!world) return;
 
     const rayDir = { x: direction.x, y: direction.y, z: direction.z };
-    const rayOrigin = { x: origin.x, y: origin.y, z: origin.z };
-    const ray = new RAPIER.Ray(rayOrigin, rayDir);
+    const baseOrigin = { x: origin.x, y: origin.y, z: origin.z };
 
     const maxRange = 25.0; // Alcance del ADC
     const solid = false; // Permite detectar el interior de las hitboxes
@@ -765,18 +779,25 @@ export class AdcCharacter extends Character {
     // Distancia al muro más cercano (-1 = no hay muro en el camino)
     let wallHitToi = -1;
 
+    // --- RAYCAST DE PAREDES (a nivel del suelo: y=-0.75) ---
+    // Este rayo SOLO busca paredes/obstáculos. Los colliders de:
+    //   - Paredes de arena: cuboid(y=-0.5, h=3) → span y[-2, 1]
+    //   - Obstáculos: cuboid(y=-1.25, h=1.5) → span y[-2, -0.5]
+    // A y=-0.75 intersectamos AMBOS tipos de colisionadores.
+    // Los enemigos tienen collider en y[-0.5, 1.9], así que NO los detectamos aquí.
+    const wallRayOrigin = { x: origin.x, y: -0.75, z: origin.z };
+    const wallRay = new RAPIER.Ray(wallRayOrigin, rayDir);
+
     world.intersectionsWithRay(
-      ray,
+      wallRay,
       maxRange,
       solid,
       (intersection: RAPIER.RayColliderIntersection) => {
         const collider = intersection.collider;
-
-        // Extraer grupos de colisión
         const groups = collider.collisionGroups();
-        const membership = (groups >> 16) & 0xffff; // Extraer bits de membership
+        const membership = (groups >> 16) & 0xffff;
 
-        // Si es un muro, registrar la distancia de impacto
+        // Solo nos interesan paredes y obstáculos
         if ((membership & Groups.WALL) !== 0) {
           const intersectionAny = intersection as any;
           const toi =
@@ -785,51 +806,83 @@ export class AdcCharacter extends Character {
             intersectionAny.distance ??
             intersectionAny.t ??
             0;
-          // Solo registrar si es el muro más cercano hasta ahora
           if (wallHitToi < 0 || toi < wallHitToi) {
             wallHitToi = toi;
           }
-          return true; // Continuar buscando (puede haber enemigos antes del muro)
         }
-
-        // Filtrar por grupo ENEMY
-        if ((membership & Groups.ENEMY) === 0) {
-          return true; // No es relevante, continuar
-        }
-
-        const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
-
-        if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
-          const enemyId = userData.id;
-          if (enemyId !== undefined) {
-            const intersectionAny = intersection as any;
-            const toi =
-              intersectionAny.toi ??
-              intersectionAny.timeOfImpact ??
-              intersectionAny.distance ??
-              intersectionAny.t ??
-              0;
-            console.log(
-              '[AdcCharacter] Intersection props:',
-              Object.keys(intersectionAny),
-              'toi:',
-              toi
-            );
-
-            hits.push({
-              id: enemyId,
-              entity: userData.entity,
-              toi,
-            });
-          }
-        }
-
-        return true;
+        return true; // Seguir buscando (puede haber pared más cercana)
       }
     );
 
+    // --- RAYCAST PRINCIPAL MULTI-ALTURA (3 alturas) SOLO para enemigos ---
+    // En perspectiva isométrica, el cursor del mouse en la parte superior del enemigo
+    // se traduce a un punto en el suelo DETRÁS del enemigo. Un solo rayo horizontal
+    // puede pasar por encima o por debajo del collider del enemigo.
+    //
+    // SOLUCIÓN: Lanzamos 3 rayos a diferentes alturas que cubren el rango completo
+    // de la cápsula del enemigo (y[0.05, 1.35]):
+    //   - Rayo bajo:  y = 0.3  (cubre piernas/cintura)
+    //   - Rayo medio: y = 0.8  (cubre torso/centro)
+    //   - Rayo alto:  y = 1.3  (cubre hombros/cabeza)
+    //
+    // Si múltiples rayos impactan al mismo enemigo, se deduplica por ID de entidad.
+    const enemyHeights = [0.3, 0.8, 1.3];
+    const enemyHitMap = new Map<number, { id: number; entity: any; toi: number }>();
+
+    for (const heightY of enemyHeights) {
+      const rayOrigin = { x: baseOrigin.x, y: heightY, z: baseOrigin.z };
+      const ray = new RAPIER.Ray(rayOrigin, rayDir);
+
+      world.intersectionsWithRay(
+        ray,
+        maxRange,
+        solid,
+        (intersection: RAPIER.RayColliderIntersection) => {
+          const collider = intersection.collider;
+
+          // Extraer grupos de colisión
+          const groups = collider.collisionGroups();
+          const membership = (groups >> 16) & 0xffff;
+
+          // Filtrar SOLO por grupo ENEMY
+          if ((membership & Groups.ENEMY) === 0) {
+            return true;
+          }
+
+          const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
+
+          if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
+            const enemyId = userData.id;
+            if (enemyId !== undefined) {
+              const intersectionAny = intersection as any;
+              const toi =
+                intersectionAny.toi ??
+                intersectionAny.timeOfImpact ??
+                intersectionAny.distance ??
+                intersectionAny.t ??
+                0;
+
+              // Solo guardar el hit más cercano para este enemigo
+              if (!enemyHitMap.has(enemyId) || toi < enemyHitMap.get(enemyId)!.toi) {
+                enemyHitMap.set(enemyId, {
+                  id: enemyId,
+                  entity: userData.entity,
+                  toi,
+                });
+              }
+            }
+          }
+
+          return true;
+        }
+      );
+    }
+
+    // Convertir el Map a array de hits
+    enemyHitMap.forEach(hit => hits.push(hit));
+
     console.log(
-      `[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length}, wallHitToi: ${wallHitToi}`
+      `[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length} (de ${enemyHeights.length} alturas), wallHitToi: ${wallHitToi}`
     );
     if (hits.length > 0) {
       console.log(`[AdcCharacter] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
@@ -841,12 +894,11 @@ export class AdcCharacter extends Character {
     // 3. Verificar si el muro está ANTES que cualquier enemigo
     // Si el muro está más cerca que el primer enemigo, el proyectil impacta el muro y no pasa
     if (wallHitToi >= 0 && (hits.length === 0 || wallHitToi < hits[0].toi)) {
-      console.log(`[AdcCharacter] Proyectil impactó muro a distancia ${wallHitToi.toFixed(2)}, destruido`);
-      // Destruir también la flecha visual si existe
+      console.log(`[AdcCharacter] Proyectil impactó muro a distancia ${wallHitToi.toFixed(2)}`);
       if (arrowGroup) {
-        this.removeProjectile(arrowGroup);
+        arrowGroup.userData.hitDistance = wallHitToi;
       }
-      return; // El proyectil se destruye contra el muro
+      return;
     }
 
     // 4. APLICAR DAÑO Y LÓGICA DE PIERCING (usando DamagePipeline)
@@ -856,11 +908,10 @@ export class AdcCharacter extends Character {
         // Verificar si hay un muro entre el origen y este enemigo
         if (wallHitToi >= 0 && wallHitToi < hit.toi) {
           console.log(`[AdcCharacter] Muro bloquea el impacto al enemigo ID: ${hit.id} (muro: ${wallHitToi.toFixed(2)} < enemigo: ${hit.toi.toFixed(2)})`);
-          // Destruir la flecha visual al impactar el muro
           if (arrowGroup) {
-            this.removeProjectile(arrowGroup);
+            arrowGroup.userData.hitDistance = wallHitToi;
           }
-          break; // El muro bloquea el proyectil antes de llegar a este enemigo
+          break;
         }
 
         // Usar el pipeline centralizado si está disponible
@@ -879,7 +930,6 @@ export class AdcCharacter extends Character {
             critMultiplier: 1.5,
           });
         } else {
-          // Fallback: aplicar daño directamente (sin pipeline)
           hit.entity.takeDamage(damage);
         }
         enemiesHit.add(hit.id);
@@ -887,11 +937,9 @@ export class AdcCharacter extends Character {
           `🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`
         );
 
-        // Si NO hay piercing, la bala se destruye al golpear al PRIMER enemigo (el más cercano)
         if (!canPierce) {
-          // Destruir la flecha visual al impactar al enemigo
           if (arrowGroup) {
-            this.removeProjectile(arrowGroup);
+            arrowGroup.userData.hitDistance = hit.toi;
           }
           break;
         }
@@ -901,7 +949,9 @@ export class AdcCharacter extends Character {
 
   /**
    * Calcula la dirección de disparo basada en la posición del mouse usando raycasting.
-   * Intersecta un rayo desde la cámara a través de las coordenadas NDC del mouse con un plano en Y=1.2 (altura del pecho).
+   * Intersecta un rayo desde la cámara a través de las coordenadas NDC del mouse con un plano en Y=0.6 (centro de masa del enemigo).
+   * La dirección resultante barre naturalmente hacia abajo desde el pecho (y≈1.2) hasta el centro del enemigo (y≈0.6),
+   * asegurando que el rayo intersecte la cápsula del enemigo sin importar a qué parte del cuerpo apunte el mouse.
    * @param camera Cámara desde la cual se lanza el rayo
    * @param mouseNDC Coordenadas normalizadas del mouse en rango [-1, 1]
    * @returns Dirección normalizada hacia el punto de intersección, o fallback a dirección forward del modelo
@@ -913,13 +963,16 @@ export class AdcCharacter extends Character {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouseNDC, camera);
 
-    // 🔥 CAMBIO CLAVE: Intersectamos el SUELO real (Y = 0) 🔥
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    // 🔥 CAMBIO CLAVE: Intersectamos el centro de masa (Y = 0.6) en vez del suelo 🔥
+    // La cápsula del enemigo (medium) abarca y[0.05, 1.35] con centro en y=0.7.
+    // Al intersectar y=0.6 (ligeramente debajo del centro), el rayo apunta directamente
+    // al cuerpo del enemigo. El spawn está en y≈1.2 (pecho), creando un barrido descendente
+    // que garantiza intersección sin importar dónde apunte el mouse en la vertical.
+    const bodyPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.6);
     const targetPos = new THREE.Vector3();
 
-    if (raycaster.ray.intersectPlane(groundPlane, targetPos)) {
-      // Una vez tenemos el punto en el suelo, lo subimos a la altura del pecho
-      targetPos.y = 1.2;
+    if (raycaster.ray.intersectPlane(bodyPlane, targetPos)) {
+      // targetPos.y = 0.6 por la definición del plano
 
       const spawnPos = new THREE.Vector3();
       if (this.model) {
@@ -930,7 +983,8 @@ export class AdcCharacter extends Character {
       }
 
       const direction = new THREE.Vector3().subVectors(targetPos, spawnPos);
-      direction.y = 0; // Forzar horizontalidad
+      // NO forzar direction.y = 0 — el barrido descendente (y≈1.2 → y≈0.6)
+      // garantiza que el rayo pase a través de la cápsula del enemigo.
 
       if (direction.lengthSq() > 0.0001) {
         return direction.normalize();
@@ -938,7 +992,7 @@ export class AdcCharacter extends Character {
     }
 
     // 🔥 2. LA SOLUCIÓN AL CORTE (Mouse apuntando al horizonte/cielo) 🔥
-    // Si el rayo no choca con el suelo, usamos la dirección de la cámara proyectada en 2D
+    // Si el rayo no choca con el plano, usamos la dirección de la cámara proyectada en 2D
     const horizonDir = raycaster.ray.direction.clone();
     horizonDir.y = 0;
 
@@ -1036,6 +1090,35 @@ export class AdcCharacter extends Character {
   }
 
   /**
+   * Limpia todos los proyectiles activos del ADC (útil al forzar cambio de ronda con F2).
+   * Remueve de la escena y hace dispose de geometrías/materiales.
+   */
+  clearActiveProjectiles(): void {
+    const projectiles = [...this.activeProjectiles];
+    for (const projectile of projectiles) {
+      if (projectile.parent) {
+        this.sceneManager.remove(projectile);
+        if (projectile instanceof THREE.Group && projectile.children.length > 0) {
+          projectile.children.forEach(child => {
+            if (child instanceof THREE.Mesh) {
+              try { child.geometry.dispose(); } catch {}
+              if (Array.isArray(child.material)) {
+                child.material.forEach(m => { try { m.dispose(); } catch {} });
+              } else {
+                try { (child.material as THREE.Material).dispose(); } catch {}
+              }
+            }
+          });
+        } else if (projectile instanceof THREE.Mesh) {
+          try { projectile.geometry.dispose(); } catch {}
+          try { (projectile.material as THREE.Material).dispose(); } catch {}
+        }
+      }
+    }
+    this.activeProjectiles = [];
+  }
+
+  /**
    * Actualiza la posición de todos los proyectiles activos.
    */
   private updateProjectiles(dt: number): void {
@@ -1044,38 +1127,112 @@ export class AdcCharacter extends Character {
 
     for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.activeProjectiles[i];
-      // Usar dirección almacenada en userData o calcular a partir de la orientación
-      let direction = projectile.userData?.direction;
-      if (direction && direction instanceof THREE.Vector3) {
-        direction = direction.clone(); // Clonar para no modificar el original
-        direction.y = 0;
-        if (direction.lengthSq() > 0.0001) {
-          direction.normalize();
-        } else {
-          direction.set(0, 0, -1);
-        }
-      } else {
-        direction = new THREE.Vector3();
-        projectile.getWorldDirection(direction);
-        direction.y = 0;
-        if (direction.lengthSq() > 0.0001) {
-          direction.normalize();
-        } else {
-          direction.set(0, 0, -1);
-        }
-      }
-      console.log(
-        `[AdcCharacter] updateProjectiles: direction (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
-      );
-      projectile.position.add(direction.multiplyScalar(speed * dt));
+      const ud = projectile.userData;
 
-      // Verificar colisión (placeholder)
-      const distance = projectile.position.distanceTo(this.model?.position || new THREE.Vector3());
-      if (distance > maxDistance) {
-        this.sceneManager.remove(projectile);
-        this.activeProjectiles.splice(i, 1);
+      // Obtener dirección
+      let direction: THREE.Vector3;
+      if (ud?.direction && ud.direction instanceof THREE.Vector3) {
+        direction = ud.direction.clone();
+      } else {
+        direction = new THREE.Vector3(0, 0, -1);
+        projectile.getWorldDirection(direction);
+      }
+      direction.y = 0;
+      if (direction.lengthSq() > 0.0001) {
+        direction.normalize();
+      } else {
+        direction.set(0, 0, -1);
+      }
+
+      // Avanzar la flecha desde su spawnPosition según la distancia total recorrida
+      const step = speed * dt;
+      ud.totalDistance = (ud.totalDistance || 0) + step;
+
+      // Posicionar la flecha en spawnPosition + direction * totalDistance
+      const spawnPos = ud.spawnPosition;
+      if (spawnPos) {
+        projectile.position.copy(spawnPos);
+        projectile.position.add(direction.clone().multiplyScalar(ud.totalDistance));
+      } else {
+        // Fallback: mover relativo
+        projectile.position.add(direction.multiplyScalar(step));
+      }
+
+      // Verificar si la flecha ha alcanzado su destino (hitDistance o maxDistance)
+      const targetDistance = ud.hitDistance ?? maxDistance;
+      if (ud.totalDistance >= targetDistance) {
+        // Clamp a la posición exacta de impacto
+        if (spawnPos) {
+          projectile.position.copy(spawnPos);
+          projectile.position.add(direction.clone().multiplyScalar(targetDistance));
+        }
+
+        // Pequeño efecto de impacto visual (partículas)
+        this.spawnImpactEffect(projectile.position.clone());
+
+        // Destruir la flecha (removeProjectile ya hace splice del array)
+        this.removeProjectile(projectile);
       }
     }
+  }
+
+  /**
+   * Crea un pequeño efecto de partículas en la posición de impacto del proyectil.
+   */
+  private spawnImpactEffect(position: THREE.Vector3): void {
+    const count = 8;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+
+    for (let j = 0; j < count; j++) {
+      const idx = j * 3;
+      positions[idx] = (Math.random() - 0.5) * 0.5;
+      positions[idx + 1] = (Math.random() - 0.5) * 0.5;
+      positions[idx + 2] = (Math.random() - 0.5) * 0.5;
+      colors[idx] = 0.0;
+      colors[idx + 1] = 1.0;
+      colors[idx + 2] = 0.3;
+      sizes[j] = 0.1 + Math.random() * 0.15;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.15,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const particles = new THREE.Points(geometry, material);
+    particles.position.copy(position);
+    this.sceneManager.add(particles);
+
+    // Animar desvanecimiento y destrucción
+    const startTime = performance.now();
+    const duration = 300; // ms
+
+    const fadeParticles = () => {
+      const elapsed = performance.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      material.opacity = 1 - t;
+      particles.scale.setScalar(1 + t * 0.5);
+
+      if (t < 1) {
+        requestAnimationFrame(fadeParticles);
+      } else {
+        material.dispose();
+        geometry.dispose();
+        this.sceneManager.remove(particles);
+      }
+    };
+    requestAnimationFrame(fadeParticles);
   }
 
   /**

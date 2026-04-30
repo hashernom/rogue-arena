@@ -16,7 +16,7 @@ export class CameraController {
    * @param near - Plano near (default: 0.1).
    * @param far - Plano far (default: 1000).
    */
-  constructor(frustumSize = 26, near = 0.1, far = 1000) {
+  constructor(frustumSize = 45, near = 0.1, far = 1000) {
     this.frustumSize = frustumSize;
     this.near = near;
     this.far = far;
@@ -24,7 +24,6 @@ export class CameraController {
     // Crear cámara con frustum inicial
     this.camera = this.createCamera();
 
-    // Posicionar en ángulo isométrico (45°) — más alejado para mejor visión del gameplay
     this.setIsometricPosition(20, 20, 20);
   }
 

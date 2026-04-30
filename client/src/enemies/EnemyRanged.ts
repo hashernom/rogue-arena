@@ -9,16 +9,21 @@ import { AssetLoader } from '../engine/AssetLoader';
 import { ProjectilePool } from '../combat/ProjectilePool';
 import { Groups, Masks } from '../physics/CollisionGroups';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { TilemapLoader } from '../map/TilemapLoader';
 import {
   seek,
   flee,
   strafeAround,
   separation,
+  avoidObstacles,
   combineForces,
   applyAcceleration,
   DEFAULT_RANGED_WEIGHTS,
   DEFAULT_SEPARATION_RADIUS,
   MAX_SEPARATION_NEIGHBORS,
+  DEFAULT_AVOID_LOOK_AHEAD,
+  DEFAULT_AVOID_RADIUS,
+  DEFAULT_AVOID_WEIGHT,
   type SteeringAgent,
 } from './SteeringBehaviors';
 
@@ -537,11 +542,13 @@ export class EnemyRanged extends Enemy {
     }
 
     const sepForce = separation(agent, neighbors, DEFAULT_SEPARATION_RADIUS, MAX_SEPARATION_NEIGHBORS);
+    const avoidForce = avoidObstacles(agent, TilemapLoader.obstaclePositions, primaryForce, DEFAULT_AVOID_LOOK_AHEAD, DEFAULT_AVOID_RADIUS);
 
     // Combinar con pesos
     const { direction, hasMovement } = combineForces([
       [primaryForce, primaryWeight],
       [sepForce, DEFAULT_RANGED_WEIGHTS.separation],
+      [avoidForce, DEFAULT_AVOID_WEIGHT],
     ]);
 
     if (!hasMovement) return;

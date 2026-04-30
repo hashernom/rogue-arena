@@ -36,6 +36,9 @@ export class SalvoAbility {
   // Referencia a la escena (necesaria para añadir proyectiles)
   private sceneManager: any;
 
+  // Lista de proyectiles activos para poder limpiarlos al forzar ronda (F2)
+  private activeSalvoProjectiles: Set<THREE.Mesh> = new Set();
+
   constructor(eventBus: EventBus, character: Character, playerId: string, sceneManager: any) {
     this.eventBus = eventBus;
     this.character = character;
@@ -286,6 +289,9 @@ export class SalvoAbility {
     // Añadir a la escena
     this.sceneManager.add(projectile);
 
+    // Track para cleanup al forzar ronda
+    this.activeSalvoProjectiles.add(projectile);
+
     // Emitir evento de creación de proyectil
     (this.eventBus as any).emit('projectile:created', {
       playerId: this.playerId,
@@ -510,6 +516,9 @@ export class SalvoAbility {
    * Remueve un proyectil de la escena.
    */
   private removeProjectile(projectile: THREE.Mesh): void {
+    // Quitar del tracking set
+    this.activeSalvoProjectiles.delete(projectile);
+
     if (projectile.parent) {
       this.sceneManager.remove(projectile);
       projectile.geometry.dispose();
@@ -621,13 +630,32 @@ export class SalvoAbility {
   }
 
   /**
+   * Limpia todos los proyectiles activos de la salva.
+   * Debe llamarse al forzar ronda (F2) o al destruir el personaje.
+   */
+  public clearAllProjectiles(): void {
+    for (const projectile of this.activeSalvoProjectiles) {
+      if (projectile.parent) {
+        this.sceneManager.remove(projectile);
+      }
+      try {
+        projectile.geometry.dispose();
+      } catch { /* ignore */ }
+      try {
+        (projectile.material as THREE.Material).dispose();
+      } catch { /* ignore */ }
+    }
+    this.activeSalvoProjectiles.clear();
+  }
+
+  /**
    * Limpia recursos (para cuando el personaje muere o se destruye).
    */
   public dispose(): void {
     // Limpiar listeners
     (this.eventBus as any).off('player:abilityQ', this.handleAbilityActivation.bind(this));
 
-    // Limpiar cualquier proyectil pendiente
-    // (En una implementación real, se deberían limpiar todos los proyectiles activos)
+    // Limpiar todos los proyectiles pendientes
+    this.clearAllProjectiles();
   }
 }

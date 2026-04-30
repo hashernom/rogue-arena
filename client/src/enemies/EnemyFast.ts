@@ -6,14 +6,19 @@ import type { EventBus } from '../engine/EventBus';
 import type { SceneManager } from '../engine/SceneManager';
 import type { PhysicsWorld, RigidBodyHandle } from '../physics/PhysicsWorld';
 import { BodyFactory } from '../physics/BodyFactory';
+import { TilemapLoader } from '../map/TilemapLoader';
 import {
   seek,
   separation,
+  avoidObstacles,
   combineForces,
   applyAcceleration,
   DEFAULT_MELEE_WEIGHTS,
   DEFAULT_SEPARATION_RADIUS,
   MAX_SEPARATION_NEIGHBORS,
+  DEFAULT_AVOID_LOOK_AHEAD,
+  DEFAULT_AVOID_RADIUS,
+  DEFAULT_AVOID_WEIGHT,
   type SteeringAgent,
 } from './SteeringBehaviors';
 
@@ -420,11 +425,13 @@ export class EnemyFast extends Enemy {
       // Calcular steering forces
       const seekForce = seek(agent, seekTarget);
       const sepForce = separation(agent, neighbors, DEFAULT_SEPARATION_RADIUS, MAX_SEPARATION_NEIGHBORS);
+      const avoidForce = avoidObstacles(agent, TilemapLoader.obstaclePositions, seekForce, DEFAULT_AVOID_LOOK_AHEAD, DEFAULT_AVOID_RADIUS);
 
       // Combinar con pesos
       const { direction, hasMovement } = combineForces([
         [seekForce, DEFAULT_MELEE_WEIGHTS.seek],
         [sepForce, DEFAULT_MELEE_WEIGHTS.separation],
+        [avoidForce, DEFAULT_AVOID_WEIGHT],
       ]);
 
       if (!hasMovement) return;

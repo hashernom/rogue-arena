@@ -47,6 +47,14 @@ export interface BodyOptions {
    * Útil para almacenar identificadores (id) u otra información de la entidad.
    */
   userData?: Record<string, any>;
+  /**
+   * Desactiva el "sueño" del cuerpo dinámico.
+   * Rapier duerme cuerpos estacionarios por defecto (canSleep=true),
+   * lo que DESACTIVA la resolución de colisiones.
+   * Los jugadores DEBEN tener canSleep=false para no atravesar paredes
+   * tras estar estáticos contra ellas unos segundos.
+   */
+  canSleep?: boolean;
 }
 
 /**
@@ -62,6 +70,16 @@ export class PhysicsWorld {
   private bodyToMesh: Map<RigidBodyHandle, THREE.Object3D> = new Map();
   // Mapeo inverso para limpieza
   private meshToBody: WeakMap<THREE.Object3D, RigidBodyHandle> = new WeakMap();
+
+  /**
+   * Conjunto de cuerpos que NUNCA deben dormirse (wakeUp() periódico).
+   * Rapier duerme cuerpos dinámicos estacionarios tras ~1s, lo que
+   * DESACTIVA la resolución de colisiones. Los jugadores necesitan
+   * wakeUp() constante para no atravesar paredes/obstáculos.
+   * Usamos wakeUp() en lugar de setCanSleep() porque este último
+   * no está disponible en el wrapper rapier3d-compat y crashearía.
+   */
+  private alwaysAwakeBodies: Set<RigidBodyHandle> = new Set();
 
   /**
    * Constructor privado (usar init()).
@@ -167,6 +185,16 @@ export class PhysicsWorld {
 
     const body = world.createRigidBody(bodyDesc);
 
+    // Desactivar "sueño" físico si se solicita (esencial para jugadores).
+    // Rapier duerme cuerpos dinámicos estacionarios tras ~1s sin movimiento,
+    // lo que DESACTIVA la resolución de colisiones contra estáticos.
+    // Los jugadores DEBEN tener canSleep=false para no atravesar paredes.
+    // En lugar de setCanSleep() (que NO existe en rapier3d-compat v0.19.3),
+    // registramos el handle para wakeUp() periódico en step().
+    if (options.canSleep !== undefined && !options.canSleep) {
+      this.alwaysAwakeBodies.add(body.handle);
+    }
+
     // Asignar userData si se proporciona
     if (options.userData) {
       body.userData = options.userData;
@@ -226,6 +254,22 @@ export class PhysicsWorld {
     // Para manejar diferentes deltaTimes, necesitamos acumular tiempo y hacer múltiples steps.
     // Implementación simple: hacer un step por cada frame (asumiendo deltaTime ≈ timestep fijo)
     this.world.step();
+
+    // Despertar cuerpos que nunca deben dormirse (ej: jugadores).
+    // Rapier duerme cuerpos dinámicos estacionarios tras ~1s, lo que
+    // desactiva la resolución de colisiones contra objetos estáticos.
+    // Sin wakeUp(), el jugador atravesaría paredes tras ~1s quieto.
+    if (this.alwaysAwakeBodies.size > 0) {
+      for (const handle of this.alwaysAwakeBodies) {
+        const body = this.world.getRigidBody(handle);
+        if (body) {
+          body.wakeUp();
+        } else {
+          // Limpiar handles huérfanos (body fue eliminado externamente)
+          this.alwaysAwakeBodies.delete(handle);
+        }
+      }
+    }
   }
 
   /**
@@ -292,6 +336,9 @@ export class PhysicsWorld {
       this.bodyToMesh.delete(handle);
       this.meshToBody.delete(mesh);
     }
+
+    // Limpiar del set de siempre-despiertos
+    this.alwaysAwakeBodies.delete(handle);
   }
 
   /**
@@ -332,5 +379,6 @@ export class PhysicsWorld {
       this.world = null;
     }
     this.bodyToMesh.clear();
+    this.alwaysAwakeBodies.clear();
   }
 }

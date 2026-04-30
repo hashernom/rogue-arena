@@ -52,8 +52,8 @@ app.appendChild(canvas);
 // Crear SceneManager (maneja escena, renderer, cámara, luces, sombras)
 const sceneManager = new SceneManager(canvas);
 
-// Crear CameraController con cámara isométrica ortográfica — más alejada para mejor visión del gameplay
-const cameraController = new CameraController(26); // frustumSize = 26 (arena 30x30 con margen)
+// Crear CameraController con cámara isométrica ortográfica
+const cameraController = new CameraController(26);
 sceneManager.setCamera(cameraController.getCamera());
 
 // Crear AssetLoader para gestión centralizada de modelos
@@ -212,6 +212,13 @@ window.addEventListener('keydown', event => {
     // Limpiar proyectiles enemigos activos
     if (enemyProjectilePool) {
       enemyProjectilePool.releaseAll();
+    }
+
+    // Limpiar proyectiles visuales del ADC (flechas normales)
+    if (adcCharacter) {
+      adcCharacter.clearActiveProjectiles();
+      // Limpiar proyectiles de la habilidad Salva
+      adcCharacter.getSalvoAbility()?.clearAllProjectiles();
     }
 
     if (waveManager) {

@@ -32,8 +32,8 @@ export class SceneManager {
    */
   private createScene(): THREE.Scene {
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x87ceeb, 10, 50); // Color cielo, near, far
-    scene.background = new THREE.Color(0x87ceeb); // Fondo azul cielo
+    scene.fog = new THREE.Fog(0x3d5a3d, 50, 120); // Niebla color campo, rango extendido
+    scene.background = new THREE.Color(0x3d5a3d); // Fondo verde campo
     return scene;
   }
 
@@ -79,26 +79,28 @@ export class SceneManager {
    * Crea luz ambiental para iluminación base.
    */
   private createAmbientLight(): THREE.AmbientLight {
-    return new THREE.AmbientLight(0x404060, 0.6); // Color azulado, intensidad baja
+    return new THREE.AmbientLight(0x404060, 0.3); // Color azulado, intensidad baja para contraste de sombras
   }
 
   /**
    * Crea luz direccional con sombras habilitadas.
    */
   private createDirectionalLight(): THREE.DirectionalLight {
-    const light = new THREE.DirectionalLight(0xffffff, 1.2);
-    light.position.set(10, 20, 10); // Posición isométrica
+    const light = new THREE.DirectionalLight(0xffffff, 1.5);
+    light.position.set(10, 20, 10); // Posición isométrica original
     light.castShadow = true;
 
-    // Configuración de sombras
+    // Configuración de sombras — expandida para cubrir el piso exterior (80x80)
+    // El piso exterior se extiende ±40, necesitamos que el shadow map lo cubra
     light.shadow.mapSize.width = 2048;
     light.shadow.mapSize.height = 2048;
-    light.shadow.camera.near = 0.5;
-    light.shadow.camera.far = 50;
-    light.shadow.camera.left = -20;
-    light.shadow.camera.right = 20;
-    light.shadow.camera.top = 20;
-    light.shadow.camera.bottom = -20;
+    light.shadow.camera.near = 0.1;
+    light.shadow.camera.far = 100;
+    light.shadow.camera.left = -50;
+    light.shadow.camera.right = 50;
+    light.shadow.camera.top = 50;
+    light.shadow.camera.bottom = -50;
+    light.shadow.bias = -0.0005;
 
     return light;
   }
@@ -109,6 +111,12 @@ export class SceneManager {
   private setupLights(): void {
     this.scene.add(this.ambientLight);
     this.scene.add(this.directionalLight);
+
+    // Luz de relleno desde el lado opuesto para iluminar caras en sombra sin sombras duras
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    fillLight.position.set(-10, 15, -10);
+    fillLight.castShadow = false;
+    this.scene.add(fillLight);
   }
 
   /**

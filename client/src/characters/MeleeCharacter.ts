@@ -860,7 +860,8 @@ export class MeleeCharacter extends Character {
   /**
    * Ataque melee básico.
    * Usa el sistema MeleeAttack para detección de golpes con Rapier.
-   * El daño se aplica cuando la espada está en la parte más baja del swing (~250ms).
+   * El daño se aplica INSTANTÁNEAMENTE al hacer clic, validando cooldown primero.
+   * La animación es puramente visual y sigue al daño.
    */
   public attack(): void {
     if (this.state === CharacterState.Dead) return;
@@ -871,36 +872,20 @@ export class MeleeCharacter extends Character {
       return;
     }
 
-    // Iniciar estado de ataque y animación
-    this.setState(CharacterState.Attacking);
-
-    console.log(`[MeleeCharacter ${this.id}] Ataque iniciado, estado: Attacking`);
-    console.log(`[MeleeCharacter ${this.id}] Arma presente: ${this.weapon ? 'Sí' : 'No'}`);
-    if (this.weapon) {
-      console.log(`[MeleeCharacter ${this.id}] Posición inicial del arma:`, this.weapon.position);
+    // PRIMERO validar cooldown y ejecutar daño — si tryAttack() retorna false
+    // es porque el ataque está en cooldown o ya en progreso → no hacer nada.
+    if (!this.meleeAttack.tryAttack()) {
+      console.log(`[MeleeCharacter ${this.id}] Ataque bloqueado (cooldown o ya atacando)`);
+      return;
     }
 
-    // Reproducir animación de ataque
-    console.log(`[MeleeCharacter ${this.id}] Llamando playAnimation('Attack')`);
+    // Ataque confirmado: iniciar estado y animación (solo feedback visual)
+    this.setState(CharacterState.Attacking);
     this.playAnimation('Attack');
 
-    // Programar el daño para casi el final de la animación (395ms de 400ms)
-    // para que cuadre visualmente con el momento en que la espada baja.
-    setTimeout(() => {
-      if (this.state === CharacterState.Attacking && this.meleeAttack) {
-        console.log(`[MeleeCharacter ${this.id}] Aplicando daño (punto más bajo del swing)`);
-        if (this.meleeAttack.tryAttack()) {
-          console.log(`[MeleeCharacter ${this.id}] Golpe exitoso`);
-        } else {
-          console.log(`[MeleeCharacter ${this.id}] Golpe falló (sin objetivos)`);
-        }
-      }
-    }, 395);
-
-    // Fail-safe: Destrabar al personaje en 400ms
+    // Fail-safe: Destrabar al personaje después de la duración de la animación (~400ms)
     setTimeout(() => {
       if (this.state === CharacterState.Attacking) {
-        console.log(`[MeleeCharacter ${this.id}] Fail-safe: volviendo a Idle después de timeout`);
         this.setState(CharacterState.Idle);
         this.playAnimation('Idle');
       }

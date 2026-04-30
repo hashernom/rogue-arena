@@ -60,6 +60,15 @@ export const DEFAULT_SEPARATION_RADIUS = 0.8;
 /** Máximo de vecinos a considerar para separación */
 export const MAX_SEPARATION_NEIGHBORS = 5;
 
+/** Distancia máxima de detección de obstáculos */
+export const DEFAULT_AVOID_LOOK_AHEAD = 8;
+
+/** Radio de influencia de repulsión de obstáculos */
+export const DEFAULT_AVOID_RADIUS = 6;
+
+/** Peso del avoidance al combinar fuerzas */
+export const DEFAULT_AVOID_WEIGHT = 2.5;
+
 // =================================================================
 // FUNCIONES PURAS DE STEERING
 // =================================================================
@@ -207,9 +216,78 @@ export function separation(
   return result;
 }
 
-// =================================================================
+// \=================================================================
+// OBSTACLE AVOIDANCE
+// \=================================================================
+
+/**
+ * Calcula fuerza de evasión de obstáculos usando repulsión radial con
+ * filtro de cono frontal.
+ *
+ * Detecta obstáculos dentro del cono de avance y genera una fuerza de
+ * repulsión radial (desde el centro del obstáculo hacia afuera). A
+ * diferencia de la proyección lateral pura, la repulsión radial tiene
+ * componentes tanto laterales como de retroceso, lo que permite que el
+ * enemigo se aleje del obstáculo mientras la fuerza de seek lo redirige
+ * alrededor de él.
+ *
+ * @param agent - Posición del agente
+ * @param obstacles - Array de posiciones {x, z} de obstáculos
+ * @param seekDirection - Dirección de persecución actual (normalizada)
+ * @param lookAhead - Distancia máxima de detección
+ * @param avoidRadius - Radio de influencia de repulsión
+ * @returns Vector 2D de fuerza de avoidance (sin normalizar)
+ */
+export function avoidObstacles(
+  agent: SteeringAgent,
+  obstacles: { x: number; z: number }[],
+  seekDirection: THREE.Vector2,
+  lookAhead: number = DEFAULT_AVOID_LOOK_AHEAD,
+  avoidRadius: number = DEFAULT_AVOID_RADIUS
+): THREE.Vector2 {
+  const result = new THREE.Vector2(0, 0);
+  if (!obstacles || obstacles.length === 0) return result;
+
+  const radiusSq = avoidRadius * avoidRadius;
+
+  for (let i = 0; i < obstacles.length; i++) {
+    const obs = obstacles[i];
+
+    // Vector desde el centro del obstáculo hacia el agente
+    const dx = agent.position.x - obs.x;
+    const dz = agent.position.z - obs.z;
+    const distSq = dx * dx + dz * dz;
+
+    // Ignorar si está demasiado lejos o encima del centro
+    if (distSq < 0.01 || distSq > radiusSq) continue;
+
+    const dist = Math.sqrt(distSq);
+
+    // Verificar que el obstáculo esté en el cono frontal respecto a seekDirection
+    const toObsX = obs.x - agent.position.x;
+    const toObsZ = obs.z - agent.position.z;
+    const toObsDist = Math.sqrt(toObsX * toObsX + toObsZ * toObsZ);
+    const dot = (toObsX / toObsDist) * seekDirection.x + (toObsZ / toObsDist) * seekDirection.y;
+
+    // Ignorar obstáculos detrás o demasiado lejos en el frente
+    if (dot < 0 || toObsDist > lookAhead) continue;
+
+    // Repulsión radial: más fuerte cuanto más cerca del obstáculo
+    // Fade frontal: obstáculos directamente adelante tienen más peso
+    const strength = (avoidRadius - dist) / avoidRadius;
+    const fade = Math.max(0.1, dot);
+
+    // (dx/dist, dz/dist) apunta desde obstáculo → agente = dirección de huida
+    result.x += (dx / dist) * strength * fade;
+    result.y += (dz / dist) * strength * fade;
+  }
+
+  return result;
+}
+
+// \=================================================================
 // FUNCIONES DE COMBINACIÓN Y APLICACIÓN
-// =================================================================
+// \=================================================================
 
 /**
  * Combina múltiples steering forces con pesos y normaliza el resultado.

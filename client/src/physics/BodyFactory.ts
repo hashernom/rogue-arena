@@ -53,6 +53,7 @@ export class BodyFactory {
       additionalMass: isPlayer ? 10000 : 0,
       collisionGroup: group,
       collisionMask: mask,
+      canSleep: isPlayer ? false : undefined, // Los jugadores NO deben dormirse
       userData: {
         type: isPlayer ? 'player' : 'enemy',
         ...(entity ? { entity } : {}),
@@ -208,6 +209,35 @@ export class BodyFactory {
       collider: colliderDesc,
       collisionGroup: Groups.WALL,
       collisionMask: Masks.WALL,
+    });
+  }
+
+  /**
+   * Crea un cuerpo físico estático para un obstáculo (columna, caja, etc.).
+   * Usa un grupo de colisión separado (OBSTACLE) para que los raycasts del ADC
+   * no confundan obstáculos con paredes de arena.
+   *
+   * @param world Instancia de PhysicsWorld
+   * @param pos Posición del centro del obstáculo
+   * @param size Dimensiones del cuboide (ancho, alto, profundidad)
+   * @returns Handle del cuerpo creado
+   */
+  static createObstacleBody(
+    world: PhysicsWorld,
+    pos: THREE.Vector3,
+    size: THREE.Vector3
+  ): RigidBodyHandle {
+    const halfExtents = new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2);
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z);
+    const groups = makeCollisionGroups(Groups.OBSTACLE, Masks.OBSTACLE);
+    colliderDesc.setCollisionGroups(groups);
+
+    return world.createBody({
+      type: 'static',
+      position: pos,
+      collider: colliderDesc,
+      collisionGroup: Groups.OBSTACLE,
+      collisionMask: Masks.OBSTACLE,
     });
   }
 
