@@ -87,5 +87,6 @@ httpServer.on('error', (err: NodeJS.ErrnoException) => {
   process.exit(1);
 });
 
-// Log de configuración al iniciar
+// Logs de configuración al iniciar
 logger.info(`CLIENT_ORIGIN: ${process.env.CLIENT_ORIGIN || 'no configurado'}`);
+logger.info(`PORT: ${PORT}, HOST: ${HOST}, NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
