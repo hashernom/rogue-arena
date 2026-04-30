@@ -266,7 +266,7 @@ export class GameServer {
 
       // --- Reconexión ---
 
-      socket.on(SocketEvents.RECONNECT, (data: { sessionToken: string }, callback) => {
+      socket.on(SocketEvents.RECONNECT, (data: { sessionToken: string }, callback: (response: { success: boolean; playerId?: string; roomCode?: string; error?: string }) => void) => {
         try {
           if (!data?.sessionToken) {
             callback?.({ success: false, error: 'Token de sesión requerido' });
