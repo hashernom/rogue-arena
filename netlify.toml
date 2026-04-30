@@ -1,5 +1,5 @@
 [build]
-  command = "pnpm run build"
+  command = "pnpm install && pnpm --filter @rogue-arena/shared build && pnpm --filter @rogue-arena/client build"
   publish = "client/dist"
 
 [build.environment]
