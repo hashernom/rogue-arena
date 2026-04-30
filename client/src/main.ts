@@ -1226,7 +1226,7 @@ const connectionManager = new ConnectionManager(
   // Por defecto se conecta a localhost:3001.
   // Para jugar en LAN, cambiar esta URL a la IP local del servidor.
   // Ej: 'http://192.168.1.100:3001'
-  'http://localhost:3001',
+  import.meta.env.VITE_SERVER_URL || 'http://localhost:3001',
   {
     onStatusChange: status => {
       menuUI.updateConnectionStatus(status);

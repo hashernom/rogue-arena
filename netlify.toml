@@ -1,0 +1,24 @@
+[build]
+  command = "pnpm run build"
+  publish = "client/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://rogue-arena-server.up.railway.app/api/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/socket.io/*"
+  to = "https://rogue-arena-server.up.railway.app/socket.io/:splat"
+  status = 200
+  headers = { X-Forwarded-Host = "rogue-arena.netlify.app" }
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
