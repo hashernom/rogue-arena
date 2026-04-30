@@ -87,4 +87,5 @@ httpServer.on('error', (err: NodeJS.ErrnoException) => {
   process.exit(1);
 });
 
-// Railway trigger: shared package build sync (tsc --build)
+// Log de configuración al iniciar
+logger.info(`CLIENT_ORIGIN: ${process.env.CLIENT_ORIGIN || 'no configurado'}`);
