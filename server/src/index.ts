@@ -86,3 +86,5 @@ httpServer.on('error', (err: NodeJS.ErrnoException) => {
   }
   process.exit(1);
 });
+
+// Railway trigger: shared package build sync (tsc --build)
