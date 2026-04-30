@@ -16,8 +16,8 @@ import { Groups } from '../physics/CollisionGroups';
 import { DamagePipeline } from '../combat/DamagePipeline';
 
 /**
- * ADC (Attack Damage Carry) - Personaje de daño a distancia.
- * Extiende Character y añade mecánicas de ataque a distancia, proyectiles y habilidades de rango.
+ * ADC (Attack Damage Carry) - Personaje de daÃ±o a distancia.
+ * Extiende Character y aÃ±ade mecÃ¡nicas de ataque a distancia, proyectiles y habilidades de rango.
  */
 export class AdcCharacter extends Character {
   /** Modelo 3D del arquero/ranger (contenedor padre) */
@@ -30,23 +30,23 @@ export class AdcCharacter extends Character {
   private assetLoader: AssetLoader;
   /** Contador de flechas consecutivas (para pasiva de velocidad de ataque) */
   private consecutiveShots: number = 0;
-  /** Tiempo del último disparo */
+  /** Tiempo del Ãºltimo disparo */
   private lastShotTime: number = 0;
   /** Pool de proyectiles activos (ahora pueden ser Mesh o Group) */
   private activeProjectiles: THREE.Object3D[] = [];
-  /** Dirección de movimiento actual (vector 3D) */
+  /** DirecciÃ³n de movimiento actual (vector 3D) */
   private moveDirection: THREE.Vector3 = new THREE.Vector3();
-  /** Rotación suave del modelo */
+  /** RotaciÃ³n suave del modelo */
   private rotationLerpAlpha: number = 0.1;
   /** Controlador de animaciones */
   private animationController: AnimationController | null = null;
   /** Mixer de animaciones THREE.js */
   private mixer: THREE.AnimationMixer | null = null;
-  /** Acciones de animación */
+  /** Acciones de animaciÃ³n */
   private actions: Record<string, THREE.AnimationAction> = {};
-  /** Acción de animación actual */
+  /** AcciÃ³n de animaciÃ³n actual */
   private currentAction: THREE.AnimationAction | null = null;
-  /** Nombre de la animación actualmente en reproducción */
+  /** Nombre de la animaciÃ³n actualmente en reproducciÃ³n */
   private currentAnimationName: string = '';
 
   /** Flag para evitar spam de warnings de animaciones */
@@ -61,16 +61,16 @@ export class AdcCharacter extends Character {
   /** Modelo GLTF de flecha para proyectiles */
   private arrowGltf: GLTF | null = null;
 
-  /** Habilidad pasiva Perforación */
+  /** Habilidad pasiva PerforaciÃ³n */
   private piercePassive: PiercePassive | null = null;
 
   /** Habilidad activa Salva */
   private salvoAbility: SalvoAbility | null = null;
 
-  /** Pipeline centralizado de daño */
+  /** Pipeline centralizado de daÃ±o */
   private damagePipeline: DamagePipeline | null = null;
 
-  /** Stats base del ADC según M4-03 */
+  /** Stats base del ADC segÃºn M4-03 */
   static readonly BASE_STATS: CharacterStats = {
     hp: 80,
     maxHp: 80,
@@ -97,13 +97,13 @@ export class AdcCharacter extends Character {
     this.piercePassive = new PiercePassive(eventBus, id);
     this.salvoAbility = new SalvoAbility(eventBus, this, id, sceneManager);
 
-    // Cargar modelo asíncronamente
+    // Cargar modelo asÃ­ncronamente
     void this.loadModel();
   }
 
   /**
    * Carga el modelo GLTF del arquero/ranger y lo agrega a la escena.
-   * Versión con estructura "caja de cartón" para sincronización física.
+   * VersiÃ³n con estructura "caja de cartÃ³n" para sincronizaciÃ³n fÃ­sica.
    */
   private async loadModel(): Promise<void> {
     try {
@@ -128,7 +128,7 @@ export class AdcCharacter extends Character {
         this.arrowGltf = arrowGltf as GLTF;
       } catch (arrowError) {
         console.warn(
-          `[AdcCharacter ${this.id}] No se pudo cargar el modelo de flecha, usando fallback cónico:`,
+          `[AdcCharacter ${this.id}] No se pudo cargar el modelo de flecha, usando fallback cÃ³nico:`,
           arrowError
         );
       }
@@ -136,7 +136,7 @@ export class AdcCharacter extends Character {
       // 1. Clonado de esqueleto independiente
       this.innerMesh = SkeletonUtils.clone(modelGltf.scene);
 
-      // 2. Configuración de sombras y visibilidad
+      // 2. ConfiguraciÃ³n de sombras y visibilidad
       this.innerMesh.traverse(child => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true;
@@ -147,7 +147,7 @@ export class AdcCharacter extends Character {
         }
       });
 
-      // 3. Jerarquía: Contenedor -> Malla
+      // 3. JerarquÃ­a: Contenedor -> Malla
       this.model = new THREE.Group();
       this.innerMesh.position.set(0, 0, 0);
       this.model.add(this.innerMesh);
@@ -159,7 +159,7 @@ export class AdcCharacter extends Character {
       // 5. CARGAR ALJABA EN LA ESPALDA
       await this.loadQuiver(quiverGltf);
 
-      // 6. Inicialización del Mixer
+      // 6. InicializaciÃ³n del Mixer
       this.mixer = new THREE.AnimationMixer(this.innerMesh);
 
       // 5. Mapeo Inteligente
@@ -193,9 +193,9 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Reproduce una animación por nombre.
+   * Reproduce una animaciÃ³n por nombre.
    */
-  /** Nombre de la animación actualmente en reproducción */
+  /** Nombre de la animaciÃ³n actualmente en reproducciÃ³n */
 
   private playAnimation(name: string): void {
     // Si no hay acciones cargadas, simplemente retornar sin error
@@ -224,7 +224,7 @@ export class AdcCharacter extends Character {
     this.currentAction = action;
     this.currentAnimationName = name;
 
-    // Configuración estricta para ataque
+    // ConfiguraciÃ³n estricta para ataque
     if (name.toLowerCase().includes('attack') || name.toLowerCase().includes('shoot')) {
       action.setLoop(THREE.LoopOnce, 1);
       action.clampWhenFinished = true; // El modelo se queda en el frame final del impacto
@@ -256,7 +256,7 @@ export class AdcCharacter extends Character {
     // 3. Meter el cilindro dentro del contenedor
     this.model.add(this.innerMesh);
 
-    // 4. Añadir contenedor a la escena
+    // 4. AÃ±adir contenedor a la escena
     this.sceneManager.add(this.model);
 
     // Crear AnimationController con animaciones procedurales
@@ -265,7 +265,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Obtiene la posición del cuerpo físico si existe.
+   * Obtiene la posiciÃ³n del cuerpo fÃ­sico si existe.
    */
   private getBodyPosition(): THREE.Vector3 | null {
     if (!this.physicsBody || !this.physicsWorld) return null;
@@ -278,29 +278,29 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Mueve el cuerpo físico usando velocidad lineal (setLinvel).
-   * Solución definitiva para el problema de movimiento.
+   * Mueve el cuerpo fÃ­sico usando velocidad lineal (setLinvel).
+   * SoluciÃ³n definitiva para el problema de movimiento.
    */
   private moveBody(input: InputState): void {
-    // Si no hay cuerpo físico o el personaje está muerto, no hacer nada
+    // Si no hay cuerpo fÃ­sico o el personaje estÃ¡ muerto, no hacer nada
     if (!this.physicsBody || !this.physicsWorld || !this.isAlive()) return;
 
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
 
-    // 1. Usar moveDir del InputState (ya está normalizado)
+    // 1. Usar moveDir del InputState (ya estÃ¡ normalizado)
     const moveDir = input.moveDir;
 
-    // 2. Convertir Vector2 a Vector3 para movimiento isométrico
+    // 2. Convertir Vector2 a Vector3 para movimiento isomÃ©trico
     const direction = this.inputToIsometric(moveDir);
 
-    // 3. Definir la velocidad (ajusta este número a tu gusto)
+    // 3. Definir la velocidad (ajusta este nÃºmero a tu gusto)
     const SPEED = 8.0;
 
     // 4. LA MAGIA: Aplicar Velocidad Lineal o Frenar en Seco
     const currentVel = body.linvel();
 
-    // Si el jugador no está oprimiendo nada (el vector dirección es 0)
+    // Si el jugador no estÃ¡ oprimiendo nada (el vector direcciÃ³n es 0)
     if (direction.lengthSq() === 0) {
       // FRENAR EN SECO (manteniendo la gravedad en Y)
       body.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
@@ -313,10 +313,10 @@ export class AdcCharacter extends Character {
           z: direction.z * SPEED,
         },
         true
-      ); // ¡ESTE 'TRUE' ES VITAL! Despierta el cuerpo físico inmediatamente
+      ); // Â¡ESTE 'TRUE' ES VITAL! Despierta el cuerpo fÃ­sico inmediatamente
     }
 
-    // 5. (Opcional) Rotar el modelo hacia donde está caminando
+    // 5. (Opcional) Rotar el modelo hacia donde estÃ¡ caminando
     if (direction.lengthSq() > 0 && this.model) {
       const targetAngle = Math.atan2(direction.x, direction.z);
       this.model.rotation.y = targetAngle;
@@ -324,7 +324,7 @@ export class AdcCharacter extends Character {
 
     if (import.meta.env.DEV) {
       if (direction.lengthSq() > 0) {
-        // Mostrar información detallada de direcciones
+        // Mostrar informaciÃ³n detallada de direcciones
         const keyPressed = [];
         if (moveDir.y > 0) keyPressed.push('W (up)');
         if (moveDir.y < 0) keyPressed.push('S (down)');
@@ -343,12 +343,12 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Convierte input 2D a movimiento 3D isométrico.
+   * Convierte input 2D a movimiento 3D isomÃ©trico.
    */
   private inputToIsometric(moveDir: THREE.Vector2): THREE.Vector3 {
     // Crear vector 3D a partir del input 2D
-    // NOTA: Invertir Z porque en la vista isométrica, "arriba" en pantalla
-    // corresponde a movimiento en -Z (hacia la cámara) o similar
+    // NOTA: Invertir Z porque en la vista isomÃ©trica, "arriba" en pantalla
+    // corresponde a movimiento en -Z (hacia la cÃ¡mara) o similar
     const inputVector = new THREE.Vector3(moveDir.x, 0, -moveDir.y);
 
     // DEBUG: Mostrar input original
@@ -358,8 +358,8 @@ export class AdcCharacter extends Character {
       );
     }
 
-    // Rotar 45° alrededor del eje Y (perspectiva isométrica)
-    // Volver a usar rotación positiva pero con Z invertido
+    // Rotar 45Â° alrededor del eje Y (perspectiva isomÃ©trica)
+    // Volver a usar rotaciÃ³n positiva pero con Z invertido
     const isoMatrix = new THREE.Matrix4().makeRotationY(Math.PI / 4);
     inputVector.applyMatrix4(isoMatrix);
 
@@ -375,11 +375,11 @@ export class AdcCharacter extends Character {
 
   /**
    * Actualiza el movimiento del personaje basado en input y tiempo delta.
-   * Versión consolidada "a prueba de balas" con sincronización directa.
+   * VersiÃ³n consolidada "a prueba de balas" con sincronizaciÃ³n directa.
    */
   update(dt: number, inputState?: InputState): void {
     if (!this.physicsBody || !this.physicsWorld || this.state === CharacterState.Dead) {
-      // Si está muerto, solo actualizar el mixer si hay animación de muerte reproduciéndose
+      // Si estÃ¡ muerto, solo actualizar el mixer si hay animaciÃ³n de muerte reproduciÃ©ndose
       if (this.state === CharacterState.Dead && this.mixer) {
         this.mixer.update(dt);
       }
@@ -397,7 +397,7 @@ export class AdcCharacter extends Character {
     // Actualizar proyectiles
     this.updateProjectiles(dt);
 
-    // Obtener el cuerpo físico real
+    // Obtener el cuerpo fÃ­sico real
     const body = this.physicsWorld.getBody(this.physicsBody);
     if (!body) return;
 
@@ -405,7 +405,7 @@ export class AdcCharacter extends Character {
     const direction = new THREE.Vector3(0, 0, 0);
 
     if (inputState) {
-      // Convertir inputState.moveDir a dirección 3D
+      // Convertir inputState.moveDir a direcciÃ³n 3D
       if (inputState.moveDir.lengthSq() > 0.01) {
         direction.copy(this.inputToIsometric(inputState.moveDir));
       }
@@ -447,8 +447,8 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Sincroniza el modelo visual con la posición física actual.
-   * Debe llamarse DESPUÉS de physicsWorld.stepAll() para evitar desfase de 1 frame.
+   * Sincroniza el modelo visual con la posiciÃ³n fÃ­sica actual.
+   * Debe llamarse DESPUÃ‰S de physicsWorld.stepAll() para evitar desfase de 1 frame.
    */
   public syncToPhysics(): void {
     if (!this.model || this.physicsBody === undefined || !this.physicsWorld) return;
@@ -460,8 +460,8 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Obtiene la posición actual del personaje en el mundo 3D.
-   * @returns Vector3 con la posición, o null si el modelo no está inicializado
+   * Obtiene la posiciÃ³n actual del personaje en el mundo 3D.
+   * @returns Vector3 con la posiciÃ³n, o null si el modelo no estÃ¡ inicializado
    */
   getPosition(): THREE.Vector3 | null {
     if (!this.model) return null;
@@ -478,7 +478,7 @@ export class AdcCharacter extends Character {
       if (this.physicsBody && this.physicsWorld) {
         this.moveBody(inputState);
       } else {
-        // Movimiento sin física (fallback) - mantener compatibilidad
+        // Movimiento sin fÃ­sica (fallback) - mantener compatibilidad
         const speed = this.getEffectiveStat('speed');
         const displacement = this.moveDirection.clone().multiplyScalar(speed * dt);
         if (this.model) {
@@ -512,7 +512,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Sincroniza la posición del modelo 3D con el cuerpo físico.
+   * Sincroniza la posiciÃ³n del modelo 3D con el cuerpo fÃ­sico.
    */
   private syncModelWithPhysics(): void {
     if (this.model && this.physicsBody && this.physicsWorld) {
@@ -529,7 +529,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Actualiza la rotación del modelo suavemente hacia la dirección de movimiento.
+   * Actualiza la rotaciÃ³n del modelo suavemente hacia la direcciÃ³n de movimiento.
    */
   private updateModelRotation(_dt: number): void {
     if (!this.model || this.moveDirection.lengthSq() < 0.01) return;
@@ -544,7 +544,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Actualiza las animaciones según el estado del personaje.
+   * Actualiza las animaciones segÃºn el estado del personaje.
    */
   private updateAnimations(dt: number): void {
     if (!this.animationController) return;
@@ -554,7 +554,7 @@ export class AdcCharacter extends Character {
     const isAttacking = this.state === CharacterState.Attacking;
     const isDead = this.state === CharacterState.Dead;
 
-    // Log para depuración
+    // Log para depuraciÃ³n
     if (import.meta.env.DEV && this.state !== CharacterState.Idle) {
       console.log(
         `[AdcCharacter ${this.id}] Estado: ${this.state}, isAttacking: ${isAttacking}, isDead: ${isDead}`
@@ -569,7 +569,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Dispara un proyectil (flecha) en la dirección del mouse o del modelo.
+   * Dispara un proyectil (flecha) en la direcciÃ³n del mouse o del modelo.
    * @param inputState Estado de entrada opcional que contiene coordenadas del mouse
    */
   private shootProjectile(inputState?: InputState): void {
@@ -578,48 +578,48 @@ export class AdcCharacter extends Character {
     this.setState(CharacterState.Attacking);
     this.consecutiveShots++;
 
-    // Reproducir animación de ataque
-    this.playAnimation('Attack'); // O 'CombatRanged' según tu mapeo
+    // Reproducir animaciÃ³n de ataque
+    this.playAnimation('Attack'); // O 'CombatRanged' segÃºn tu mapeo
 
-    // 1. Obtener posición mundial del arma (arco) si existe, sino usar pecho
+    // 1. Obtener posiciÃ³n mundial del arma (arco) si existe, sino usar pecho
     const spawnPos = new THREE.Vector3();
     if (this.weapon) {
       this.weapon.getWorldPosition(spawnPos);
-      console.log(`[AdcCharacter ${this.id}] Disparando desde arma en posición:`, spawnPos);
+      console.log(`[AdcCharacter ${this.id}] Disparando desde arma en posiciÃ³n:`, spawnPos);
     } else if (this.model) {
       this.model.getWorldPosition(spawnPos);
       spawnPos.y += 1.2; // Altura del pecho
       console.log(
-        `[AdcCharacter ${this.id}] Disparando desde pecho (no hay arma) en posición:`,
+        `[AdcCharacter ${this.id}] Disparando desde pecho (no hay arma) en posiciÃ³n:`,
         spawnPos
       );
     } else {
       spawnPos.set(0, 1.2, 0);
     }
 
-    // 2. Calcular dirección de disparo: priorizar mouse targeting si hay inputState con mouseNDC
+    // 2. Calcular direcciÃ³n de disparo: priorizar mouse targeting si hay inputState con mouseNDC
     let forwardDir = new THREE.Vector3(0, 0, -1);
 
-    // Intentar usar mouse targeting si está disponible
+    // Intentar usar mouse targeting si estÃ¡ disponible
     if (inputState?.mouseNDC && this.sceneManager) {
       const camera = this.sceneManager.getCamera();
       if (camera) {
         forwardDir = this.calculateAimDirection(camera, inputState.mouseNDC);
         console.log(
-          `[AdcCharacter] Usando dirección de mouse: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`
+          `[AdcCharacter] Usando direcciÃ³n de mouse: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`
         );
       } else {
-        console.warn('[AdcCharacter] No hay cámara disponible para mouse targeting');
+        console.warn('[AdcCharacter] No hay cÃ¡mara disponible para mouse targeting');
       }
     }
 
-    // Fallback: dirección forward del modelo (comportamiento anterior)
+    // Fallback: direcciÃ³n forward del modelo (comportamiento anterior)
     if (forwardDir.lengthSq() < 0.01 && this.model) {
-      // Obtener dirección mundial (hacia Z positivo por defecto en Three.js)
+      // Obtener direcciÃ³n mundial (hacia Z positivo por defecto en Three.js)
       const worldDirection = new THREE.Vector3();
       this.model.getWorldDirection(worldDirection);
 
-      // Determinar si debemos invertir basado en la dirección de movimiento actual
+      // Determinar si debemos invertir basado en la direcciÃ³n de movimiento actual
       let shouldNegate = false;
       if (this.moveDirection && this.moveDirection.lengthSq() > 0.01) {
         const moveDir = this.moveDirection.clone().normalize();
@@ -634,7 +634,7 @@ export class AdcCharacter extends Character {
       }
 
       console.log(
-        `[AdcCharacter] Usando dirección del modelo: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)}), invertir? ${shouldNegate}`
+        `[AdcCharacter] Usando direcciÃ³n del modelo: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)}), invertir? ${shouldNegate}`
       );
     }
 
@@ -642,11 +642,11 @@ export class AdcCharacter extends Character {
     let arrowGroup: THREE.Group;
 
     if (this.arrowGltf) {
-      // Clonar el modelo GLTF de la flecha (modelo estático, sin skinning)
+      // Clonar el modelo GLTF de la flecha (modelo estÃ¡tico, sin skinning)
       try {
         arrowGroup = this.assetLoader.clone(this.arrowGltf);
         arrowGroup.scale.set(1.5, 1.5, 1.5);
-        // Teñir la flecha de verde brillante (equipo aliado) con glow
+        // TeÃ±ir la flecha de verde brillante (equipo aliado) con glow
         arrowGroup.traverse(child => {
           if (child instanceof THREE.Mesh && child.material) {
             const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -670,7 +670,7 @@ export class AdcCharacter extends Character {
       arrowGroup = this.assetLoader.createFallback();
     }
 
-    // Posición y rotación del contenedor
+    // PosiciÃ³n y rotaciÃ³n del contenedor
     arrowGroup.position.copy(spawnPos);
     const lookTarget = spawnPos.clone().add(forwardDir);
     arrowGroup.lookAt(lookTarget);
@@ -690,11 +690,11 @@ export class AdcCharacter extends Character {
       this.piercePassive.notifyProjectileShot();
     }
 
-    // 5. Detectar colisiones con raycast (disparo instantáneo)
+    // 5. Detectar colisiones con raycast (disparo instantÃ¡neo)
     // Se pasa el arrowGroup para que se destruya visualmente si impacta una pared
     this.detectHitsWithRay(spawnPos, forwardDir, this.getEffectiveStat('damage'), arrowGroup);
 
-    // 6. Animación visual del proyectil (movimiento lineal) - ahora se maneja en updateProjectiles()
+    // 6. AnimaciÃ³n visual del proyectil (movimiento lineal) - ahora se maneja en updateProjectiles()
     // this.animateProjectile(arrowGroup, forwardDir);
 
     // Escuchar cuando el AnimationMixer termine el clip de ataque
@@ -725,7 +725,7 @@ export class AdcCharacter extends Character {
       this.consecutiveShots = 0;
     }
 
-    // Volver a Idle después de un tiempo
+    // Volver a Idle despuÃ©s de un tiempo
     setTimeout(() => {
       if (this.state === CharacterState.Attacking) {
         this.setState(CharacterState.Idle);
@@ -734,23 +734,23 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Detecta colisiones con un rayo (disparo instantáneo) y aplica daño.
-   * Soporta piercing: si canPierce es true, el rayo continúa atravesando enemigos.
+   * Detecta colisiones con un rayo (disparo instantÃ¡neo) y aplica daÃ±o.
+   * Soporta piercing: si canPierce es true, el rayo continÃºa atravesando enemigos.
    */
   /**
-   * Detecta impactos del proyectil usando múltiples raycasts a diferentes alturas.
+   * Detecta impactos del proyectil usando mÃºltiples raycasts a diferentes alturas.
    *
-   * Debido a la perspectiva isométrica, cuando el jugador apunta a la parte superior
-   * del enemigo en pantalla, el rayo del mouse interseca el suelo DETRÁS del enemigo.
-   * Un solo rayo horizontal a y=1.2 puede pasar por encima de la cápsula del enemigo
+   * Debido a la perspectiva isomÃ©trica, cuando el jugador apunta a la parte superior
+   * del enemigo en pantalla, el rayo del mouse interseca el suelo DETRÃS del enemigo.
+   * Un solo rayo horizontal a y=1.2 puede pasar por encima de la cÃ¡psula del enemigo
    * (que abarca y[0.05, 1.35]). Para resolver esto, lanzamos 3 rayos a diferentes
-   * alturas simultáneamente, asegurando que al menos uno intersecte al enemigo sin
-   * importar dónde apunte el cursor en el cuerpo del enemigo.
+   * alturas simultÃ¡neamente, asegurando que al menos uno intersecte al enemigo sin
+   * importar dÃ³nde apunte el cursor en el cuerpo del enemigo.
    *
-   * @param origin Posición de origen del disparo (normalmente a la altura del pecho/arma)
-   * @param direction Dirección horizontal del disparo (sin componente Y)
-   * @param damage Cantidad de daño base del proyectil
-   * @param arrowGroup Grupo visual de la flecha (opcional, para animación de vuelo)
+   * @param origin PosiciÃ³n de origen del disparo (normalmente a la altura del pecho/arma)
+   * @param direction DirecciÃ³n horizontal del disparo (sin componente Y)
+   * @param damage Cantidad de daÃ±o base del proyectil
+   * @param arrowGroup Grupo visual de la flecha (opcional, para animaciÃ³n de vuelo)
    */
   private detectHitsWithRay(origin: THREE.Vector3, direction: THREE.Vector3, damage: number, arrowGroup?: THREE.Object3D): void {
     if (!this.physicsWorld) {
@@ -768,7 +768,7 @@ export class AdcCharacter extends Character {
     const solid = false; // Permite detectar el interior de las hitboxes
 
     console.log(
-      `[AdcCharacter] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) dirección (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
+      `[AdcCharacter] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) direcciÃ³n (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
     );
 
     // Determinar si este proyectil tiene piercing (consultar pasiva)
@@ -776,15 +776,15 @@ export class AdcCharacter extends Character {
 
     // 1. Recolectar todos los impactos del rayo
     const hits: { id: number; entity: any; toi: number }[] = [];
-    // Distancia al muro más cercano (-1 = no hay muro en el camino)
+    // Distancia al muro mÃ¡s cercano (-1 = no hay muro en el camino)
     let wallHitToi = -1;
 
     // --- RAYCAST DE PAREDES (a nivel del suelo: y=-0.75) ---
-    // Este rayo SOLO busca paredes/obstáculos. Los colliders de:
-    //   - Paredes de arena: cuboid(y=-0.5, h=3) → span y[-2, 1]
-    //   - Obstáculos: cuboid(y=-1.25, h=1.5) → span y[-2, -0.5]
+    // Este rayo SOLO busca paredes/obstÃ¡culos. Los colliders de:
+    //   - Paredes de arena: cuboid(y=-0.5, h=3) â†’ span y[-2, 1]
+    //   - ObstÃ¡culos: cuboid(y=-1.25, h=1.5) â†’ span y[-2, -0.5]
     // A y=-0.75 intersectamos AMBOS tipos de colisionadores.
-    // Los enemigos tienen collider en y[-0.5, 1.9], así que NO los detectamos aquí.
+    // Los enemigos tienen collider en y[-0.5, 1.9], asÃ­ que NO los detectamos aquÃ­.
     const wallRayOrigin = { x: origin.x, y: -0.75, z: origin.z };
     const wallRay = new RAPIER.Ray(wallRayOrigin, rayDir);
 
@@ -797,8 +797,8 @@ export class AdcCharacter extends Character {
         const groups = collider.collisionGroups();
         const membership = (groups >> 16) & 0xffff;
 
-        // Solo nos interesan paredes y obstáculos
-        if ((membership & Groups.WALL) !== 0) {
+        // Solo nos interesan paredes y obstÃ¡culos
+        if ((membership & (Groups.WALL | Groups.OBSTACLE)) !== 0) {
           const intersectionAny = intersection as any;
           const toi =
             intersectionAny.toi ??
@@ -810,22 +810,22 @@ export class AdcCharacter extends Character {
             wallHitToi = toi;
           }
         }
-        return true; // Seguir buscando (puede haber pared más cercana)
+        return true; // Seguir buscando (puede haber pared mÃ¡s cercana)
       }
     );
 
     // --- RAYCAST PRINCIPAL MULTI-ALTURA (3 alturas) SOLO para enemigos ---
-    // En perspectiva isométrica, el cursor del mouse en la parte superior del enemigo
-    // se traduce a un punto en el suelo DETRÁS del enemigo. Un solo rayo horizontal
+    // En perspectiva isomÃ©trica, el cursor del mouse en la parte superior del enemigo
+    // se traduce a un punto en el suelo DETRÃS del enemigo. Un solo rayo horizontal
     // puede pasar por encima o por debajo del collider del enemigo.
     //
-    // SOLUCIÓN: Lanzamos 3 rayos a diferentes alturas que cubren el rango completo
-    // de la cápsula del enemigo (y[0.05, 1.35]):
+    // SOLUCIÃ“N: Lanzamos 3 rayos a diferentes alturas que cubren el rango completo
+    // de la cÃ¡psula del enemigo (y[0.05, 1.35]):
     //   - Rayo bajo:  y = 0.3  (cubre piernas/cintura)
     //   - Rayo medio: y = 0.8  (cubre torso/centro)
     //   - Rayo alto:  y = 1.3  (cubre hombros/cabeza)
     //
-    // Si múltiples rayos impactan al mismo enemigo, se deduplica por ID de entidad.
+    // Si mÃºltiples rayos impactan al mismo enemigo, se deduplica por ID de entidad.
     const enemyHeights = [0.3, 0.8, 1.3];
     const enemyHitMap = new Map<number, { id: number; entity: any; toi: number }>();
 
@@ -840,7 +840,7 @@ export class AdcCharacter extends Character {
         (intersection: RAPIER.RayColliderIntersection) => {
           const collider = intersection.collider;
 
-          // Extraer grupos de colisión
+          // Extraer grupos de colisiÃ³n
           const groups = collider.collisionGroups();
           const membership = (groups >> 16) & 0xffff;
 
@@ -862,7 +862,7 @@ export class AdcCharacter extends Character {
                 intersectionAny.t ??
                 0;
 
-              // Solo guardar el hit más cercano para este enemigo
+              // Solo guardar el hit mÃ¡s cercano para este enemigo
               if (!enemyHitMap.has(enemyId) || toi < enemyHitMap.get(enemyId)!.toi) {
                 enemyHitMap.set(enemyId, {
                   id: enemyId,
@@ -888,20 +888,20 @@ export class AdcCharacter extends Character {
       console.log(`[AdcCharacter] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
     }
 
-    // 2. ORDENAR MATEMÁTICAMENTE: Del más cercano (menor toi) al más lejano (mayor toi)
+    // 2. ORDENAR MATEMÃTICAMENTE: Del mÃ¡s cercano (menor toi) al mÃ¡s lejano (mayor toi)
     hits.sort((a, b) => a.toi - b.toi);
 
-    // 3. Verificar si el muro está ANTES que cualquier enemigo
-    // Si el muro está más cerca que el primer enemigo, el proyectil impacta el muro y no pasa
+    // 3. Verificar si el muro estÃ¡ ANTES que cualquier enemigo
+    // Si el muro estÃ¡ mÃ¡s cerca que el primer enemigo, el proyectil impacta el muro y no pasa
     if (wallHitToi >= 0 && (hits.length === 0 || wallHitToi < hits[0].toi)) {
-      console.log(`[AdcCharacter] Proyectil impactó muro a distancia ${wallHitToi.toFixed(2)}`);
+      console.log(`[AdcCharacter] Proyectil impactÃ³ muro a distancia ${wallHitToi.toFixed(2)}`);
       if (arrowGroup) {
         arrowGroup.userData.hitDistance = wallHitToi;
       }
       return;
     }
 
-    // 4. APLICAR DAÑO Y LÓGICA DE PIERCING (usando DamagePipeline)
+    // 4. APLICAR DAÃ‘O Y LÃ“GICA DE PIERCING (usando DamagePipeline)
     const enemiesHit = new Set<number>();
     for (const hit of hits) {
       if (!enemiesHit.has(hit.id)) {
@@ -914,7 +914,7 @@ export class AdcCharacter extends Character {
           break;
         }
 
-        // Usar el pipeline centralizado si está disponible
+        // Usar el pipeline centralizado si estÃ¡ disponible
         if (this.damagePipeline) {
           const hitPos = new THREE.Vector3(
             origin.x + direction.x * hit.toi,
@@ -934,7 +934,7 @@ export class AdcCharacter extends Character {
         }
         enemiesHit.add(hit.id);
         console.log(
-          `🎯 Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`
+          `ðŸŽ¯ Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`
         );
 
         if (!canPierce) {
@@ -948,31 +948,31 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Calcula la dirección de disparo basada en la posición del mouse usando raycasting.
-   * Intersecta un rayo desde la cámara a través de las coordenadas NDC del mouse con un plano en Y=0.6 (centro de masa del enemigo).
-   * La dirección resultante barre naturalmente hacia abajo desde el pecho (y≈1.2) hasta el centro del enemigo (y≈0.6),
-   * asegurando que el rayo intersecte la cápsula del enemigo sin importar a qué parte del cuerpo apunte el mouse.
-   * @param camera Cámara desde la cual se lanza el rayo
+   * Calcula la direcciÃ³n de disparo basada en la posiciÃ³n del mouse usando raycasting.
+   * Intersecta un rayo desde la cÃ¡mara a travÃ©s de las coordenadas NDC del mouse con un plano en Y=0.6 (centro de masa del enemigo).
+   * La direcciÃ³n resultante barre naturalmente hacia abajo desde el pecho (yâ‰ˆ1.2) hasta el centro del enemigo (yâ‰ˆ0.6),
+   * asegurando que el rayo intersecte la cÃ¡psula del enemigo sin importar a quÃ© parte del cuerpo apunte el mouse.
+   * @param camera CÃ¡mara desde la cual se lanza el rayo
    * @param mouseNDC Coordenadas normalizadas del mouse en rango [-1, 1]
-   * @returns Dirección normalizada hacia el punto de intersección, o fallback a dirección forward del modelo
+   * @returns DirecciÃ³n normalizada hacia el punto de intersecciÃ³n, o fallback a direcciÃ³n forward del modelo
    */
   private calculateAimDirection(camera: THREE.Camera, mouseNDC: THREE.Vector2): THREE.Vector3 {
-    // 🔥 FORZAR LA ACTUALIZACIÓN DE LA CÁMARA 🔥
+    // ðŸ”¥ FORZAR LA ACTUALIZACIÃ“N DE LA CÃMARA ðŸ”¥
     camera.updateMatrixWorld();
 
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouseNDC, camera);
 
-    // 🔥 CAMBIO CLAVE: Intersectamos el centro de masa (Y = 0.6) en vez del suelo 🔥
-    // La cápsula del enemigo (medium) abarca y[0.05, 1.35] con centro en y=0.7.
+    // ðŸ”¥ CAMBIO CLAVE: Intersectamos el centro de masa (Y = 0.6) en vez del suelo ðŸ”¥
+    // La cÃ¡psula del enemigo (medium) abarca y[0.05, 1.35] con centro en y=0.7.
     // Al intersectar y=0.6 (ligeramente debajo del centro), el rayo apunta directamente
-    // al cuerpo del enemigo. El spawn está en y≈1.2 (pecho), creando un barrido descendente
-    // que garantiza intersección sin importar dónde apunte el mouse en la vertical.
+    // al cuerpo del enemigo. El spawn estÃ¡ en yâ‰ˆ1.2 (pecho), creando un barrido descendente
+    // que garantiza intersecciÃ³n sin importar dÃ³nde apunte el mouse en la vertical.
     const bodyPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.6);
     const targetPos = new THREE.Vector3();
 
     if (raycaster.ray.intersectPlane(bodyPlane, targetPos)) {
-      // targetPos.y = 0.6 por la definición del plano
+      // targetPos.y = 0.6 por la definiciÃ³n del plano
 
       const spawnPos = new THREE.Vector3();
       if (this.model) {
@@ -983,16 +983,16 @@ export class AdcCharacter extends Character {
       }
 
       const direction = new THREE.Vector3().subVectors(targetPos, spawnPos);
-      // NO forzar direction.y = 0 — el barrido descendente (y≈1.2 → y≈0.6)
-      // garantiza que el rayo pase a través de la cápsula del enemigo.
+      // NO forzar direction.y = 0 â€” el barrido descendente (yâ‰ˆ1.2 â†’ yâ‰ˆ0.6)
+      // garantiza que el rayo pase a travÃ©s de la cÃ¡psula del enemigo.
 
       if (direction.lengthSq() > 0.0001) {
         return direction.normalize();
       }
     }
 
-    // 🔥 2. LA SOLUCIÓN AL CORTE (Mouse apuntando al horizonte/cielo) 🔥
-    // Si el rayo no choca con el plano, usamos la dirección de la cámara proyectada en 2D
+    // ðŸ”¥ 2. LA SOLUCIÃ“N AL CORTE (Mouse apuntando al horizonte/cielo) ðŸ”¥
+    // Si el rayo no choca con el plano, usamos la direcciÃ³n de la cÃ¡mara proyectada en 2D
     const horizonDir = raycaster.ray.direction.clone();
     horizonDir.y = 0;
 
@@ -1013,14 +1013,14 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Verifica si la pasiva de piercing está activa para este jugador.
-   * Consulta el estado de PiercePassive y consume el efecto si está activo.
+   * Verifica si la pasiva de piercing estÃ¡ activa para este jugador.
+   * Consulta el estado de PiercePassive y consume el efecto si estÃ¡ activo.
    */
   private checkPiercePassive(): boolean {
     if (!this.piercePassive) {
       return false;
     }
-    // consumePierce() devuelve true si el próximo proyectil tiene piercing y lo consume
+    // consumePierce() devuelve true si el prÃ³ximo proyectil tiene piercing y lo consume
     const hasPierce = this.piercePassive.consumePierce();
     if (hasPierce) {
       console.log(`[AdcCharacter] Proyectil con piercing activado!`);
@@ -1033,12 +1033,12 @@ export class AdcCharacter extends Character {
    */
   private animateProjectile(projectile: THREE.Object3D, direction: THREE.Vector3): void {
     const speed = 15; // Velocidad del proyectil
-    const maxDistance = 20; // Distancia máxima antes de desaparecer
+    const maxDistance = 20; // Distancia mÃ¡xima antes de desaparecer
 
     let distanceTraveled = 0;
     const startPosition = projectile.position.clone();
 
-    // Función de animación por frame
+    // FunciÃ³n de animaciÃ³n por frame
     const animate = () => {
       if (!projectile.parent) return; // Si el proyectil fue removido
 
@@ -1047,17 +1047,17 @@ export class AdcCharacter extends Character {
       projectile.position.add(direction.clone().multiplyScalar(moveDistance));
       distanceTraveled = startPosition.distanceTo(projectile.position);
 
-      // Verificar si ha alcanzado la distancia máxima
+      // Verificar si ha alcanzado la distancia mÃ¡xima
       if (distanceTraveled >= maxDistance) {
         this.removeProjectile(projectile);
         return;
       }
 
-      // Continuar animación
+      // Continuar animaciÃ³n
       requestAnimationFrame(animate);
     };
 
-    // Iniciar animación
+    // Iniciar animaciÃ³n
     animate();
   }
 
@@ -1090,8 +1090,8 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Limpia todos los proyectiles activos del ADC (útil al forzar cambio de ronda con F2).
-   * Remueve de la escena y hace dispose de geometrías/materiales.
+   * Limpia todos los proyectiles activos del ADC (Ãºtil al forzar cambio de ronda con F2).
+   * Remueve de la escena y hace dispose de geometrÃ­as/materiales.
    */
   clearActiveProjectiles(): void {
     const projectiles = [...this.activeProjectiles];
@@ -1119,17 +1119,17 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Actualiza la posición de todos los proyectiles activos.
+   * Actualiza la posiciÃ³n de todos los proyectiles activos.
    */
   private updateProjectiles(dt: number): void {
-    const speed = 50; // Velocidad aumentada para que el proyectil sea más rápido
-    const maxDistance = 40; // Distancia máxima aumentada
+    const speed = 50; // Velocidad aumentada para que el proyectil sea mÃ¡s rÃ¡pido
+    const maxDistance = 40; // Distancia mÃ¡xima aumentada
 
     for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.activeProjectiles[i];
       const ud = projectile.userData;
 
-      // Obtener dirección
+      // Obtener direcciÃ³n
       let direction: THREE.Vector3;
       if (ud?.direction && ud.direction instanceof THREE.Vector3) {
         direction = ud.direction.clone();
@@ -1144,7 +1144,7 @@ export class AdcCharacter extends Character {
         direction.set(0, 0, -1);
       }
 
-      // Avanzar la flecha desde su spawnPosition según la distancia total recorrida
+      // Avanzar la flecha desde su spawnPosition segÃºn la distancia total recorrida
       const step = speed * dt;
       ud.totalDistance = (ud.totalDistance || 0) + step;
 
@@ -1161,13 +1161,13 @@ export class AdcCharacter extends Character {
       // Verificar si la flecha ha alcanzado su destino (hitDistance o maxDistance)
       const targetDistance = ud.hitDistance ?? maxDistance;
       if (ud.totalDistance >= targetDistance) {
-        // Clamp a la posición exacta de impacto
+        // Clamp a la posiciÃ³n exacta de impacto
         if (spawnPos) {
           projectile.position.copy(spawnPos);
           projectile.position.add(direction.clone().multiplyScalar(targetDistance));
         }
 
-        // Pequeño efecto de impacto visual (partículas)
+        // PequeÃ±o efecto de impacto visual (partÃ­culas)
         this.spawnImpactEffect(projectile.position.clone());
 
         // Destruir la flecha (removeProjectile ya hace splice del array)
@@ -1177,7 +1177,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Crea un pequeño efecto de partículas en la posición de impacto del proyectil.
+   * Crea un pequeÃ±o efecto de partÃ­culas en la posiciÃ³n de impacto del proyectil.
    */
   private spawnImpactEffect(position: THREE.Vector3): void {
     const count = 8;
@@ -1214,7 +1214,7 @@ export class AdcCharacter extends Character {
     particles.position.copy(position);
     this.sceneManager.add(particles);
 
-    // Animar desvanecimiento y destrucción
+    // Animar desvanecimiento y destrucciÃ³n
     const startTime = performance.now();
     const duration = 300; // ms
 
@@ -1237,7 +1237,7 @@ export class AdcCharacter extends Character {
 
   /**
    * Habilidad Q: Lluvia de flechas.
-   * Activa la habilidad de salva si está disponible.
+   * Activa la habilidad de salva si estÃ¡ disponible.
    * @param inputState Estado de entrada que contiene coordenadas del mouse
    */
   private abilityQ(inputState?: InputState): void {
@@ -1248,14 +1248,14 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Verifica si el personaje está vivo.
+   * Verifica si el personaje estÃ¡ vivo.
    */
   isAlive(): boolean {
     return this.state !== CharacterState.Dead;
   }
 
   /**
-   * Contador de kills para estadísticas de fin de partida.
+   * Contador de kills para estadÃ­sticas de fin de partida.
    */
   private killCount: number = 0;
 
@@ -1274,7 +1274,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Reinicia las estadísticas de la partida (para "Jugar de nuevo").
+   * Reinicia las estadÃ­sticas de la partida (para "Jugar de nuevo").
    */
   resetMatchStats(): void {
     super.resetMatchStats();
@@ -1317,15 +1317,15 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Establece el pipeline centralizado de daño.
-   * Todas las fuentes de daño (proyectiles, rayos) usarán este pipeline.
+   * Establece el pipeline centralizado de daÃ±o.
+   * Todas las fuentes de daÃ±o (proyectiles, rayos) usarÃ¡n este pipeline.
    */
   setDamagePipeline(pipeline: DamagePipeline): void {
     this.damagePipeline = pipeline;
   }
 
   /**
-   * Crea un cuerpo físico para este personaje usando BodyFactory.
+   * Crea un cuerpo fÃ­sico para este personaje usando BodyFactory.
    */
   createPhysicsBody(position: THREE.Vector3): void {
     if (!this.physicsWorld) {
@@ -1338,7 +1338,7 @@ export class AdcCharacter extends Character {
 
     if (this.model) {
       this.model.position.copy(position);
-      // NOTA: Ya no usamos syncToThree. La sincronización se hace directamente en update()
+      // NOTA: Ya no usamos syncToThree. La sincronizaciÃ³n se hace directamente en update()
     }
   }
 
@@ -1355,7 +1355,7 @@ export class AdcCharacter extends Character {
       let handBone: any = null;
       this.innerMesh!.traverse((child: any) => {
         if (child.isBone) {
-          // Buscar huesos de la mano (puede variar según el modelo)
+          // Buscar huesos de la mano (puede variar segÃºn el modelo)
           if (
             child.name.toLowerCase().includes('hand') &&
             (child.name.toLowerCase().includes('right') || child.name.toLowerCase().includes('r_'))
@@ -1365,7 +1365,7 @@ export class AdcCharacter extends Character {
         }
       });
 
-      // Si no encontramos un hueso específico, buscar cualquier hueso de mano
+      // Si no encontramos un hueso especÃ­fico, buscar cualquier hueso de mano
       if (!handBone) {
         this.innerMesh!.traverse((child: any) => {
           if (child.isBone && child.name.toLowerCase().includes('hand')) {
@@ -1376,12 +1376,12 @@ export class AdcCharacter extends Character {
 
       // Si encontramos un hueso de mano, adjuntar el arma
       if (handBone) {
-        // Ajustar posición y rotación del arma relativa a la mano
+        // Ajustar posiciÃ³n y rotaciÃ³n del arma relativa a la mano
         weaponModel.position.set(0.1, 0, 0.1);
         weaponModel.rotation.set(0, Math.PI, 0);
         weaponModel.scale.set(0.8, 0.8, 0.8);
 
-        // Añadir el arma como hijo del hueso de la mano
+        // AÃ±adir el arma como hijo del hueso de la mano
         handBone.add(weaponModel);
         this.weapon = weaponModel;
 
@@ -1394,7 +1394,7 @@ export class AdcCharacter extends Character {
         this.innerMesh!.add(weaponModel);
         this.weapon = weaponModel;
         console.log(
-          `[AdcCharacter ${this.id}] Arma asignada al modelo general (no se encontró hueso de mano)`
+          `[AdcCharacter ${this.id}] Arma asignada al modelo general (no se encontrÃ³ hueso de mano)`
         );
       }
 
@@ -1415,7 +1415,7 @@ export class AdcCharacter extends Character {
 
   /**
    * Carga y adjunta la aljaba en la espalda del personaje.
-   * Usa assetLoader.clone() para clonar correctamente el modelo estático (sin skeleton).
+   * Usa assetLoader.clone() para clonar correctamente el modelo estÃ¡tico (sin skeleton).
    */
   private async loadQuiver(quiverGltf: GLTF): Promise<void> {
     try {
@@ -1445,7 +1445,7 @@ export class AdcCharacter extends Character {
         quiverModel.rotation.set(0, Math.PI, 0);
         spineBone.add(quiverModel);
       } else {
-        // Fallback: posición fija en la espalda, relativa al modelo
+        // Fallback: posiciÃ³n fija en la espalda, relativa al modelo
         quiverModel.position.set(0, 0.9, -0.5);
         quiverModel.rotation.set(0, Math.PI, 0);
         this.model!.add(quiverModel);
@@ -1466,7 +1466,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Crea un arma simple programáticamente (fallback cuando no se puede cargar el GLTF)
+   * Crea un arma simple programÃ¡ticamente (fallback cuando no se puede cargar el GLTF)
    */
   private createSimpleWeapon(): void {
     try {
@@ -1475,15 +1475,15 @@ export class AdcCharacter extends Character {
       const tubeRadius = 0.03;
       const bowGeometry = new THREE.TorusGeometry(bowRadius, tubeRadius, 8, 24, Math.PI); // Media circunferencia (180 grados)
 
-      // Cuerda del arco (línea recta entre los extremos del arco)
+      // Cuerda del arco (lÃ­nea recta entre los extremos del arco)
       const stringGeometry = new THREE.CylinderGeometry(0.01, 0.01, bowRadius * 2, 6);
 
-      // Empuñadura (cilindro corto en el centro)
+      // EmpuÃ±adura (cilindro corto en el centro)
       const gripGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.2, 8);
 
       // Materiales
       const bowMaterial = new THREE.MeshStandardMaterial({
-        color: 0x8b4513, // Marrón madera
+        color: 0x8b4513, // MarrÃ³n madera
         metalness: 0.1,
         roughness: 0.9,
       });
@@ -1494,7 +1494,7 @@ export class AdcCharacter extends Character {
         emissive: 0x111111,
       });
       const gripMaterial = new THREE.MeshStandardMaterial({
-        color: 0x4e342e, // Marrón oscuro
+        color: 0x4e342e, // MarrÃ³n oscuro
         metalness: 0.2,
         roughness: 0.8,
       });
@@ -1505,17 +1505,17 @@ export class AdcCharacter extends Character {
       const grip = new THREE.Mesh(gripGeometry, gripMaterial);
 
       // Posicionar y rotar las partes para formar un arco vertical
-      // El torus por defecto está en el plano XY, lo rotamos para que esté vertical
+      // El torus por defecto estÃ¡ en el plano XY, lo rotamos para que estÃ© vertical
       bow.rotation.x = Math.PI / 2; // Rotar 90 grados para que el anillo quede vertical
       bow.rotation.z = Math.PI / 2; // Rotar para que la apertura quede hacia el jugador
       bow.position.set(0, 0, 0);
 
-      // Cuerda: línea recta entre los extremos del arco (en el plano YZ)
+      // Cuerda: lÃ­nea recta entre los extremos del arco (en el plano YZ)
       string.position.set(0, 0, 0);
       string.rotation.x = Math.PI / 2; // Horizontal
       string.rotation.z = Math.PI / 2; // Alineada con la apertura del arco
 
-      // Empuñadura: en el centro del arco, ligeramente desplazada
+      // EmpuÃ±adura: en el centro del arco, ligeramente desplazada
       grip.position.set(0, 0, -0.1);
       grip.rotation.x = Math.PI / 2;
 
@@ -1525,7 +1525,7 @@ export class AdcCharacter extends Character {
       weaponGroup.add(string);
       weaponGroup.add(grip);
 
-      // Escala general del arma (más grande)
+      // Escala general del arma (mÃ¡s grande)
       weaponGroup.scale.set(0.4, 0.4, 0.4);
 
       // Buscar hueso de la mano derecha (o cualquier mano)
@@ -1540,7 +1540,7 @@ export class AdcCharacter extends Character {
       });
 
       if (handBone) {
-        // Ajustar posición y orientación para que se sostenga naturalmente
+        // Ajustar posiciÃ³n y orientaciÃ³n para que se sostenga naturalmente
         weaponGroup.position.set(0.15, 0.05, 0.1);
         weaponGroup.rotation.set(-Math.PI / 6, Math.PI / 4, Math.PI / 12);
 
@@ -1573,7 +1573,7 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Establece el cuerpo físico (método público de Character).
+   * Establece el cuerpo fÃ­sico (mÃ©todo pÃºblico de Character).
    */
   setPhysicsBody(body: RigidBodyHandle): void {
     this.physicsBody = body;
