@@ -4,7 +4,7 @@
  * También maneja el envío de inputs del jugador y recepción de snapshots.
  */
 import { io, Socket } from 'socket.io-client';
-import { SocketEvents, GameStateSnapshot } from '@rogue-arena/shared';
+import { SocketEvents, GameStateSnapshot } from '../shared-types';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 

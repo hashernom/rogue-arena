@@ -32,7 +32,7 @@ import { Shop } from './progression/Shop';
 import { UpgradeApplier } from './progression/UpgradeApplier';
 import { PassiveEffects } from './progression/PassiveEffects';
 import type { ItemsCatalog, ItemDefinition } from '../../shared/src/types/Items';
-import type { GameStateSnapshot } from '@rogue-arena/shared';
+import type { GameStateSnapshot } from './shared-types';
 import { ConnectionManager } from './network/ConnectionManager';
 import { TilemapLoader } from './map/TilemapLoader';
 import { MenuUI } from './network/MenuUI';

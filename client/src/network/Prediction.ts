@@ -12,7 +12,7 @@
  * 4. Re-aplica los inputs no confirmados sobre la posición corregida del servidor.
  */
 import * as THREE from 'three';
-import type { SnapshotPlayer } from '@rogue-arena/shared';
+import type { SnapshotPlayer } from '../shared-types';
 
 // ================================================================
 // Constantes

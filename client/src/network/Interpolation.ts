@@ -12,7 +12,7 @@
  * 4. Garantiza movimiento suave incluso con pérdida ocasional de paquetes.
  */
 import * as THREE from 'three';
-import type { SnapshotPlayer, SnapshotEnemy, GameStateSnapshot } from '@rogue-arena/shared';
+import type { SnapshotPlayer, SnapshotEnemy, GameStateSnapshot } from '../shared-types';
 
 // ================================================================
 // Constantes
