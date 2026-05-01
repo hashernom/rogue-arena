@@ -1,5 +1,6 @@
 {
-  "buildCommand": "pnpm --filter @rogue-arena/shared build && pnpm --filter @rogue-arena/client build",
+  "framework": null,
+  "buildCommand": "cd client && npx tsc --build --force && npx vite build",
   "outputDirectory": "client/dist",
   "installCommand": "pnpm install",
   "rewrites": [
