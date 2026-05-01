@@ -358,8 +358,10 @@ export class MenuUI {
 
   showReadyCheck(): void {
     this.readyCheckEl.style.display = 'block';
-    this.startBtn.disabled = true;
-    this.startBtn.textContent = '✅ Listo';
+    // NO deshabilitar el botón — el jugador debe hacer clic en "Iniciar Partida"
+    // para emitir 'game:start' al servidor.
+    // showReadyCheck() SOLO es un indicador visual de que ambos están listos.
+    this.startBtn.textContent = '▶️ Iniciar Partida';
   }
 
   private showLobby(code: string): void {
