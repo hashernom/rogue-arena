@@ -52,15 +52,9 @@ export class GameServer {
     this.io = new Server(this.httpServer, {
       cors: {
         origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-          // Sin origin en request no-browser
-          if (!origin) {
-            callback(null, true);
-            return;
-          }
-          // Permitir si está en la lista o es subdominio de vercel.app
-          const allowed = this.config.corsOrigins.some(o => origin === o) ||
-                          origin.endsWith('.vercel.app');
-          callback(null, allowed);
+          // Permitir TODOS los orígenes. Necesario para Vercel preview deployments
+          // que tienen URLs dinámicas como rogue-arena-client-xxxx.vercel.app
+          callback(null, true);
         },
         methods: ['GET', 'POST'],
         credentials: true,
