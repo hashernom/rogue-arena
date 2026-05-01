@@ -61,6 +61,8 @@ export class ConnectionManager {
   private status: ConnectionStatus = 'disconnected';
   /** Token de sesión para reconexión (persistido en sessionStorage) */
   private sessionToken: string | null = null;
+  /** Timer para heartbeat de aplicación (evita timeouts de proxy) */
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(serverUrl: string = 'http://localhost:3001', callbacks: ConnectionCallbacks = {}) {
     this.serverUrl = serverUrl;
@@ -79,18 +81,22 @@ export class ConnectionManager {
     this.socket = io(this.serverUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     this.socket.on('connect', () => {
       console.log(`[ConnectionManager] Conectado: ${this.socket?.id}`);
       this.setStatus('connected');
+      // Iniciar heartbeat a nivel de aplicación (cada 15s)
+      this.startHeartbeat();
     });
 
     this.socket.on('disconnect', reason => {
       console.log(`[ConnectionManager] Desconectado: ${reason}`);
       this.setStatus('disconnected');
+      this.stopHeartbeat();
     });
 
     this.socket.on('connect_error', err => {
@@ -193,6 +199,7 @@ export class ConnectionManager {
   }
 
   disconnect(): void {
+    this.stopHeartbeat();
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.close();
@@ -393,5 +400,29 @@ export class ConnectionManager {
   private setStatus(status: ConnectionStatus): void {
     this.status = status;
     this.callbacks.onStatusChange?.(status);
+  }
+
+  /**
+   * Heartbeat a nivel de aplicación.
+   * Envía un mensaje 'heartbeat' cada 15s para mantener la conexión viva
+   * a través de proxies (Railway, Netlify) que pueden no reenviar
+   * los frames WebSocket ping/pong de Engine.IO.
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.socket?.connected) {
+        this.socket.emit('heartbeat');
+      } else {
+        this.stopHeartbeat();
+      }
+    }, 15_000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 }

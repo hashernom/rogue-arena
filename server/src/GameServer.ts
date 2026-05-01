@@ -43,8 +43,6 @@ export class GameServer {
   private config: GameServerConfig;
   private isShuttingDown = false;
   private stateBroadcastTimer: ReturnType<typeof setInterval> | null = null;
-  /** Timer para ping/pong health check */
-  private pingTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(httpServer: HttpServer, config?: Partial<GameServerConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -57,9 +55,9 @@ export class GameServer {
         methods: ['GET', 'POST'],
         credentials: true,
       },
-      // Configuración para graceful restart
-      pingInterval: 10_000,
-      pingTimeout: 5_000,
+      // Heartbeat agresivo para evitar que Railway/Netlify proxy terminen conexiones idle
+      pingInterval: 5_000,
+      pingTimeout: 3_000,
       transports: ['websocket', 'polling'],
     });
 
@@ -70,7 +68,6 @@ export class GameServer {
     this.setupSocketHandlers();
     this.setupProcessHandlers();
     this.startStateBroadcast();
-    this.startPingHealthCheck();
 
     logger.info('GameServer initialized');
     logger.info(`CORS origins: ${this.config.corsOrigins.join(', ')}`);
@@ -101,46 +98,6 @@ export class GameServer {
     }
   }
 
-  /**
-   * Inicia el health check de ping/pong para detectar conexiones zombie.
-   * Cada 5 segundos envía un ping a todos los sockets conectados.
-   * Socket.io maneja internamente el timeout de pong.
-   */
-  private startPingHealthCheck(): void {
-    // Socket.io ya tiene pingInterval/pingTimeout configurado,
-    // pero añadimos un check adicional para detectar zombies rápidamente
-    this.pingTimer = setInterval(() => {
-      const sockets = this.io?.sockets?.sockets;
-      if (!sockets) return;
-
-      const now = Date.now();
-      sockets.forEach((socket) => {
-        // Si el socket no ha respondido en mucho tiempo, forzar desconexión
-        if (socket.data?.lastPong && (now - socket.data.lastPong) > 15_000) {
-          logger.warn(`Zombie connection detected: ${socket.id}, forcing disconnect`);
-          socket.disconnect(true);
-        }
-      });
-    }, 10_000); // cada 10 segundos
-
-    // Registrar pong handlers en nuevas conexiones
-    this.io?.on('connection', (socket) => {
-      socket.data.lastPong = Date.now();
-      socket.on('pong', () => {
-        socket.data.lastPong = Date.now();
-      });
-    });
-
-    logger.info('Ping health check started');
-  }
-
-  private stopPingHealthCheck(): void {
-    if (this.pingTimer) {
-      clearInterval(this.pingTimer);
-      this.pingTimer = null;
-    }
-  }
-
   // ============================================================
   // Handlers de Socket.io
   // ============================================================
@@ -154,6 +111,13 @@ export class GameServer {
         socketId: socket.id,
         serverTime: Date.now(),
         message: 'Connected to Rogue Arena server',
+      });
+
+      // Heartbeat a nivel de aplicación — permite mantener la conexión viva
+      // a través de proxies (Railway, Netlify) que pueden no reenviar
+      // correctamente los frames WebSocket ping/pong de Engine.IO
+      socket.on('heartbeat', () => {
+        // No hacer nada, solo recibir el evento mantiene el socket activo
       });
 
       // --- Eventos de sala ---
@@ -324,8 +288,7 @@ export class GameServer {
     logger.info(`Received ${signal}, starting graceful shutdown...`);
 
     this.stopStateBroadcast();
-    this.stopPingHealthCheck();
-    logger.info('State broadcast and ping health check stopped');
+    logger.info('State broadcast stopped');
 
     this.io?.close(() => {
       logger.info('Socket.io server closed');
