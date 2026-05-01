@@ -99,7 +99,10 @@ export class ConnectionManager {
     this.setStatus('connecting');
 
     this.socket = io(this.serverUrl, {
-      transports: ['websocket', 'polling'],
+      // Polling primero, luego upgrade a WebSocket (comportamiento default de Socket.io).
+      // 'websocket' primero falla si Railway proxy no maneja el upgrade correctamente.
+      transports: ['polling', 'websocket'],
+      upgrade: true,
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
