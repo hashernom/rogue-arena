@@ -65,8 +65,28 @@ export class ConnectionManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(serverUrl: string = 'http://localhost:3001', callbacks: ConnectionCallbacks = {}) {
-    this.serverUrl = serverUrl;
+    // Red de seguridad: si la URL apunta a localhost pero el navegador
+    // está en un dominio de producción, corregir automáticamente a Railway.
+    this.serverUrl = this.resolveServerUrl(serverUrl);
     this.callbacks = callbacks;
+  }
+
+  /**
+   * Resuelve la URL del servidor, corrigiendo localhost si estamos en producción.
+   */
+  private resolveServerUrl(url: string): string {
+    const hostname = window.location.hostname;
+    // Si la URL contiene localhost pero no estamos en localhost, usar Railway
+    if (
+      (url.includes('localhost') || url.includes('127.0.0.1')) &&
+      hostname !== 'localhost' &&
+      hostname !== '127.0.0.1'
+    ) {
+      const railwayUrl = 'https://rogue-arena-server.up.railway.app';
+      console.log(`[ConnectionManager] URL ${url} corregida a ${railwayUrl} (hostname: ${hostname})`);
+      return railwayUrl;
+    }
+    return url;
   }
 
   // ============================================================
