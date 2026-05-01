@@ -1208,18 +1208,18 @@ async function initGameWithPhysics(): Promise<void> {
 
 let gameStarted = false;
 
-// Determinar URL del servidor en runtime
-// 1. Si VITE_SERVER_URL está definida (build-time env), se usa esa.
-// 2. Si no, se detecta automáticamente según el hostname:
-//    - localhost / 127.0.0.1 → servidor local
-//    - cualquier otro (producción Vercel) → Railway
-const SERVER_URL: string =
-  import.meta.env.VITE_SERVER_URL ||
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:3001'
-    : 'https://rogue-arena-server.up.railway.app');
-
-console.log(`[Main] Conectando al servidor: ${SERVER_URL}`);
+// Determinar URL del servidor SEGÚN EL HOSTNAME (runtime puro, sin Vite env)
+// - localhost / 127.0.0.1 → servidor local (desarrollo)
+// - cualquier otro host → servidor Railway (producción Vercel)
+function getServerUrl(): string {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return 'http://localhost:3001';
+  }
+  return 'https://rogue-arena-server.up.railway.app';
+}
+const SERVER_URL = getServerUrl();
+console.log(`[Main] Hostname: ${window.location.hostname} → ServerURL: ${SERVER_URL}`);
 
 // Crear ConnectionManager con callbacks que actualizan la UI
 const connectionManager = new ConnectionManager(
