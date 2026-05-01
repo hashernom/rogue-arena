@@ -1,0 +1,11 @@
+{
+  "buildCommand": "cd .. && pnpm --filter @rogue-arena/shared build && pnpm --filter @rogue-arena/client build",
+  "outputDirectory": "dist",
+  "installCommand": "cd .. && pnpm install",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
