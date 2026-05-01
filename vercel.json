@@ -1,6 +1,6 @@
 {
   "framework": null,
-  "buildCommand": "cd client && npx tsc --build --force && npx vite build",
+  "buildCommand": "cd client && npx vite build",
   "outputDirectory": "client/dist",
   "installCommand": "pnpm install",
   "rewrites": [
