@@ -10,6 +10,8 @@ export class SceneManager {
   private camera: THREE.Camera;
   private ambientLight: THREE.AmbientLight;
   private directionalLight: THREE.DirectionalLight;
+  /** Referencia almacenada del handler de resize para poder removerlo en dispose(). */
+  private _boundResizeHandler: () => void;
 
   /**
    * Crea una instancia de SceneManager.
@@ -22,6 +24,7 @@ export class SceneManager {
     this.camera = camera ?? this.createDefaultCamera();
     this.ambientLight = this.createAmbientLight();
     this.directionalLight = this.createDirectionalLight();
+    this._boundResizeHandler = () => this.handleResize();
 
     this.setupLights();
     this.setupEventListeners();
@@ -123,7 +126,7 @@ export class SceneManager {
    * Configura listeners para eventos de ventana (resize).
    */
   private setupEventListeners(): void {
-    window.addEventListener('resize', () => this.handleResize());
+    window.addEventListener('resize', this._boundResizeHandler);
   }
 
   /**
@@ -196,7 +199,7 @@ export class SceneManager {
    * Limpia recursos y elimina listeners.
    */
   public dispose(): void {
-    window.removeEventListener('resize', () => this.handleResize());
+    window.removeEventListener('resize', this._boundResizeHandler);
     this.renderer.dispose();
     // Nota: THREE.Scene no tiene método dispose, pero los objetos hijos deben ser eliminados manualmente.
   }

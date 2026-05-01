@@ -47,6 +47,9 @@ export class MeleeCharacter extends Character {
   /** Acción de animación actual */
   private currentAction: THREE.AnimationAction | null = null;
 
+  /** Posición objetivo para auto-aim en modo local (cuando no hay segundo mouse) */
+  private autoAimPosition: THREE.Vector3 | null = null;
+
   /** Habilidad pasiva Furia */
   private furyPassive: FuryPassive | null = null;
 
@@ -63,7 +66,7 @@ export class MeleeCharacter extends Character {
   static readonly BASE_STATS: CharacterStats = {
     hp: 150,
     maxHp: 150,
-    speed: 8,
+    speed: 6.5,
     damage: 25,
     attackSpeed: 0.8,
     range: 3.0,
@@ -550,8 +553,8 @@ export class MeleeCharacter extends Character {
     // 2. Convertir Vector2 a Vector3 para movimiento isométrico
     const direction = this.inputToIsometric(moveDir);
 
-    // 3. Definir la velocidad (ajusta este número a tu gusto)
-    const SPEED = 8.0;
+    // 3. Usar la velocidad efectiva del personaje (stats + modificadores)
+    const SPEED = this.getEffectiveStat('speed');
 
     // 4. LA MAGIA: Aplicar Velocidad Lineal o Frenar en Seco
     const currentVel = body.linvel();
@@ -657,11 +660,6 @@ export class MeleeCharacter extends Character {
     // Si el personaje está en dash, NO sobrescribir la velocidad (el dash la controla)
     const isDashing = this.chargeAbility?.isDashingActive() ?? false;
     if (isDashing) {
-      // Rotar el modelo hacia la dirección del dash
-      if (this.model && this.chargeAbility) {
-        // La rotación se mantiene de la última dirección conocida
-      }
-      // Saltar el bloque de movimiento normal para no anular la velocidad del dash
       return;
     }
 
@@ -685,6 +683,39 @@ export class MeleeCharacter extends Character {
       this.handleAbility(inputState);
     }
 
+    // ============================================================
+    // AUTO-AIM (modo local): rotar hacia el objetivo y auto-atacar
+    // ============================================================
+    if (this.autoAimPosition) {
+      const charPos = this.getBodyPosition();
+      if (charPos) {
+        const toTarget = new THREE.Vector3()
+          .subVectors(this.autoAimPosition, charPos);
+        toTarget.y = 0;
+
+        if (toTarget.lengthSq() > 0.01) {
+          toTarget.normalize();
+
+          // Rotar el modelo hacia el objetivo del auto-aim
+          if (this.model) {
+            const targetAngle = Math.atan2(toTarget.x, toTarget.z);
+            const currentAngle = this.model.rotation.y;
+            const angleDiff = targetAngle - currentAngle;
+            const normalizedDiff = ((angleDiff + Math.PI) % (2 * Math.PI)) - Math.PI;
+            this.model.rotation.y = currentAngle + normalizedDiff * this.rotationLerpAlpha;
+          }
+
+          // Auto-atacar si el enemigo está en rango de ataque
+          const dist = charPos.distanceTo(this.autoAimPosition);
+          const attackRange = this.getEffectiveStat('range');
+          if (dist <= attackRange && inputState) {
+            // Forzar ataque: el auto-aim reemplaza la necesidad de inputState.attacking
+            this.attack();
+          }
+        }
+      }
+    }
+
     const currentVel = body.linvel();
 
     // El personaje puede moverse MIENTRAS ataca — ya no se ancla al piso.
@@ -703,8 +734,8 @@ export class MeleeCharacter extends Character {
         true
       );
 
-      // Rotar el CONTENEDOR hacia donde caminamos
-      if (this.model) {
+      // Rotar el CONTENEDOR hacia donde caminamos (solo si NO hay auto-aim)
+      if (!this.autoAimPosition && this.model) {
         this.model.rotation.y = Math.atan2(direction.x, direction.z);
       }
 
@@ -965,6 +996,28 @@ export class MeleeCharacter extends Character {
       callback,
       this.sceneManager
     );
+  }
+
+  /**
+   * Establece la posición objetivo para auto-aim en modo local.
+   * El personaje rotará hacia esta posición y auto-atacará cuando
+   * los enemigos estén en rango.
+   * @param position Posición objetivo, o null para desactivar auto-aim
+   */
+  setAutoAimTarget(position: THREE.Vector3 | null): void {
+    this.autoAimPosition = position;
+  }
+
+  /**
+   * Obtiene la posición actual del personaje para el sistema de auto-aim.
+   */
+  getCharacterPosition(): THREE.Vector3 | null {
+    if (this.model) {
+      return this.model.position.clone();
+    }
+    const bodyPos = this.getBodyPosition();
+    if (bodyPos) return bodyPos.clone();
+    return null;
   }
 
   /**

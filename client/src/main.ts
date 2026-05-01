@@ -14,6 +14,7 @@ import { EventBus } from './engine/EventBus';
 import { Character, CharacterState } from './characters/Character';
 import { MeleeCharacter } from './characters/MeleeCharacter';
 import { AdcCharacter } from './characters/AdcCharacter';
+import { AutoAimSystem } from './engine/AutoAimSystem';
 import { EnemyPool } from './enemies/EnemyPool';
 import { Enemy, EnemyType } from './enemies/Enemy';
 import { ENEMY_BASIC_STATS } from './enemies/EnemyBasic';
@@ -90,6 +91,8 @@ let meleeCharacter: MeleeCharacter | null = null;
 let adcCharacter: AdcCharacter | null = null;
 // Pool de enemigos para gestión eficiente de instancias
 let enemyPool: EnemyPool | null = null;
+// Sistema de auto-aim para modo local (no hay segundo mouse)
+let autoAimSystem: AutoAimSystem | null = null;
 // Pool de proyectiles para enemigos a distancia
 let enemyProjectilePool: ProjectilePool | null = null;
 // Pipeline centralizado de daño (compartido entre todos los sistemas)
@@ -112,7 +115,7 @@ let passiveEffects: PassiveEffects | null = null;
 let spawner: Spawner | null = null;
 // HP bars para jugadores (sprites flotantes)
 let playerHpBars: Map<string, THREE.Sprite> = new Map();
-// Referencia al MiniBoss actual para item drop y F3
+// Referencia al MiniBoss actual para item drop
 let currentMiniBoss: MiniBoss | null = null;
 
 // HUD superpuesto al canvas
@@ -198,55 +201,6 @@ let debugRenderer: DebugRenderer | null = null;
 let player1BodyHandle: RigidBodyHandle | null = null;
 let player2BodyHandle: RigidBodyHandle | null = null;
 let planeBodyHandle: RigidBodyHandle | null = null;
-
-// Listener global para F2: forzar avance de ronda (skip wave)
-// Funciona en cualquier estado: durante una ronda la termina instantáneamente,
-// entre rondas salta el timer. Útil para testing rápido (ej: llegar al boss ronda 5).
-// También limpia enemigos y proyectiles actuales de la escena.
-// Usamos listener directo en window (mismo patrón que F1 en DebugRenderer)
-// para evitar que el navegador intercepte la tecla de función.
-window.addEventListener('keydown', event => {
-  if (event.code === 'F2') {
-    event.preventDefault();
-
-    // Limpiar proyectiles enemigos activos
-    if (enemyProjectilePool) {
-      enemyProjectilePool.releaseAll();
-    }
-
-    // Limpiar proyectiles visuales del ADC (flechas normales)
-    if (adcCharacter) {
-      adcCharacter.clearActiveProjectiles();
-      // Limpiar proyectiles de la habilidad Salva
-      adcCharacter.getSalvoAbility()?.clearAllProjectiles();
-    }
-
-    if (waveManager) {
-      const currentRound = waveManager.getCurrentRound();
-      waveManager.forceNextWave();
-      console.log(`[Skip] Avance forzado de ronda ${currentRound} → ${currentRound + 1} con F2`);
-      showNotification(`⏩ Ronda ${currentRound + 1} forzada con F2`, 'info');
-    }
-  }
-
-  // F3: dejar al MiniBoss con 1 HP (testing)
-  if (event.code === 'F3') {
-    event.preventDefault();
-
-    if (currentMiniBoss && currentMiniBoss.isAlive()) {
-      const currentHp = currentMiniBoss.getEffectiveStat('hp');
-      const damageToApply = Math.max(0, currentHp - 1);
-      if (damageToApply > 0) {
-        currentMiniBoss.takeDamage(damageToApply);
-        console.log(`[F3] MiniBoss reducido a 1 HP (daño aplicado: ${damageToApply})`);
-        showNotification(`⚔️ MiniBoss reducido a 1 HP con F3`, 'info');
-      }
-    } else {
-      console.log('[F3] No hay MiniBoss vivo');
-      showNotification(`❌ No hay MiniBoss vivo`, 'error');
-    }
-  }
-});
 
 // Función asíncrona que inicializa Rapier3D WASM y luego inicia el juego
 async function initGameWithPhysics(): Promise<void> {
@@ -535,6 +489,12 @@ async function initGameWithPhysics(): Promise<void> {
         console.log('⚔️ MeleeCharacter vinculado a EnemyPool para ChargeAbility');
       }
 
+      // Crear sistema de auto-aim para modo local
+      if (enemyPool) {
+        autoAimSystem = new AutoAimSystem(enemyPool);
+        console.log('🎯 AutoAimSystem inicializado para modo local');
+      }
+
       // ================================================================
       // SISTEMA DE ECONOMÍA (MoneySystem)
       // ================================================================
@@ -609,6 +569,11 @@ async function initGameWithPhysics(): Promise<void> {
       // Cuando se abre la tienda, generar ofertas para ambos jugadores
       eventBus.on('shop:opened', () => {
         if (!shop || !waveManager) return;
+
+        // Limpiar proyectiles activos y efectos de impacto entre rondas
+        if (adcCharacter) {
+          adcCharacter.clearActiveProjectiles();
+        }
 
         const round = waveManager.getCurrentRound();
 
@@ -909,19 +874,22 @@ async function initGameWithPhysics(): Promise<void> {
       // ============================================================
       // MODO ONLINE: Client-Side Prediction + Server Reconciliation
       // ============================================================
+      // En online, cada cliente controla UN personaje con WASD+Q (p1State)
+      // El personaje remoto se interpola desde snapshots del servidor
 
       // Determinar qué personaje es local según el último snapshot
       const localSnapshotPlayer = lastSnapshot?.players.find(p => p.id === localPlayerId);
       const localCharacterType = localSnapshotPlayer?.name; // 'melee' o 'adc'
 
-      // Actualizar el personaje LOCAL con input (aplicación local inmediata)
+      // Actualizar el personaje LOCAL con input (WASD+Q → p1State)
+      // Ambos personajes usan p1State porque cada cliente solo tiene UN teclado
       if (localCharacterType === 'melee' || !localCharacterType) {
         if (meleeCharacter) {
           meleeCharacter.update(dt, p1State);
         }
       } else {
         if (adcCharacter) {
-          adcCharacter.update(dt, p2State);
+          adcCharacter.update(dt, p1State); // WASD+Q, no arrow keys
         }
       }
 
@@ -974,13 +942,32 @@ async function initGameWithPhysics(): Promise<void> {
       // MODO LOCAL: Ambos personajes se controlan con input directo
       // ============================================================
 
-      // Actualizar MeleeCharacter (Player 1) con input
+      // Calcular auto-aim targets para modo local (sin segundo mouse)
+      let meleeTarget: THREE.Vector3 | null = null;
+      let adcTarget: THREE.Vector3 | null = null;
+      if (autoAimSystem) {
+        const meleePos = meleeCharacter?.getCharacterPosition?.() ?? null;
+        if (meleePos) {
+          const result = autoAimSystem.getTarget(meleePos);
+          meleeTarget = result?.targetPosition ?? null;
+        }
+        const adcPos = adcCharacter?.getPosition?.() ?? null;
+        if (adcPos) {
+          // ADC usa targeting preciso (enemigo más cercano) para máxima precisión
+          const result = autoAimSystem.getNearestTarget(adcPos);
+          adcTarget = result?.targetPosition ?? null;
+        }
+      }
+
+      // Actualizar MeleeCharacter (Player 1) con input + auto-aim
       if (meleeCharacter) {
+        meleeCharacter.setAutoAimTarget(meleeTarget);
         meleeCharacter.update(dt, p1State);
       }
 
-      // Actualizar AdcCharacter (Player 2) con input
+      // Actualizar AdcCharacter (Player 2) con input + auto-aim
       if (adcCharacter) {
+        adcCharacter.setAutoAimTarget(adcTarget);
         adcCharacter.update(dt, p2State);
       }
     }
@@ -1261,6 +1248,7 @@ const connectionManager = new ConnectionManager(
       menuUI.hideMenu();
       gameStarted = true;
       isOnlineMatch = true;
+      inputManager.setMode('online'); // P2 key mappings = WASD+Q también
 
       // Guardar la seed para obstáculos procedurales (M12)
       // El servidor la genera y ambos clientes la reciben idéntica
@@ -1371,6 +1359,7 @@ const menuUI = new MenuUI(connectionManager, {
   onLocalPlay: () => {
     console.log('[Main] Modo local seleccionado — iniciando juego sin servidor');
     gameStarted = true;
+    inputManager.setMode('local'); // P2 key mappings = Arrow keys + J
     // En modo local también generamos una seed para tener obstáculos procedurales
     obstacleSeed = Math.floor(Math.random() * 2147483647);
     console.log(`[Main] Seed local: ${obstacleSeed}`);
@@ -1769,8 +1758,6 @@ function createBetweenRoundHud(): HTMLElement {
 
       <div style="text-align:center; margin-top:16px; font-size:11px; color:#555;">
         Presiona <span style="color:#888;">[R]</span> (P1) o <span style="color:#888;">[/]</span> (P2) cuando estés listo
-        &nbsp;·&nbsp; <span style="color:#888;">[F2]</span> saltar ronda
-        &nbsp;·&nbsp; <span style="color:#888;">[F3]</span> boss 1HP
       </div>
     </div>
   `;

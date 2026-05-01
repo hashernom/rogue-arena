@@ -9,7 +9,7 @@ import { InputState } from '../../engine/InputManager';
  * Habilidad activa "Salva" para el Tirador (AdcCharacter).
  *
  * Mecánica:
- * - Dispara 3 proyectiles en un abanico de 60° (20° entre cada proyectil)
+ * - Dispara 5 proyectiles en un abanico de 60° (15° entre cada proyectil)
  * - Cada proyectil hace daño normal
  * - Cooldown: 4 segundos con indicador visual en HUD
  * - Feedback visual: efecto de partículas/aura durante la salva
@@ -21,7 +21,7 @@ export class SalvoAbility {
 
   // Estado de la salva
   private isSalvoActive: boolean = false;
-  private salvoProjectiles: number = 3;
+  private salvoProjectiles: number = 5;
   private salvoAngle: number = 60; // grados totales del abanico
   private projectilesFired: number = 0;
 
@@ -37,7 +37,10 @@ export class SalvoAbility {
   private sceneManager: any;
 
   // Lista de proyectiles activos para poder limpiarlos al forzar ronda (F2)
-  private activeSalvoProjectiles: Set<THREE.Mesh> = new Set();
+  private activeSalvoProjectiles: Set<THREE.Object3D> = new Set();
+
+  /** Referencia vinculada del handler para poder remover el listener correctamente. */
+  private _boundHandleAbilityActivation: (data: any) => void;
 
   constructor(eventBus: EventBus, character: Character, playerId: string, sceneManager: any) {
     this.eventBus = eventBus;
@@ -45,6 +48,7 @@ export class SalvoAbility {
     this.playerId = playerId;
     this.sceneManager = sceneManager;
 
+    this._boundHandleAbilityActivation = this.handleAbilityActivation.bind(this);
     this.setupEventListeners();
   }
 
@@ -53,7 +57,7 @@ export class SalvoAbility {
    */
   private setupEventListeners(): void {
     // Escuchar eventos de tecla Q (o botón de habilidad)
-    (this.eventBus as any).on('player:abilityQ', this.handleAbilityActivation.bind(this));
+    (this.eventBus as any).on('player:abilityQ', this._boundHandleAbilityActivation);
   }
 
   /**
@@ -78,7 +82,7 @@ export class SalvoAbility {
   /**
    * Activa la salva de proyectiles.
    */
-  private activateSalvo(inputState?: InputState): void {
+  private activateSalvo(inputState?: InputState, aimPosition?: THREE.Vector3): void {
     if (this.isSalvoActive) return;
 
     console.log(`[SalvoAbility] ${this.playerId} - ¡Salva activada!`);
@@ -101,7 +105,7 @@ export class SalvoAbility {
     this.activateVisualEffect();
 
     // Disparar los proyectiles en secuencia rápida con inputState para mouse targeting
-    this.fireSalvoProjectiles(inputState);
+    this.fireSalvoProjectiles(inputState, aimPosition);
   }
 
   /**
@@ -199,16 +203,30 @@ export class SalvoAbility {
 
   /**
    * Dispara los proyectiles de la salva en abanico.
+   * @param inputState Estado de input (mouseNDC para online)
+   * @param aimPosition Posición objetivo para auto-aim (modo local)
    */
-  private fireSalvoProjectiles(inputState?: InputState): void {
+  private fireSalvoProjectiles(inputState?: InputState, aimPosition?: THREE.Vector3): void {
     const characterAny = this.character as any;
     if (!characterAny.model) return;
 
     // Obtener dirección base: mouse targeting si hay inputState, sino dirección forward del personaje
     let baseForward = this.getCharacterForwardDirection();
 
-    // Intentar usar mouse targeting si está disponible
-    if (inputState?.mouseNDC && this.sceneManager) {
+    // AUTO-AIM (modo local): calcular dirección hacia la posición objetivo
+    if (aimPosition) {
+      const charPos = this.getCharacterPosition();
+      charPos.y = 1.2;
+      const aimPos = aimPosition.clone();
+      aimPos.y = 1.2;
+      const toTarget = new THREE.Vector3().subVectors(aimPos, charPos);
+      toTarget.y = 0;
+      if (toTarget.lengthSq() > 0.01) {
+        baseForward = toTarget.normalize();
+      }
+    }
+    // Intentar usar mouse targeting si está disponible (modo online)
+    else if (inputState?.mouseNDC && this.sceneManager) {
       const camera = this.sceneManager.getCamera();
       if (camera) {
         // Calcular dirección usando raycasting similar a AdcCharacter.calculateAimDirection
@@ -251,7 +269,8 @@ export class SalvoAbility {
   }
 
   /**
-   * Crea un proyectil individual.
+   * Crea un proyectil individual con modelo 3D de flecha naranja brillante
+   * y sistema de partículas de estela (trail).
    */
   private createProjectile(direction: THREE.Vector3): void {
     const characterAny = this.character as any;
@@ -269,57 +288,113 @@ export class SalvoAbility {
     const spawnOffset = 1.0;
     spawnPos.add(forwardDir.clone().multiplyScalar(spawnOffset));
 
-    console.log(
-      `[SalvoAbility] Creando proyectil en posición mundial: (${spawnPos.x.toFixed(2)}, ${spawnPos.y.toFixed(2)}, ${spawnPos.z.toFixed(2)}) con dirección: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`
-    );
+    // 4. Crear proyectil con modelo 3D de flecha (naranja brillante)
+    let projectile: THREE.Object3D;
 
-    // Crear geometría de proyectil (flecha)
-    const geometry = new THREE.ConeGeometry(0.1, 0.5, 8);
-    const material = new THREE.MeshStandardMaterial({ color: 0xffaa00 }); // Color naranja para diferenciar
-    const projectile = new THREE.Mesh(geometry, material);
-    projectile.castShadow = true;
+    if (characterAny.arrowGltf && characterAny.assetLoader) {
+      try {
+        // Clonar el modelo GLTF de la flecha (igual que shootProjectile del ADC)
+        projectile = characterAny.assetLoader.clone(characterAny.arrowGltf);
+        projectile.scale.set(2.0, 2.0, 2.0);
 
-    // Posición inicial
+        // Teñir la flecha de naranja brillante con glow
+        projectile.traverse(child => {
+          if (child instanceof THREE.Mesh && child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach(mat => {
+              mat.color.setHex(0xff6600);
+              mat.emissive = new THREE.Color(0xff4400);
+              mat.emissiveIntensity = 0.8;
+              mat.needsUpdate = true;
+            });
+          }
+        });
+      } catch (cloneError) {
+        console.warn('[SalvoAbility] Error clonando flecha, usando fallback:', cloneError);
+        projectile = this.createFallbackProjectile();
+      }
+    } else {
+      // Fallback: cono naranja
+      projectile = this.createFallbackProjectile();
+    }
+
+    // Posición inicial y orientación
     projectile.position.copy(spawnPos);
+    const lookTarget = spawnPos.clone().add(forwardDir);
+    projectile.lookAt(lookTarget);
 
-    // Orientar el proyectil en la dirección de disparo
-    projectile.lookAt(projectile.position.clone().add(forwardDir));
-    projectile.rotateX(Math.PI / 2); // Ajustar orientación para cono
+    // 5. Crear sistema de partículas de estela (trail naranja)
+    const trailCount = 12;
+    const trailPositions = new Float32Array(trailCount * 3);
+    for (let i = 0; i < trailCount; i++) {
+      trailPositions[i * 3] = spawnPos.x;
+      trailPositions[i * 3 + 1] = spawnPos.y;
+      trailPositions[i * 3 + 2] = spawnPos.z;
+    }
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailMat = new THREE.PointsMaterial({
+      color: 0xff6600,
+      size: 0.2,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const trailParticles = new THREE.Points(trailGeo, trailMat);
 
     // Añadir a la escena
     this.sceneManager.add(projectile);
+    this.sceneManager.add(trailParticles);
+
+    // Almacenar referencia de partículas en userData para limpieza
+    projectile.userData.trailParticles = trailParticles;
 
     // Track para cleanup al forzar ronda
     this.activeSalvoProjectiles.add(projectile);
 
-    // Emitir evento de creación de proyectil
-    (this.eventBus as any).emit('projectile:created', {
-      playerId: this.playerId,
-      projectileId: `salvo_${Date.now()}_${Math.random()}`,
-      position: [projectile.position.x, projectile.position.y, projectile.position.z],
-      direction: [forwardDir.x, forwardDir.y, forwardDir.z],
-      damage: this.character.getEffectiveStat('damage'),
-      source: 'salvo',
-    });
+    console.log(
+      `[SalvoAbility] Proyectil salva creado en: (${spawnPos.x.toFixed(2)}, ${spawnPos.y.toFixed(2)}, ${spawnPos.z.toFixed(2)}) dirección: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`
+    );
 
-    // Detectar colisiones con raycast (disparo instantáneo)
+    // Detectar colisiones con raycast (piercing SIEMPRE activo para la salva)
     this.detectHitsWithRay(spawnPos, forwardDir, this.character.getEffectiveStat('damage'));
 
-    // Animar el proyectil (movimiento lineal visual)
+    // Animar el proyectil (movimiento lineal visual + trail)
     this.animateProjectile(projectile, forwardDir);
+  }
+
+  /**
+   * Crea un proyectil de fallback (cono naranja) cuando no hay modelo 3D de flecha.
+   */
+  private createFallbackProjectile(): THREE.Mesh {
+    const geometry = new THREE.ConeGeometry(0.12, 0.5, 8);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff6600,
+      emissive: 0xff4400,
+      emissiveIntensity: 0.6,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.rotateX(Math.PI / 2);
+    return mesh;
   }
 
   /**
    * Anima el movimiento del proyectil.
    * Usa deltaTime real para ser independiente del framerate.
+   * Actualiza las partículas de estela (trail) en cada frame.
    */
-  private animateProjectile(projectile: THREE.Mesh, direction: THREE.Vector3): void {
+  private animateProjectile(projectile: THREE.Object3D, direction: THREE.Vector3): void {
     const speed = 50; // Velocidad aumentada para que el proyectil sea más rápido
     const maxDistance = 40; // Distancia máxima aumentada
 
     let distanceTraveled = 0;
     const startPosition = projectile.position.clone();
     let lastTime: number | null = null;
+
+    // Referencia a las partículas de estela
+    const trailParticles = projectile.userData.trailParticles as THREE.Points | undefined;
 
     // Función de animación por frame
     const animate = (timestamp: number) => {
@@ -334,6 +409,25 @@ export class SalvoAbility {
       const moveDistance = speed * deltaTime;
       projectile.position.add(direction.clone().multiplyScalar(moveDistance));
       distanceTraveled = startPosition.distanceTo(projectile.position);
+
+      // Actualizar partículas de estela (trail)
+      if (trailParticles) {
+        const positions = trailParticles.geometry.attributes.position.array as Float32Array;
+        // Desplazar todas las posiciones hacia atrás (efecto estela)
+        const len = positions.length;
+        for (let i = len - 1; i >= 3; i--) {
+          positions[i] = positions[i - 3];
+        }
+        // Primera posición = posición actual del proyectil
+        positions[0] = projectile.position.x;
+        positions[1] = projectile.position.y;
+        positions[2] = projectile.position.z;
+        trailParticles.geometry.attributes.position.needsUpdate = true;
+
+        // Reducir opacidad gradualmente con la distancia
+        const opacity = Math.max(0, 1 - distanceTraveled / maxDistance);
+        (trailParticles.material as THREE.PointsMaterial).opacity = opacity * 0.7;
+      }
 
       // Verificar si ha alcanzado la distancia máxima
       if (distanceTraveled >= maxDistance) {
@@ -374,8 +468,8 @@ export class SalvoAbility {
       `[SalvoAbility] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) dirección (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
     );
 
-    // Determinar si este proyectil tiene piercing (consultar pasiva)
-    const canPierce = this.checkPiercePassive();
+    // Salva: TODOS los proyectiles tienen piercing siempre (perforan enemigos)
+    const canPierce = true;
 
     // 1. Recolectar todos los impactos del rayo
     const hits: { id: number; entity: any; toi: number }[] = [];
@@ -514,15 +608,44 @@ export class SalvoAbility {
 
   /**
    * Remueve un proyectil de la escena.
+   * Maneja tanto THREE.Mesh como THREE.Group (modelo 3D flecha).
+   * También limpia las partículas de estela asociadas.
    */
-  private removeProjectile(projectile: THREE.Mesh): void {
+  private removeProjectile(projectile: THREE.Object3D): void {
     // Quitar del tracking set
     this.activeSalvoProjectiles.delete(projectile);
 
+    // Limpiar partículas de estela (trail)
+    const trailParticles = projectile.userData.trailParticles as THREE.Points | undefined;
+    if (trailParticles) {
+      if (trailParticles.parent) {
+        this.sceneManager.remove(trailParticles);
+      }
+      try { trailParticles.geometry.dispose(); } catch { /* ignore */ }
+      try { (trailParticles.material as THREE.Material).dispose(); } catch { /* ignore */ }
+    }
+
     if (projectile.parent) {
       this.sceneManager.remove(projectile);
-      projectile.geometry.dispose();
-      (projectile.material as THREE.Material).dispose();
+
+      // Si es un Group (modelo 3D flecha), recorrer hijos para disposear recursos
+      if (projectile instanceof THREE.Group) {
+        projectile.traverse(child => {
+          if (child instanceof THREE.Mesh) {
+            try { child.geometry.dispose(); } catch { /* ignore */ }
+            if (child.material) {
+              const materials = Array.isArray(child.material) ? child.material : [child.material];
+              materials.forEach((m: THREE.Material) => {
+                try { m.dispose(); } catch { /* ignore */ }
+              });
+            }
+          }
+        });
+      } else if (projectile instanceof THREE.Mesh) {
+        // Mesh simple (fallback): disposear directamente
+        try { projectile.geometry.dispose(); } catch { /* ignore */ }
+        try { (projectile.material as THREE.Material).dispose(); } catch { /* ignore */ }
+      }
     }
   }
 
@@ -594,11 +717,18 @@ export class SalvoAbility {
   }
 
   /**
-   * Método para activar la habilidad manualmente (desde el InputManager).
-   * @param inputState Estado de entrada opcional que contiene coordenadas del mouse
+   * Método para activar la habilidad manualmente (desde el InputManager o AdcCharacter).
+   * @param inputState Estado de entrada opcional (mouseNDC para online)
+   * @param aimPosition Posición objetivo para auto-aim (modo local, opcional)
    */
-  public activate(inputState?: InputState): void {
-    this.handleAbilityActivation({ playerId: this.playerId, inputState });
+  public activate(inputState?: InputState, aimPosition?: THREE.Vector3): void {
+    if (this.isOnCooldown) {
+      console.log(
+        `[SalvoAbility] ${this.playerId} - Habilidad en cooldown (${this.cooldownTimer.toFixed(1)}s restantes)`
+      );
+      return;
+    }
+    this.activateSalvo(inputState, aimPosition);
   }
 
   /**
@@ -632,18 +762,41 @@ export class SalvoAbility {
   /**
    * Limpia todos los proyectiles activos de la salva.
    * Debe llamarse al forzar ronda (F2) o al destruir el personaje.
+   * Maneja tanto Mesh como Group, y limpia las partículas de estela.
    */
   public clearAllProjectiles(): void {
     for (const projectile of this.activeSalvoProjectiles) {
+      // Limpiar partículas de estela (trail)
+      const trailParticles = projectile.userData.trailParticles as THREE.Points | undefined;
+      if (trailParticles) {
+        if (trailParticles.parent) {
+          this.sceneManager.remove(trailParticles);
+        }
+        try { trailParticles.geometry.dispose(); } catch { /* ignore */ }
+        try { (trailParticles.material as THREE.Material).dispose(); } catch { /* ignore */ }
+      }
+
       if (projectile.parent) {
         this.sceneManager.remove(projectile);
       }
-      try {
-        projectile.geometry.dispose();
-      } catch { /* ignore */ }
-      try {
-        (projectile.material as THREE.Material).dispose();
-      } catch { /* ignore */ }
+
+      // Disposear recursos según el tipo (Group o Mesh)
+      if (projectile instanceof THREE.Group) {
+        projectile.traverse(child => {
+          if (child instanceof THREE.Mesh) {
+            try { child.geometry.dispose(); } catch { /* ignore */ }
+            if (child.material) {
+              const materials = Array.isArray(child.material) ? child.material : [child.material];
+              materials.forEach((m: THREE.Material) => {
+                try { m.dispose(); } catch { /* ignore */ }
+              });
+            }
+          }
+        });
+      } else if (projectile instanceof THREE.Mesh) {
+        try { projectile.geometry.dispose(); } catch { /* ignore */ }
+        try { (projectile.material as THREE.Material).dispose(); } catch { /* ignore */ }
+      }
     }
     this.activeSalvoProjectiles.clear();
   }
@@ -652,10 +805,10 @@ export class SalvoAbility {
    * Limpia recursos (para cuando el personaje muere o se destruye).
    */
   public dispose(): void {
-    // Limpiar listeners
-    (this.eventBus as any).off('player:abilityQ', this.handleAbilityActivation.bind(this));
+    // Limpiar listeners usando la referencia almacenada
+    (this.eventBus as any).off('player:abilityQ', this._boundHandleAbilityActivation);
 
-    // Limpiar todos los proyectiles pendientes
+    // Limpiar todos los proyectiles pendientes (incluye trail particles)
     this.clearAllProjectiles();
   }
 }

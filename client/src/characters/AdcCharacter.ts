@@ -67,14 +67,42 @@ export class AdcCharacter extends Character {
   /** Habilidad activa Salva */
   private salvoAbility: SalvoAbility | null = null;
 
+  /** Pool de vectores reutilizables para evitar allocaciones en el game loop. */
+  private _reusableDir: THREE.Vector3 = new THREE.Vector3();
+  private _reusableStep: THREE.Vector3 = new THREE.Vector3();
+  private _reusableTarget: THREE.Vector3 = new THREE.Vector3();
+
+  /** Set de efectos de impacto activos para limpieza controlada. */
+  private _activeImpactEffects: Set<{ particles: THREE.Points; geometry: THREE.BufferGeometry; material: THREE.Material; }> = new Set();
+
   /** Pipeline centralizado de daÃ±o */
   private damagePipeline: DamagePipeline | null = null;
+
+  /** Posición objetivo para auto-aim en modo local */
+  private autoAimPosition: THREE.Vector3 | null = null;
+
+  // ============================================================
+  // SISTEMA DE MUNICIÓN (Arquero)
+  // ============================================================
+  /** Máximo de flechas que puede llevar */
+  maxAmmo: number = 10;
+  /** Flechas actuales */
+  currentAmmo: number = 10;
+  /** Tiempo de recarga en segundos */
+  private reloadTime: number = 3.0;
+  /** Si está recargando actualmente */
+  isReloading: boolean = false;
+  /** Temporizador de recarga (se decrementa con dt) */
+  private reloadTimer: number = 0;
+
+  /** Sprite indicador circular de recarga sobre la cabeza */
+  private reloadIndicator: THREE.Sprite | null = null;
 
   /** Stats base del ADC segÃºn M4-03 */
   static readonly BASE_STATS: CharacterStats = {
     hp: 80,
     maxHp: 80,
-    speed: 5,
+    speed: 5.5,
     damage: 15,
     attackSpeed: 2,
     range: 8,
@@ -294,8 +322,8 @@ export class AdcCharacter extends Character {
     // 2. Convertir Vector2 a Vector3 para movimiento isomÃ©trico
     const direction = this.inputToIsometric(moveDir);
 
-    // 3. Definir la velocidad (ajusta este nÃºmero a tu gusto)
-    const SPEED = 8.0;
+    // 3. Usar la velocidad efectiva del personaje (stats + modificadores)
+    const SPEED = this.getEffectiveStat('speed');
 
     // 4. LA MAGIA: Aplicar Velocidad Lineal o Frenar en Seco
     const currentVel = body.linvel();
@@ -415,6 +443,69 @@ export class AdcCharacter extends Character {
       this.handleAbility(inputState);
     }
 
+    // ============================================================
+    // AUTO-AIM (modo local): rotar hacia el objetivo y auto-atacar
+    // ============================================================
+    if (this.autoAimPosition && this.model) {
+      const charPos = this.getBodyPosition();
+      if (charPos) {
+        const toTarget = new THREE.Vector3()
+          .subVectors(this.autoAimPosition, charPos);
+        toTarget.y = 0;
+
+        if (toTarget.lengthSq() > 0.01) {
+          toTarget.normalize();
+
+          // Rotar el modelo hacia el objetivo del auto-aim
+          const targetAngle = Math.atan2(toTarget.x, toTarget.z);
+          const currentAngle = this.model.rotation.y;
+          const angleDiff = targetAngle - currentAngle;
+          const normalizedDiff = ((angleDiff + Math.PI) % (2 * Math.PI)) - Math.PI;
+          this.model.rotation.y = currentAngle + normalizedDiff * this.rotationLerpAlpha;
+        }
+
+        // AUTO-ATTACK: disparar si el enemigo está en rango
+        const dist = charPos.distanceTo(this.autoAimPosition);
+        const attackRange = this.getEffectiveStat('range');
+        if (dist <= attackRange && this.state !== CharacterState.Attacking) {
+          this.shootProjectile(inputState);
+        }
+      }
+    }
+
+    // ============================================================
+    // SISTEMA DE RECARGA (Arquero)
+    // ============================================================
+    if (this.currentAmmo <= 0 && !this.isReloading) {
+      this.isReloading = true;
+      this.reloadTimer = this.reloadTime;
+    }
+
+    if (this.isReloading) {
+      this.reloadTimer -= dt;
+      if (this.reloadTimer <= 0) {
+        this.currentAmmo = this.maxAmmo;
+        this.isReloading = false;
+        this.reloadTimer = 0;
+      }
+    }
+
+    // ============================================================
+    // INDICADOR VISUAL DE RECARGA (círculo animado sobre la cabeza)
+    // ============================================================
+    if (this.isReloading && this.model) {
+      if (!this.reloadIndicator) {
+        this.reloadIndicator = this.createReloadIndicator();
+      }
+      const progress = 1 - (this.reloadTimer / this.reloadTime);
+      this.updateReloadIndicator(progress);
+      this.reloadIndicator.position.copy(this.model.position);
+      this.reloadIndicator.position.y += 2.8;
+      this.reloadIndicator.visible = true;
+    } else if (this.reloadIndicator) {
+      this.reloadIndicator.visible = false;
+    }
+
     const currentVel = body.linvel();
 
     if (direction.lengthSq() > 0) {
@@ -430,8 +521,8 @@ export class AdcCharacter extends Character {
         true
       );
 
-      // Rotar el CONTENEDOR hacia donde caminamos
-      if (this.model) {
+      // Rotar el CONTENEDOR hacia donde caminamos (solo si NO hay auto-aim)
+      if (!this.autoAimPosition && this.model) {
         this.model.rotation.y = Math.atan2(direction.x, direction.z);
       }
 
@@ -570,12 +661,17 @@ export class AdcCharacter extends Character {
 
   /**
    * Dispara un proyectil (flecha) en la direcciÃ³n del mouse o del modelo.
+   * Consume una flecha del cargador. Si no hay munición, no dispara.
    * @param inputState Estado de entrada opcional que contiene coordenadas del mouse
    */
   private shootProjectile(inputState?: InputState): void {
     if (this.state === CharacterState.Dead) return;
 
+    // Verificar munición
+    if (this.currentAmmo <= 0 || this.isReloading) return;
+
     this.setState(CharacterState.Attacking);
+    this.currentAmmo--;
     this.consecutiveShots++;
 
     // Reproducir animaciÃ³n de ataque
@@ -597,14 +693,31 @@ export class AdcCharacter extends Character {
       spawnPos.set(0, 1.2, 0);
     }
 
-    // 2. Calcular direcciÃ³n de disparo: priorizar mouse targeting si hay inputState con mouseNDC
+    // 2. Calcular direcciÃ³n de disparo
     let forwardDir = new THREE.Vector3(0, 0, -1);
 
-    // Intentar usar mouse targeting si estÃ¡ disponible
-    if (inputState?.mouseNDC && this.sceneManager) {
+    // AUTO-AIM (modo local): apuntar hacia la posiciÃ³n objetivo del auto-aim
+    if (this.autoAimPosition) {
+      const charPos = this.getBodyPosition();
+      if (charPos) {
+        const toTarget = new THREE.Vector3().subVectors(this.autoAimPosition, charPos);
+        toTarget.y = 0;
+        if (toTarget.lengthSq() > 0.01) {
+          forwardDir = toTarget.normalize();
+        }
+      }
+    }
+    // Intentar usar mouse targeting si estÃ¡ disponible (modo online)
+    else if (inputState?.mouseNDC && this.sceneManager) {
       const camera = this.sceneManager.getCamera();
       if (camera) {
         forwardDir = this.calculateAimDirection(camera, inputState.mouseNDC);
+        // Forzar Y=0 para que la flecha vuele horizontal y el sphere-sweep
+        // tenga direcciÃ³n puramente horizontal (consistente con detectHitsWithRay)
+        forwardDir.y = 0;
+        if (forwardDir.lengthSq() > 0.001) {
+          forwardDir.normalize();
+        }
         console.log(
           `[AdcCharacter] Usando direcciÃ³n de mouse: (${forwardDir.x.toFixed(2)}, ${forwardDir.y.toFixed(2)}, ${forwardDir.z.toFixed(2)})`
         );
@@ -752,6 +865,30 @@ export class AdcCharacter extends Character {
    * @param damage Cantidad de daÃ±o base del proyectil
    * @param arrowGroup Grupo visual de la flecha (opcional, para animaciÃ³n de vuelo)
    */
+  /**
+   * Revamp completo del sistema de detección de impactos.
+   *
+   * PROBLEMA ORIGINAL:
+   * El raycast con `intersectionsWithRay` es intrínsecamente frágil porque un rayo
+   * infinitamente delgado puede pasar entre la geometría de la cápsula del enemigo,
+   * especialmente cuando:
+   *   - La dirección tiene componente Y (mouse online), desviando el rayo verticalmente
+   *   - Solo se prueban 3 alturas discretas (0.3, 0.8, 1.3)
+   *   - El wall ray (y=-0.75) está en un origen distinto al enemy ray (y=0.8)
+   *
+   * SOLUCIÓN:
+   * Reemplazamos el triple-raycast por overlap de esferas (`intersectionsWithShape`).
+   * Las esferas tienen VOLUMEN, garantizando que cualquier enemigo dentro del radio
+   * sea detectado sin importar la orientación del disparo.
+   *
+   * Para auto-aim (local): una sola esfera en la posición exacta del objetivo.
+   * Para mouse (online): barrido de esferas a lo largo de la trayectoria.
+   *
+   * @param origin Posición de origen del disparo (arma/pecho)
+   * @param direction Dirección del disparo
+   * @param damage Daño base a aplicar
+   * @param arrowGroup Grupo visual de la flecha (opcional)
+   */
   private detectHitsWithRay(origin: THREE.Vector3, direction: THREE.Vector3, damage: number, arrowGroup?: THREE.Object3D): void {
     if (!this.physicsWorld) {
       console.warn('[AdcCharacter] No hay physicsWorld disponible para detectar colisiones');
@@ -761,190 +898,303 @@ export class AdcCharacter extends Character {
     const world = this.physicsWorld.getWorld();
     if (!world) return;
 
-    const rayDir = { x: direction.x, y: direction.y, z: direction.z };
-    const baseOrigin = { x: origin.x, y: origin.y, z: origin.z };
+    // ================================================================
+    // Normalizar dirección: FORZAR Y=0 para garantizar que el barrido
+    // de esferas se mantenga dentro del rango vertical de la cápsula
+    // enemiga (medium: y[-0.5, 1.9], radio 0.55).
+    // ================================================================
+    const flatDir = direction.clone();
+    flatDir.y = 0;
+    if (flatDir.lengthSq() < 0.001) return;
+    flatDir.normalize();
 
-    const maxRange = 25.0; // Alcance del ADC
-    const solid = false; // Permite detectar el interior de las hitboxes
-
-    console.log(
-      `[AdcCharacter] Lanzando raycast desde (${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}) direcciÃ³n (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`
-    );
-
-    // Determinar si este proyectil tiene piercing (consultar pasiva)
+    const maxRange = this.getEffectiveStat('range');
     const canPierce = this.checkPiercePassive();
 
-    // 1. Recolectar todos los impactos del rayo
-    const hits: { id: number; entity: any; toi: number }[] = [];
-    // Distancia al muro mÃ¡s cercano (-1 = no hay muro en el camino)
-    let wallHitToi = -1;
+    // ================================================================
+    // FASE 0: AUTO-AIM (local) — ruta directa y 100% certera
+    // Cuando autoAimPosition está definida, SABEMOS exactamente dónde
+    // está el enemigo. No necesitamos barrer: solo verificar pared y
+    // buscar la entidad enemiga con una esfera en la posición objetivo.
+    // ================================================================
+    if (this.autoAimPosition) {
+      const charPos = this.getBodyPosition();
+      if (charPos) {
+        const distToTarget = charPos.distanceTo(this.autoAimPosition);
 
-    // --- RAYCAST DE PAREDES (a nivel del suelo: y=-0.75) ---
-    // Este rayo SOLO busca paredes/obstÃ¡culos. Los colliders de:
-    //   - Paredes de arena: cuboid(y=-0.5, h=3) â†’ span y[-2, 1]
-    //   - ObstÃ¡culos: cuboid(y=-1.25, h=1.5) â†’ span y[-2, -0.5]
-    // A y=-0.75 intersectamos AMBOS tipos de colisionadores.
-    // Los enemigos tienen collider en y[-0.5, 1.9], asÃ­ que NO los detectamos aquÃ­.
-    const wallRayOrigin = { x: origin.x, y: -0.75, z: origin.z };
-    const wallRay = new RAPIER.Ray(wallRayOrigin, rayDir);
+        // Verificar si hay pared bloqueando entre el personaje y el objetivo
+        const wallBlocked = this.checkWallBlocking(world, charPos, this.autoAimPosition, maxRange);
+
+        if (!wallBlocked && distToTarget <= maxRange) {
+          // Buscar entidad enemiga en la posición del auto-aim
+          const enemy = this.findEnemyAtPosition(world, this.autoAimPosition);
+          if (enemy) {
+            if (this.damagePipeline) {
+              this.damagePipeline.applyDamage(this, enemy, damage, {
+                position: this.autoAimPosition.clone(),
+                source: 'ranged',
+                attackerId: this.id,
+                canCrit: true,
+                critChance: 0.1,
+                critMultiplier: 1.5,
+              });
+            } else {
+              enemy.takeDamage(damage, this.id);
+            }
+            console.log(`[AdcCharacter] Impacto auto-aim 100% en enemigo a distancia ${distToTarget.toFixed(2)}`);
+            if (arrowGroup) {
+              arrowGroup.userData.hitDistance = distToTarget;
+            }
+            return;
+          } else {
+            console.warn('[AdcCharacter] autoAimPosition definida pero no se encontró entidad enemiga en esa posición');
+          }
+        }
+      }
+    }
+
+    // ================================================================
+    // FASE 1: Detectar paredes a lo largo de la trayectoria
+    // Usamos un rayo a la altura del centro de la cápsula enemiga (y=0.8)
+    // para verificar si hay paredes/obstáculos bloqueando el paso.
+    // Las paredes de arena son cuboides altos (h=3, y[-2, 1]), por lo que
+    // un rayo a y=0.8 las detecta sin problema.
+    // ================================================================
+    let wallHitToi = -1;
+    const wallRayOrigin = { x: origin.x, y: 0.8, z: origin.z };
+    const wallRayDir = { x: flatDir.x, y: 0, z: flatDir.z };
+    const wallRay = new RAPIER.Ray(wallRayOrigin, wallRayDir);
 
     world.intersectionsWithRay(
       wallRay,
       maxRange,
-      solid,
+      false,
       (intersection: RAPIER.RayColliderIntersection) => {
         const collider = intersection.collider;
         const groups = collider.collisionGroups();
         const membership = (groups >> 16) & 0xffff;
 
-        // Solo nos interesan paredes y obstÃ¡culos
         if ((membership & (Groups.WALL | Groups.OBSTACLE)) !== 0) {
-          const intersectionAny = intersection as any;
-          const toi =
-            intersectionAny.toi ??
-            intersectionAny.timeOfImpact ??
-            intersectionAny.distance ??
-            intersectionAny.t ??
-            0;
+          const toi = (intersection as any).toi ?? 0;
           if (wallHitToi < 0 || toi < wallHitToi) {
             wallHitToi = toi;
           }
         }
-        return true; // Seguir buscando (puede haber pared mÃ¡s cercana)
+        return true;
       }
     );
 
-    // --- RAYCAST PRINCIPAL MULTI-ALTURA (3 alturas) SOLO para enemigos ---
-    // En perspectiva isomÃ©trica, el cursor del mouse en la parte superior del enemigo
-    // se traduce a un punto en el suelo DETRÃS del enemigo. Un solo rayo horizontal
-    // puede pasar por encima o por debajo del collider del enemigo.
-    //
-    // SOLUCIÃ“N: Lanzamos 3 rayos a diferentes alturas que cubren el rango completo
-    // de la cÃ¡psula del enemigo (y[0.05, 1.35]):
-    //   - Rayo bajo:  y = 0.3  (cubre piernas/cintura)
-    //   - Rayo medio: y = 0.8  (cubre torso/centro)
-    //   - Rayo alto:  y = 1.3  (cubre hombros/cabeza)
-    //
-    // Si mÃºltiples rayos impactan al mismo enemigo, se deduplica por ID de entidad.
-    const enemyHeights = [0.3, 0.8, 1.3];
-    const enemyHitMap = new Map<number, { id: number; entity: any; toi: number }>();
-
-    for (const heightY of enemyHeights) {
-      const rayOrigin = { x: baseOrigin.x, y: heightY, z: baseOrigin.z };
-      const ray = new RAPIER.Ray(rayOrigin, rayDir);
-
-      world.intersectionsWithRay(
-        ray,
-        maxRange,
-        solid,
-        (intersection: RAPIER.RayColliderIntersection) => {
-          const collider = intersection.collider;
-
-          // Extraer grupos de colisiÃ³n
-          const groups = collider.collisionGroups();
-          const membership = (groups >> 16) & 0xffff;
-
-          // Filtrar SOLO por grupo ENEMY
-          if ((membership & Groups.ENEMY) === 0) {
-            return true;
-          }
-
-          const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
-
-          if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
-            const enemyId = userData.id;
-            if (enemyId !== undefined) {
-              const intersectionAny = intersection as any;
-              const toi =
-                intersectionAny.toi ??
-                intersectionAny.timeOfImpact ??
-                intersectionAny.distance ??
-                intersectionAny.t ??
-                0;
-
-              // Solo guardar el hit mÃ¡s cercano para este enemigo
-              if (!enemyHitMap.has(enemyId) || toi < enemyHitMap.get(enemyId)!.toi) {
-                enemyHitMap.set(enemyId, {
-                  id: enemyId,
-                  entity: userData.entity,
-                  toi,
-                });
-              }
-            }
-          }
-
-          return true;
-        }
-      );
-    }
-
-    // Convertir el Map a array de hits
-    enemyHitMap.forEach(hit => hits.push(hit));
-
-    console.log(
-      `[AdcCharacter] Piercing activo para este disparo: ${canPierce}, hits recolectados: ${hits.length} (de ${enemyHeights.length} alturas), wallHitToi: ${wallHitToi}`
-    );
-    if (hits.length > 0) {
-      console.log(`[AdcCharacter] Distancias: ${hits.map(h => h.toi.toFixed(2)).join(', ')}`);
-    }
-
-    // 2. ORDENAR MATEMÃTICAMENTE: Del mÃ¡s cercano (menor toi) al mÃ¡s lejano (mayor toi)
-    hits.sort((a, b) => a.toi - b.toi);
-
-    // 3. Verificar si el muro estÃ¡ ANTES que cualquier enemigo
-    // Si el muro estÃ¡ mÃ¡s cerca que el primer enemigo, el proyectil impacta el muro y no pasa
-    if (wallHitToi >= 0 && (hits.length === 0 || wallHitToi < hits[0].toi)) {
-      console.log(`[AdcCharacter] Proyectil impactÃ³ muro a distancia ${wallHitToi.toFixed(2)}`);
+    // Si hay pared antes del rango mínimo, no hay trayectoria útil
+    if (wallHitToi >= 0 && wallHitToi < 0.5) {
+      console.log(`[AdcCharacter] Pared muy cerca (${wallHitToi.toFixed(2)}), impacto bloqueado`);
       if (arrowGroup) {
         arrowGroup.userData.hitDistance = wallHitToi;
       }
       return;
     }
 
-    // 4. APLICAR DAÃ‘O Y LÃ“GICA DE PIERCING (usando DamagePipeline)
-    const enemiesHit = new Set<number>();
-    for (const hit of hits) {
-      if (!enemiesHit.has(hit.id)) {
-        // Verificar si hay un muro entre el origen y este enemigo
-        if (wallHitToi >= 0 && wallHitToi < hit.toi) {
-          console.log(`[AdcCharacter] Muro bloquea el impacto al enemigo ID: ${hit.id} (muro: ${wallHitToi.toFixed(2)} < enemigo: ${hit.toi.toFixed(2)})`);
-          if (arrowGroup) {
-            arrowGroup.userData.hitDistance = wallHitToi;
-          }
-          break;
-        }
+    // Distancia máxima de búsqueda (limitada por pared si existe)
+    const searchDist = (wallHitToi >= 0) ? Math.min(maxRange, wallHitToi) : maxRange;
 
-        // Usar el pipeline centralizado si estÃ¡ disponible
-        if (this.damagePipeline) {
-          const hitPos = new THREE.Vector3(
-            origin.x + direction.x * hit.toi,
-            origin.y + direction.y * hit.toi,
-            origin.z + direction.z * hit.toi
-          );
-          this.damagePipeline.applyDamage(this, hit.entity, damage, {
-            position: hitPos,
-            source: 'ranged',
-            attackerId: this.id,
-            canCrit: true,
-            critChance: 0.1,
-            critMultiplier: 1.5,
-          });
-        } else {
-          hit.entity.takeDamage(damage);
-        }
-        enemiesHit.add(hit.id);
-        console.log(
-          `ðŸŽ¯ Impacto ordenado en enemigo ID: ${hit.id} a distancia: ${(hit.toi ?? 0).toFixed(2)}`
-        );
+    // ================================================================
+    // FASE 2: Barrido de esferas de overlap para detectar enemigos
+    //
+    // En lugar de rayos infinitamente delgados, usamos esferas con
+    // radio 1.0. La cápsula enemiga (medium) tiene radio 0.55, y
+    // cada esfera en el barrido tiene radio 1.0.
+    //
+    // Con STEP_SIZE = 2.0 y SPHERE_RADIUS = 1.0:
+    //   - El espacio entre esferas adyacentes es 2.0 - 2*1.0 = 0.0
+    //   - Cualquier enemigo entre dos esferas es detectado porque
+    //     la separación (0.0) < radio_enemigo + radio_esfera (1.55)
+    //   - Garantía de detección del 100% en toda la trayectoria
+    //
+    // Posición Y fija en 0.8 (centro de la cápsula enemiga):
+    //   - Esfera en y=0.8 con radio 1.0 → spans y[-0.2, 1.8]
+    //   - Cápsula enemiga → spans y[-0.5, 1.9]
+    //   - Overlap vertical: [-0.2, 1.8] ✅
+    // ================================================================
+    const SPHERE_RADIUS = 1.0;
+    const STEP_SIZE = 2.0;
+    const enemyHitMap = new Map<number, { entity: any; dist: number }>();
 
-        if (!canPierce) {
-          if (arrowGroup) {
-            arrowGroup.userData.hitDistance = hit.toi;
+    const totalSteps = Math.ceil(searchDist / STEP_SIZE);
+
+    for (let step = 0; step <= totalSteps; step++) {
+      const d = step * STEP_SIZE;
+      if (d > searchDist) break;
+
+      const spherePos = {
+        x: origin.x + flatDir.x * d,
+        y: 0.8,
+        z: origin.z + flatDir.z * d,
+      };
+
+      const sphereShape = new RAPIER.Ball(SPHERE_RADIUS);
+      const identityRot = { x: 0, y: 0, z: 0, w: 1 };
+
+      world.intersectionsWithShape(
+        spherePos,
+        identityRot,
+        sphereShape,
+        (collider: RAPIER.Collider) => {
+          const groups = collider.collisionGroups();
+          const membership = (groups >> 16) & 0xffff;
+
+          // Solo nos interesan enemigos
+          if ((membership & Groups.ENEMY) === 0) return true;
+
+          const userData = collider.parent()?.userData as { entity?: any; id?: number } | undefined;
+          if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
+            const enemyId = userData.id;
+            if (enemyId !== undefined && !enemyHitMap.has(enemyId)) {
+              // Calcular distancia horizontal real desde el origen
+              const bodyPos = collider.parent()?.translation();
+              let enemyDist = d;
+              if (bodyPos) {
+                enemyDist = Math.sqrt(
+                  (bodyPos.x - origin.x) ** 2 +
+                  (bodyPos.z - origin.z) ** 2
+                );
+              }
+              enemyHitMap.set(enemyId, { entity: userData.entity, dist: enemyDist });
+            }
           }
-          break;
+          return true;
+        }
+      );
+
+      // Early exit: si ya encontramos enemigos Y hay pared cerca, detener barrido
+      if (enemyHitMap.size > 0 && wallHitToi >= 0 && d > wallHitToi) break;
+    }
+
+    // ================================================================
+    // FASE 3: Procesar resultados y aplicar daño
+    // ================================================================
+    if (enemyHitMap.size > 0) {
+      // Ordenar por distancia (más cercano primero)
+      const sortedHits = Array.from(enemyHitMap.values()).sort((a, b) => a.dist - b.dist);
+
+      console.log(
+        `[AdcCharacter] Sphere-sweep encontró ${enemyHitMap.size} enemigo(s): ` +
+        sortedHits.map(h => `${h.dist.toFixed(2)}u`).join(', ')
+      );
+
+      const appliedIds = new Set<number>();
+      for (const hit of sortedHits) {
+        const hitEntityId = (hit.entity as any).id ?? hit.entity.hashCode?.() ?? -1;
+        if (!appliedIds.has(hitEntityId)) {
+          appliedIds.add(hitEntityId);
+
+          // Aplicar daño
+          if (this.damagePipeline) {
+            const hitPos = new THREE.Vector3(
+              origin.x + flatDir.x * hit.dist,
+              0.8,
+              origin.z + flatDir.z * hit.dist
+            );
+            this.damagePipeline.applyDamage(this, hit.entity, damage, {
+              position: hitPos,
+              source: 'ranged',
+              attackerId: this.id,
+              canCrit: true,
+              critChance: 0.1,
+              critMultiplier: 1.5,
+            });
+          } else {
+            hit.entity.takeDamage(damage, this.id);
+          }
+
+          if (arrowGroup) {
+            arrowGroup.userData.hitDistance = hit.dist;
+          }
+
+          if (!canPierce) break;
         }
       }
+    } else {
+      console.log('[AdcCharacter] Sphere-sweep: no se encontraron enemigos en la trayectoria');
     }
+  }
+
+  /**
+   * Verifica si hay una pared/obstáculo entre dos posiciones usando un raycast.
+   * @returns true si hay un muro bloqueando entre origin y target
+   */
+  private checkWallBlocking(
+    world: RAPIER.World,
+    origin: THREE.Vector3,
+    target: THREE.Vector3,
+    maxRange: number
+  ): boolean {
+    const dir = new THREE.Vector3().subVectors(target, origin);
+    dir.y = 0;
+    if (dir.lengthSq() < 0.001) return false;
+    const normDir = dir.normalize();
+    const distToTarget = origin.distanceTo(target);
+
+    const rayOrigin = { x: origin.x, y: 0.8, z: origin.z };
+    const rayDir = { x: normDir.x, y: 0, z: normDir.z };
+    const ray = new RAPIER.Ray(rayOrigin, rayDir);
+
+    let wallToi = -1;
+    world.intersectionsWithRay(
+      ray,
+      Math.min(maxRange, distToTarget),
+      false,
+      (intersection: RAPIER.RayColliderIntersection) => {
+        const collider = intersection.collider;
+        const groups = collider.collisionGroups();
+        const membership = (groups >> 16) & 0xffff;
+
+        if ((membership & (Groups.WALL | Groups.OBSTACLE)) !== 0) {
+          const toi = (intersection as any).toi ?? 0;
+          if (wallToi < 0 || toi < wallToi) {
+            wallToi = toi;
+          }
+        }
+        return true;
+      }
+    );
+
+    return wallToi >= 0 && wallToi < distToTarget;
+  }
+
+  /**
+   * Busca una entidad enemiga en una posición usando una esfera de overlap.
+   * @returns La entidad enemiga encontrada, o null si no hay ninguna
+   */
+  private findEnemyAtPosition(
+    world: RAPIER.World,
+    position: THREE.Vector3
+  ): any | null {
+    const searchRadius = 1.5; // Suficiente para abarcar la cápsula enemiga (radio 0.55)
+    const sphereShape = new RAPIER.Ball(searchRadius);
+    const spherePos = { x: position.x, y: 0.8, z: position.z };
+    const identityRot = { x: 0, y: 0, z: 0, w: 1 };
+
+    let found: any = null;
+
+    world.intersectionsWithShape(
+      spherePos,
+      identityRot,
+      sphereShape,
+      (collider: RAPIER.Collider) => {
+        const groups = collider.collisionGroups();
+        const membership = (groups >> 16) & 0xffff;
+
+        if ((membership & Groups.ENEMY) === 0) return true;
+
+        const userData = collider.parent()?.userData as { entity?: any } | undefined;
+        if (userData?.entity && typeof userData.entity.takeDamage === 'function') {
+          found = userData.entity;
+          return false; // Detener búsqueda
+        }
+        return true;
+      }
+    );
+
+    return found;
   }
 
   /**
@@ -1028,38 +1278,9 @@ export class AdcCharacter extends Character {
     return hasPierce;
   }
 
-  /**
-   * Anima el movimiento visual del proyectil.
-   */
-  private animateProjectile(projectile: THREE.Object3D, direction: THREE.Vector3): void {
-    const speed = 15; // Velocidad del proyectil
-    const maxDistance = 20; // Distancia mÃ¡xima antes de desaparecer
-
-    let distanceTraveled = 0;
-    const startPosition = projectile.position.clone();
-
-    // FunciÃ³n de animaciÃ³n por frame
-    const animate = () => {
-      if (!projectile.parent) return; // Si el proyectil fue removido
-
-      // Mover proyectil
-      const moveDistance = speed * 0.016; // Asumiendo 60 FPS
-      projectile.position.add(direction.clone().multiplyScalar(moveDistance));
-      distanceTraveled = startPosition.distanceTo(projectile.position);
-
-      // Verificar si ha alcanzado la distancia mÃ¡xima
-      if (distanceTraveled >= maxDistance) {
-        this.removeProjectile(projectile);
-        return;
-      }
-
-      // Continuar animaciÃ³n
-      requestAnimationFrame(animate);
-    };
-
-    // Iniciar animaciÃ³n
-    animate();
-  }
+  // NOTA: animateProjectile() eliminado. El movimiento de proyectiles se maneja
+  // exclusivamente en updateProjectiles() (game-loop based) para evitar fugas de
+  // memoria por RAF no cancelado y duplicaciÃ³n de lÃ³gica.
 
   /**
    * Remueve un proyectil de la escena.
@@ -1090,8 +1311,8 @@ export class AdcCharacter extends Character {
   }
 
   /**
-   * Limpia todos los proyectiles activos del ADC (Ãºtil al forzar cambio de ronda con F2).
-   * Remueve de la escena y hace dispose de geometrÃ­as/materiales.
+   * Limpia todos los proyectiles activos del ADC y los efectos de impacto pendientes.
+   * Se invoca entre rondas para liberar recursos GPU y evitar fugas de memoria.
    */
   clearActiveProjectiles(): void {
     const projectiles = [...this.activeProjectiles];
@@ -1116,25 +1337,32 @@ export class AdcCharacter extends Character {
       }
     }
     this.activeProjectiles = [];
+
+    // TambiÃ©n limpiar efectos de impacto pendientes (impact particles)
+    this.clearImpactEffects();
   }
 
   /**
    * Actualiza la posiciÃ³n de todos los proyectiles activos.
+   * OPTIMIZADO: usa vectores reutilizables (_reusableDir, _reusableTarget, _reusableStep)
+   * para evitar allocaciones temporales en cada frame (zero-GC en hot path).
    */
   private updateProjectiles(dt: number): void {
-    const speed = 50; // Velocidad aumentada para que el proyectil sea mÃ¡s rÃ¡pido
-    const maxDistance = 40; // Distancia mÃ¡xima aumentada
+    const speed = 50;
+    const maxDistance = 40;
 
     for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.activeProjectiles[i];
       const ud = projectile.userData;
 
-      // Obtener direcciÃ³n
+      // Obtener direcciÃ³n (usando _reusableDir en vez de .clone())
       let direction: THREE.Vector3;
       if (ud?.direction && ud.direction instanceof THREE.Vector3) {
-        direction = ud.direction.clone();
+        this._reusableDir.copy(ud.direction);
+        direction = this._reusableDir;
       } else {
-        direction = new THREE.Vector3(0, 0, -1);
+        this._reusableTarget.set(0, 0, -1);
+        direction = this._reusableTarget;
         projectile.getWorldDirection(direction);
       }
       direction.y = 0;
@@ -1152,25 +1380,22 @@ export class AdcCharacter extends Character {
       const spawnPos = ud.spawnPosition;
       if (spawnPos) {
         projectile.position.copy(spawnPos);
-        projectile.position.add(direction.clone().multiplyScalar(ud.totalDistance));
+        projectile.position.add(this._reusableTarget.copy(direction).multiplyScalar(ud.totalDistance));
       } else {
-        // Fallback: mover relativo
         projectile.position.add(direction.multiplyScalar(step));
       }
 
       // Verificar si la flecha ha alcanzado su destino (hitDistance o maxDistance)
       const targetDistance = ud.hitDistance ?? maxDistance;
       if (ud.totalDistance >= targetDistance) {
-        // Clamp a la posiciÃ³n exacta de impacto
         if (spawnPos) {
           projectile.position.copy(spawnPos);
-          projectile.position.add(direction.clone().multiplyScalar(targetDistance));
+          projectile.position.add(this._reusableTarget.copy(direction).multiplyScalar(targetDistance));
         }
 
-        // PequeÃ±o efecto de impacto visual (partÃ­culas)
-        this.spawnImpactEffect(projectile.position.clone());
+        // Efecto de impacto visual con vector reutilizable
+        this.spawnImpactEffect(this._reusableStep.copy(projectile.position));
 
-        // Destruir la flecha (removeProjectile ya hace splice del array)
         this.removeProjectile(projectile);
       }
     }
@@ -1178,6 +1403,8 @@ export class AdcCharacter extends Character {
 
   /**
    * Crea un pequeÃ±o efecto de partÃ­culas en la posiciÃ³n de impacto del proyectil.
+   * Los efectos se trackean en _activeImpactEffects para limpieza controlada
+   * (evita fugas de GPU resources si el juego se reinicia antes de que terminen).
    */
   private spawnImpactEffect(position: THREE.Vector3): void {
     const count = 8;
@@ -1214,9 +1441,13 @@ export class AdcCharacter extends Character {
     particles.position.copy(position);
     this.sceneManager.add(particles);
 
+    // Trackear el efecto para limpieza controlada
+    const effect = { particles, geometry, material };
+    this._activeImpactEffects.add(effect);
+
     // Animar desvanecimiento y destrucciÃ³n
     const startTime = performance.now();
-    const duration = 300; // ms
+    const duration = 300;
 
     const fadeParticles = () => {
       const elapsed = performance.now() - startTime;
@@ -1227,12 +1458,27 @@ export class AdcCharacter extends Character {
       if (t < 1) {
         requestAnimationFrame(fadeParticles);
       } else {
+        // Remover del tracking antes de liberar recursos
+        this._activeImpactEffects.delete(effect);
         material.dispose();
         geometry.dispose();
         this.sceneManager.remove(particles);
       }
     };
     requestAnimationFrame(fadeParticles);
+  }
+
+  /**
+   * Limpia todos los efectos de impacto activos pendientes, liberando recursos GPU.
+   * Se invoca desde resetMatchStats() para evitar fugas al reiniciar partida.
+   */
+  private clearImpactEffects(): void {
+    for (const effect of this._activeImpactEffects) {
+      try { effect.material.dispose(); } catch {}
+      try { effect.geometry.dispose(); } catch {}
+      try { this.sceneManager.remove(effect.particles); } catch {}
+    }
+    this._activeImpactEffects.clear();
   }
 
   /**
@@ -1243,8 +1489,19 @@ export class AdcCharacter extends Character {
   private abilityQ(inputState?: InputState): void {
     if (!this.salvoAbility) return;
 
-    // Activar la habilidad de salva pasando el inputState para mouse targeting
-    this.salvoAbility.activate(inputState);
+    // En modo local con auto-aim, pasar la posición objetivo
+    // En modo online, pasar inputState con mouseNDC
+    this.salvoAbility.activate(inputState, this.autoAimPosition || undefined);
+  }
+
+  /**
+   * Establece la posiciÃ³n objetivo para auto-aim en modo local.
+   * Cuando se establece, el personaje apunta y dispara automÃ¡ticamente
+   * hacia esa posiciÃ³n sin necesidad de un segundo mouse.
+   * @param position PosiciÃ³n objetivo o null para desactivar auto-aim
+   */
+  setAutoAimTarget(position: THREE.Vector3 | null): void {
+    this.autoAimPosition = position;
   }
 
   /**
@@ -1279,6 +1536,14 @@ export class AdcCharacter extends Character {
   resetMatchStats(): void {
     super.resetMatchStats();
     this.killCount = 0;
+    this.currentAmmo = this.maxAmmo;
+    this.isReloading = false;
+    this.reloadTimer = 0;
+
+    // Limpiar proyectiles activos y sus recursos GPU
+    this.clearActiveProjectiles();
+    // Limpiar efectos de impacto pendientes
+    this.clearImpactEffects();
   }
 
   /**
@@ -1286,6 +1551,128 @@ export class AdcCharacter extends Character {
    */
   getSalvoAbility(): SalvoAbility | null {
     return this.salvoAbility;
+  }
+
+  // ============================================================
+  // GETTERS PÃBLICOS — Munición (para HUD)
+  // ============================================================
+
+  /** Flechas actuales en el cargador */
+  getCurrentAmmo(): number {
+    return this.currentAmmo;
+  }
+
+  /** Capacidad máxima de flechas */
+  getMaxAmmo(): number {
+    return this.maxAmmo;
+  }
+
+  /** Tiempo restante de recarga en segundos */
+  getReloadTimer(): number {
+    return this.reloadTimer;
+  }
+
+  /** Si está recargando actualmente */
+  isReloadingNow(): boolean {
+    return this.isReloading;
+  }
+
+  /** Tiempo total de recarga en segundos */
+  getReloadTime(): number {
+    return this.reloadTime;
+  }
+
+  /** Aumenta la capacidad máxima de flechas (ítem de tienda) */
+  addMaxAmmo(amount: number): void {
+    this.maxAmmo += amount;
+    this.currentAmmo += amount;
+  }
+
+  /** Reduce el tiempo de recarga (ítem de tienda), mínimo 0.5s */
+  reduceReloadTime(amount: number): void {
+    this.reloadTime = Math.max(0.5, this.reloadTime - amount);
+  }
+
+  // ============================================================
+  // INDICADOR DE RECARGA — Sprite Canvas circular
+  // ============================================================
+
+  /**
+   * Crea un sprite con Canvas para el círculo de progreso de recarga.
+   * Se posiciona sobre la cabeza del personaje mediante update().
+   */
+  private createReloadIndicator(): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(1.2, 1.2, 1);
+    this.sceneManager.add(sprite);
+    return sprite;
+  }
+
+  /**
+   * Actualiza el Canvas del sprite para reflejar el progreso de recarga.
+   * @param progress Valor entre 0.0 (inicio) y 1.0 (completo).
+   */
+  private updateReloadIndicator(progress: number): void {
+    if (!this.reloadIndicator) return;
+    const material = this.reloadIndicator.material as THREE.SpriteMaterial;
+    if (!material.map) return;
+    const canvas = material.map.image as HTMLCanvasElement;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width;    // 64
+    const h = canvas.height;   // 64
+    const cx = w / 2;           // 32
+    const cy = h / 2;           // 32
+    const radius = 24;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Fondo: círculo oscuro semi-transparente
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.7)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Arco de progreso (relleno tipo "pie" desde arriba, sentido horario)
+    if (progress > 0) {
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + Math.PI * 2 * Math.min(progress, 1);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, radius, startAngle, endAngle);
+      ctx.closePath();
+      ctx.fillStyle = '#FFD700'; // dorado
+      ctx.fill();
+    }
+
+    // Borde exterior del círculo
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    material.map.needsUpdate = true;
   }
 
   /**
@@ -1314,6 +1701,13 @@ export class AdcCharacter extends Character {
     // Remover proyectiles
     this.activeProjectiles.forEach(proj => this.sceneManager.remove(proj));
     this.activeProjectiles = [];
+
+    // Limpiar indicador de recarga
+    if (this.reloadIndicator) {
+      this.sceneManager.remove(this.reloadIndicator);
+      (this.reloadIndicator.material as THREE.SpriteMaterial).dispose();
+      this.reloadIndicator = null;
+    }
   }
 
   /**

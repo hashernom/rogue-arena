@@ -41,6 +41,8 @@ export class HUD {
   private p2Icon!: HTMLElement;
   private p2AbilityIcon!: HTMLElement;
   private p2CooldownOverlay!: HTMLElement;
+  private p2AmmoText!: HTMLElement;
+  private p2ReloadText!: HTMLElement;
 
   private waveCounter!: HTMLElement;
   private enemyCounter!: HTMLElement;
@@ -104,6 +106,7 @@ export class HUD {
     this.updateWaveInfo();
     this.updateMoney();
     this.updateBetweenRoundTimer();
+    this.updateAmmo();
   }
 
   /**
@@ -226,6 +229,11 @@ export class HUD {
         <div style="display:flex; justify-content:space-between; font-size:10px; color:#aaa; padding:0 2px;">
           <span id="hud-p2-hp-text">100/100</span>
         </div>
+        <!-- Munición (más grande y visible) -->
+        <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+          <span id="hud-p2-ammo-text" style="color:#ffcc00; font-size:18px; font-weight:bold; text-shadow:0 0 10px rgba(255,204,0,0.4), 0 1px 4px rgba(0,0,0,0.8);">🏹 10/10</span>
+          <span id="hud-p2-reload-text" style="color:#ff4444; font-size:14px; font-weight:bold; text-shadow:0 0 10px rgba(255,68,68,0.4), 0 1px 4px rgba(0,0,0,0.8); display:none;">🔄 recargando...</span>
+        </div>
         <!-- Habilidad Q -->
         <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
           <div id="hud-p2-ability" style="
@@ -243,7 +251,7 @@ export class HUD {
               pointer-events:none;
             "></div>
           </div>
-          <span style="color:#888; font-size:10px;">[Q]</span>
+          <span style="color:#888; font-size:10px;">[J]</span>
         </div>
       </div>
 
@@ -294,6 +302,8 @@ export class HUD {
     this.p2Icon = document.getElementById('hud-p2-icon')!;
     this.p2AbilityIcon = document.getElementById('hud-p2-ability-icon')!;
     this.p2CooldownOverlay = document.getElementById('hud-p2-cooldown-overlay')!;
+    this.p2AmmoText = document.getElementById('hud-p2-ammo-text')!;
+    this.p2ReloadText = document.getElementById('hud-p2-reload-text')!;
 
     this.waveCounter = document.getElementById('hud-wave-counter')!;
     this.enemyCounter = document.getElementById('hud-enemy-counter')!;
@@ -438,6 +448,28 @@ export class HUD {
       this.p1Money.textContent = `${balance}g`;
     } else if (playerId === 'player2') {
       this.p2Money.textContent = `${balance}g`;
+    }
+  }
+
+  /**
+   * Actualiza el contador de munición del arquero en el HUD.
+   * Muestra "🏹 X/10" normalmente, o "🔄 recargando... 1.5s" durante la recarga.
+   */
+  private updateAmmo(): void {
+    if (!this.p2Character) return;
+    const current = this.p2Character.getCurrentAmmo();
+    const max = this.p2Character.getMaxAmmo();
+    const reloading = this.p2Character.isReloadingNow();
+    const reloadTimer = this.p2Character.getReloadTimer();
+
+    if (reloading) {
+      this.p2AmmoText.style.display = 'none';
+      this.p2ReloadText.style.display = 'inline';
+      this.p2ReloadText.textContent = `🔄 recargando... ${reloadTimer.toFixed(1)}s`;
+    } else {
+      this.p2AmmoText.style.display = 'inline';
+      this.p2ReloadText.style.display = 'none';
+      this.p2AmmoText.textContent = `🏹 ${current}/${max}`;
     }
   }
 

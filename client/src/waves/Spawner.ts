@@ -169,25 +169,43 @@ export class Spawner {
 
   /**
    * Actualiza los spawns pendientes. Llamar cada frame.
+   * Cada spawn se procesa dentro de un try-catch individual para
+   * evitar que un error en un spawn bloquee el resto de la oleada.
    * @param dt - Delta time en segundos
    */
   update(dt: number): void {
     for (let i = this.pendingSpawns.length - 1; i >= 0; i--) {
       const spawn = this.pendingSpawns[i];
-      spawn.timer -= dt;
 
-      if (spawn.phase === 'indicator') {
-        this.updateIndicator(spawn);
-      } else if (spawn.phase === 'spawning') {
-        this.updateSpawning(spawn);
-      }
+      try {
+        spawn.timer -= dt;
 
-      // Remover spawns completados
-      if (spawn.timer <= 0 && spawn.phase === 'spawning') {
+        if (spawn.phase === 'indicator') {
+          this.updateIndicator(spawn);
+        } else if (spawn.phase === 'spawning') {
+          this.updateSpawning(spawn);
+        }
+
+        // Remover spawns completados
+        if (spawn.timer <= 0 && spawn.phase === 'spawning') {
+          this.cleanupIndicator(spawn);
+          this.pendingSpawns.splice(i, 1);
+        }
+      } catch (error) {
+        console.error(`[Spawner] Error procesando spawn de tipo ${spawn.type}:`, error);
+        // Limpiar indicador visual y remover el spawn para no bloquear la oleada
         this.cleanupIndicator(spawn);
         this.pendingSpawns.splice(i, 1);
       }
     }
+  }
+
+  /**
+   * Indica si aún hay spawns pendientes por procesar.
+   * @returns true si hay spawns en cola, false si todos se completaron
+   */
+  hasPendingSpawns(): boolean {
+    return this.pendingSpawns.length > 0;
   }
 
   /**

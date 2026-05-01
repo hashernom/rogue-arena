@@ -382,14 +382,35 @@ forceNextWave(): void {
   /**
    * Actualiza la lógica de spawn durante una oleada.
    * El Spawner maneja los temporizadores de indicadores visuales y animaciones.
-   * El WaveManager solo verifica si ya no hay enemigos por spawnear.
+   * El WaveManager:
+   * 1. Marca isSpawning = false cuando el Spawner termina de spawnear
+   * 2. Finaliza la ronda solo si NO hay spawns pendientes Y remainingEnemies <= 0
    */
   private updateSpawning(_dt: number): void {
-    // Si todos los enemigos de la wave han muerto, finalizar la ronda.
-    // NOTA: onEnemyDied() también verifica !this.isSpawning para evitar
-    // transición prematura durante el spawning activo, pero este método
-    // es el mecanismo de respaldo cuando isSpawning sigue true.
-    if (this.remainingEnemies <= 0) {
+    // ================================================================
+    // PASO 1: Detectar si el Spawner ya terminó de spawnear
+    // ================================================================
+    // Mientras el Spawner tenga spawns pendientes, isSpawning se mantiene true.
+    // Cuando se vacía la cola, marcamos isSpawning = false para que
+    // onEnemyDied() pueda finalizar la ronda cuando mueran todos los enemigos.
+    if (this.isSpawning && !this.spawner.hasPendingSpawns()) {
+      this.isSpawning = false;
+      console.log(
+        `[WaveManager] Spawning completado para ronda ${this.currentRound}. ` +
+        `Esperando a que mueran ${this.remainingEnemies} enemigos...`
+      );
+    }
+
+    // ================================================================
+    // PASO 2: Verificar si la ronda debe terminar
+    // ================================================================
+    // Solo finalizar si:
+    //   a) No hay spawns pendientes (isSpawning === false)
+    //   b) Todos los enemigos han muerto (remainingEnemies <= 0)
+    //
+    // Esto evita que updateSpawning() finalice la ronda prematuramente
+    // mientras el Spawner aún está creando enemigos.
+    if (!this.isSpawning && this.remainingEnemies <= 0) {
       this.endWave();
     }
   }

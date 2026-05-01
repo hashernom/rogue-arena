@@ -152,9 +152,15 @@ export class MeleeAttack {
     // Obtener dirección de ataque (siempre hacia adelante del personaje)
     const meleeChar = this.character as any;
     let forwardDirection: THREE.Vector3;
-    
+
+    // AUTO-AIM: si el personaje tiene auto-aim activo, usar dirección del modelo
+    // (el auto-aim rota el modelo hacia el objetivo, pero moveDirection puede
+    //  contener un valor stale del último movimiento del jugador)
+    if (meleeChar.autoAimPosition) {
+      forwardDirection = this.calculateForwardFromModel(meleeChar);
+    }
     // Opción 1: Usar dirección de movimiento si está disponible y no es cero
-    if (meleeChar.moveDirection && meleeChar.moveDirection.lengthSq() > 0.01) {
+    else if (meleeChar.moveDirection && meleeChar.moveDirection.lengthSq() > 0.01) {
       forwardDirection = meleeChar.moveDirection.clone();
       forwardDirection.y = 0;
       if (forwardDirection.lengthSq() > 0.01) {

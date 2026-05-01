@@ -136,6 +136,36 @@ export class UpgradeApplier {
         };
       }
 
+      case 'add_max_ammo': {
+        const ammoAmount = (params?.amount as number) ?? 5;
+        if (typeof (character as any).addMaxAmmo === 'function') {
+          (character as any).addMaxAmmo(ammoAmount);
+          return {
+            success: true,
+            message: `Capacidad de flechas +${ammoAmount}`,
+          };
+        }
+        return {
+          success: false,
+          message: 'Este personaje no usa munición',
+        };
+      }
+
+      case 'reduce_reload_time': {
+        const reloadAmount = (params?.amount as number) ?? 1.0;
+        if (typeof (character as any).reduceReloadTime === 'function') {
+          (character as any).reduceReloadTime(reloadAmount);
+          return {
+            success: true,
+            message: `Tiempo de recarga -${reloadAmount}s`,
+          };
+        }
+        return {
+          success: false,
+          message: 'Este personaje no usa recarga',
+        };
+      }
+
       default:
         return {
           success: false,

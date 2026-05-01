@@ -14,8 +14,13 @@ export type InputState = {
 /**
  * Sistema de input desacoplado que normaliza teclado y gamepad.
  * Captura el estado una vez por frame y lo expone a través de getState.
+ * Soporta modo local (P2 con teclas diferentes para habilidad) y online.
  */
 export class InputManager {
+  /** Modo de juego actual — determina el mapeo de teclas */
+  private _mode: 'local' | 'online' = 'local';
+
+  /** Mapeo base (teclas compartidas en ambos modos) */
   private static readonly KEY_MAP = {
     // Player 1 (WASD + Space/Q/E)
     p1_up: 'KeyW',
@@ -26,14 +31,11 @@ export class InputManager {
     p1_abilityQ: 'KeyQ',
     p1_abilityE: 'KeyE',
 
-    // Player 2 (Arrow keys + RShift/P/[)
+    // Player 2 base (Arrow keys)
     p2_up: 'ArrowUp',
     p2_down: 'ArrowDown',
     p2_left: 'ArrowLeft',
     p2_right: 'ArrowRight',
-    p2_attack: 'KeyJ',
-    p2_abilityQ: 'KeyP',
-    p2_abilityE: 'BracketLeft',
 
     // Ready-up keys (entre rondas)
     p1_ready: 'KeyR',
@@ -42,13 +44,31 @@ export class InputManager {
     // Debug keys (solo en modo desarrollo)
     debug_toggle_melee: 'KeyM',
     debug_toggle_physics: 'F1',
-
-    // Skip round key (fuerza inicio de siguiente ronda)
-    skip_round: 'F2',
   } as const;
 
-  /** Tipo de todas las teclas de juego posibles */
-  private static readonly GAME_KEYS = Object.values(InputManager.KEY_MAP) as readonly string[];
+  /**
+   * Overrides de teclas para Player 2 según el modo de juego.
+   * En LOCAL: J es habilidad (no ataque), P no se usa
+   * En ONLINE: P2 state no se usa (el remoto envía su input por red)
+   */
+  private static readonly KEY_MAP_P2_LOCAL = {
+    p2_attack: null,          // Sin ataque manual — auto-aim
+    p2_abilityQ: 'KeyJ',      // J = habilidad para ADC en local
+    p2_abilityE: 'BracketLeft',
+  } as const;
+
+  private static readonly KEY_MAP_P2_ONLINE = {
+    p2_attack: 'KeyJ',
+    p2_abilityQ: 'KeyQ',      // En online no se usa, pero por consistencia
+    p2_abilityE: 'BracketLeft',
+  } as const;
+
+  /** Tipo de todas las teclas de juego posibles (incluye modo-específicas de P2) */
+  private static readonly GAME_KEYS: readonly string[] = [
+    ...Object.values(InputManager.KEY_MAP),
+    ...Object.values(InputManager.KEY_MAP_P2_LOCAL).filter(k => k !== null) as string[],
+    ...Object.values(InputManager.KEY_MAP_P2_ONLINE),
+  ];
 
   private keys: Set<string>;
   private previousKeys: Set<string>;
@@ -70,6 +90,21 @@ export class InputManager {
 
     this.setupEventListeners();
     this.setupGamepadPolling();
+  }
+
+  /**
+   * Establece el modo de juego para ajustar el mapeo de teclas de P2.
+   * - 'local': P2 usa J para habilidad (auto-aim para ataques)
+   * - 'online': P2 state no se usa (el remoto envía su input)
+   */
+  public setMode(mode: 'local' | 'online'): void {
+    this._mode = mode;
+    console.log(`[InputManager] Modo cambiado a: ${mode}`);
+  }
+
+  /** Obtiene el modo actual */
+  public getMode(): 'local' | 'online' {
+    return this._mode;
   }
 
   /**
@@ -183,10 +218,10 @@ export class InputManager {
   private updateFromKeyboard(): void {
     const { p1_up, p1_down, p1_left, p1_right, p1_attack, p1_abilityQ, p1_abilityE } =
       InputManager.KEY_MAP;
-    const { p2_up, p2_down, p2_left, p2_right, p2_attack, p2_abilityQ, p2_abilityE } =
+    const { p2_up, p2_down, p2_left, p2_right } =
       InputManager.KEY_MAP;
 
-    // Player 1
+    // Player 1 (siempre igual en ambos modos)
     const p1MoveX = (this.keys.has(p1_right) ? 1 : 0) - (this.keys.has(p1_left) ? 1 : 0);
     const p1MoveY = (this.keys.has(p1_up) ? 1 : 0) - (this.keys.has(p1_down) ? 1 : 0);
     const p1MoveDir = new THREE.Vector2(p1MoveX, p1MoveY).normalize();
@@ -196,15 +231,20 @@ export class InputManager {
     this.states[1].abilityQ = this.keys.has(p1_abilityQ);
     this.states[1].abilityE = this.keys.has(p1_abilityE);
 
-    // Player 2
+    // Player 2 — mapeo según el modo de juego
+    const p2Keys = this._mode === 'local'
+      ? InputManager.KEY_MAP_P2_LOCAL
+      : InputManager.KEY_MAP_P2_ONLINE;
+
     const p2MoveX = (this.keys.has(p2_right) ? 1 : 0) - (this.keys.has(p2_left) ? 1 : 0);
     const p2MoveY = (this.keys.has(p2_up) ? 1 : 0) - (this.keys.has(p2_down) ? 1 : 0);
     const p2MoveDir = new THREE.Vector2(p2MoveX, p2MoveY).normalize();
 
     this.states[2].moveDir.copy(p2MoveDir);
-    this.states[2].attacking = this.keys.has(p2_attack);
-    this.states[2].abilityQ = this.keys.has(p2_abilityQ);
-    this.states[2].abilityE = this.keys.has(p2_abilityE);
+    // En local, p2_attack es null (auto-aim), así que attacking siempre false desde teclado
+    this.states[2].attacking = p2Keys.p2_attack !== null ? this.keys.has(p2Keys.p2_attack) : false;
+    this.states[2].abilityQ = this.keys.has(p2Keys.p2_abilityQ);
+    this.states[2].abilityE = this.keys.has(p2Keys.p2_abilityE);
   }
 
   /**

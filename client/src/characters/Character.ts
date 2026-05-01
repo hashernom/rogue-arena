@@ -229,6 +229,13 @@ export abstract class Character {
   }
 
   /**
+   * Obtiene el HP actual del personaje.
+   */
+  getCurrentHp(): number {
+    return this.statsSystem.getStat('hp');
+  }
+
+  /**
    * Mata al personaje y emite el evento correspondiente.
    * Remueve el cuerpo físico de Rapier para que los enemigos no
    * sigan orbitando alrededor del punto de muerte.

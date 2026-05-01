@@ -71,6 +71,118 @@
       "price": 50,
       "icon": "elixir",
       "effect": { "type": "special", "specialId": "double_drop_next_wave", "params": { "multiplier": 2 } }
+    },
+    {
+      "id": "greater_quiver",
+      "name": "Aljaba Mayor",
+      "description": "+5 flechas de capacidad máxima",
+      "price": 35,
+      "icon": "quiver",
+      "effect": { "type": "special", "specialId": "add_max_ammo", "params": { "amount": 5 } }
+    },
+    {
+      "id": "reinforced_bowstring",
+      "name": "Cuerda Reforzada",
+      "description": "-1.0s de tiempo de recarga (mín. 0.5s)",
+      "price": 40,
+      "icon": "bowstring",
+      "effect": { "type": "special", "specialId": "reduce_reload_time", "params": { "amount": 1.0 } }
+    },
+    {
+      "id": "longbow_grip",
+      "name": "Empuñadura de Alcance",
+      "description": "+3 de rango de disparo permanente",
+      "price": 30,
+      "icon": "bow",
+      "effect": { "type": "statModifier", "stat": "range", "value": 3, "modType": "addFlat" }
+    },
+    {
+      "id": "iron_helmet",
+      "name": "Yelmo de Hierro",
+      "description": "+8 armadura permanente",
+      "price": 30,
+      "icon": "helmet",
+      "effect": { "type": "statModifier", "stat": "armor", "value": 8, "modType": "addFlat" }
+    },
+    {
+      "id": "warrior_belt",
+      "name": "Cinturón de Guerrero",
+      "description": "+40 HP máximo permanente",
+      "price": 35,
+      "icon": "belt",
+      "effect": { "type": "statModifier", "stat": "maxHp", "value": 40, "modType": "addFlat" }
+    },
+    {
+      "id": "assassin_blade",
+      "name": "Hoja de Asesino",
+      "description": "+12 daño permanente",
+      "price": 35,
+      "icon": "blade",
+      "effect": { "type": "statModifier", "stat": "damage", "value": 12, "modType": "addFlat" }
+    },
+    {
+      "id": "hunter_gloves",
+      "name": "Guantes de Cazador",
+      "description": "+0.4 velocidad de ataque",
+      "price": 40,
+      "icon": "gloves",
+      "effect": { "type": "statModifier", "stat": "attackSpeed", "value": 0.4, "modType": "addFlat" }
+    },
+    {
+      "id": "sprint_greaves",
+      "name": "Grebas de Sprint",
+      "description": "+0.8 m/s de velocidad",
+      "price": 35,
+      "icon": "greaves",
+      "effect": { "type": "statModifier", "stat": "speed", "value": 0.8, "modType": "addFlat" }
+    },
+    {
+      "id": "eagle_eye",
+      "name": "Ojo de Águila",
+      "description": "+4 de rango de disparo permanente",
+      "price": 35,
+      "icon": "eye",
+      "effect": { "type": "statModifier", "stat": "range", "value": 4, "modType": "addFlat" }
+    },
+    {
+      "id": "vampiric_ring",
+      "name": "Anillo Vampírico",
+      "description": "Cura 8 HP al matar un enemigo",
+      "price": 40,
+      "icon": "ring",
+      "effect": { "type": "reactive", "trigger": "onKill", "action": "heal", "value": 8 }
+    },
+    {
+      "id": "lucky_coin",
+      "name": "Moneda de la Suerte",
+      "description": "15% de chance de golpe crítico al recibir daño",
+      "price": 45,
+      "icon": "coin",
+      "effect": { "type": "reactive", "trigger": "onHit", "action": "critChance", "value": 15 }
+    },
+    {
+      "id": "adrenaline_vial",
+      "name": "Frasco de Adrenalina",
+      "description": "+25% velocidad al bajar del 20% de HP por 3s",
+      "price": 40,
+      "icon": "vial",
+      "effect": { "type": "reactive", "trigger": "onLowHP", "action": "speedBoost", "value": 25 }
+    },
+    {
+      "id": "golden_elixir",
+      "name": "Elixir Dorado",
+      "description": "×3 drops de monedas la próxima ronda",
+      "price": 60,
+      "icon": "golden",
+      "effect": { "type": "special", "specialId": "double_drop_next_wave", "params": { "multiplier": 3 } }
+    },
+    {
+      "id": "ammo_satchel",
+      "name": "Cartuchera de Munición",
+      "description": "+8 flechas de capacidad máxima",
+      "price": 45,
+      "icon": "satchel",
+      "effect": { "type": "special", "specialId": "add_max_ammo", "params": { "amount": 8 } }
     }
   ]
 }

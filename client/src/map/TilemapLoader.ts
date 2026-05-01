@@ -92,7 +92,7 @@ export class TilemapLoader {
         { x: 3, z: 0 },
       ];
       const procObstacles = this.generateObstacleLayout(
-        8,
+        6,
         seed,
         config.size.width,
         playerSpawns,
@@ -158,14 +158,14 @@ export class TilemapLoader {
    * determinística usando el algoritmo Mulberry32.
    *
    * Reglas de colocación:
-   * - Mínimo 2 metros de separación entre obstáculos
+   * - Mínimo 8 metros de separación entre obstáculos (mapa esparcido)
    * - Mínimo 3 metros de distancia a los spawn points de jugadores
    * - Mínimo 2 metros de distancia a los spawn points de enemigos
    * - Mínimo 1 metro de distancia a las paredes de la arena
    * - Máximo 200 intentos por obstáculo para evitar loops infinitos
-   * - Tamaños entre 1×1 y 3×2, altura fija de 1.5m
+   * - Tamaños entre 1×2 y 3×2, altura fija de 4m
    *
-   * @param count   - Número de obstáculos a generar (N=10)
+   * @param count   - Número de obstáculos a generar (N=6)
    * @param seed    - Semilla entera para el PRNG
    * @param arenaSize - Tamaño de la arena (ancho = alto = arenaSize)
    * @param playerSpawns - Puntos de spawn de jugadores [(x,z)]
@@ -220,12 +220,12 @@ export class TilemapLoader {
         }
         if (!valid) continue;
 
-        // Validar separación entre obstáculos (min 4.5m para mejor esparcimiento)
+        // Validar separación entre obstáculos (min 8m para que queden esparcidos)
         for (const obs of obstacles) {
           const dx = x - obs.x;
           const dz = z - obs.z;
           const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist < 4.5) {
+          if (dist < 8.0) {
             valid = false;
             break;
           }

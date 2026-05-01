@@ -1,18 +1,13 @@
+import * as THREE from 'three';
 import { EventBus } from '../../engine/EventBus';
 import { Character } from '../Character';
 import { Enemy } from '../../enemies/Enemy';
 import { SceneManager } from '../../engine/SceneManager';
-import * as THREE from 'three';
 
 /**
- * Habilidad activa "Carga" para el Caballero (MeleeCharacter).
- *
- * Mecánica:
- * - Dash: durante 0.3s la velocidad del personaje es ×4 en la dirección de movimiento actual
- * - Aplica daño a todos los enemigos tocados durante el dash (detección por proximidad)
- * - Aplica knockback fuerte a los enemigos impactados
- * - Cooldown: 6 segundos con indicador visual en HUD
- * - Feedback visual: efecto de partículas/aura durante el dash
+ * Habilidad de carga (Q) para el personaje melee.
+ * El personaje se lanza hacia adelante dañando enemigos en su trayectoria.
+ * Incluye sistema de partículas rojas agresivas.
  */
 export class ChargeAbility {
   private eventBus: EventBus;
@@ -45,14 +40,17 @@ export class ChargeAbility {
   // Reducido de 4.0 a 2.0 para que solo afecte enemigos realmente cerca de la línea del dash
   private hitRadius: number = 2.0;
 
-  // --- Sistema de partículas rojas ---
+  // --- Sistema de partículas rojas (más agresivo) ---
   private particleMesh: THREE.Points | null = null;
   private particlePositions: Float32Array | null = null;
   private particleVelocities: Float32Array | null = null;
   private particleLifetimes: Float32Array | null = null;
-  private particleCount: number = 60; // aumentado de 30 a 60 para más densidad
+  private particleCount: number = 120; // duplicado de 60 a 120 para mucha más densidad
   private particleTimer: number = 0;
-  private particleSpawnInterval: number = 0.015; // cada 15ms (más frecuente)
+  private particleSpawnInterval: number = 0.006; // cada 6ms (antes 15ms) - estela mucho más densa
+
+  /** Referencia vinculada del handler para poder remover el listener correctamente. */
+  private _boundHandleAbilityActivation: (data: any) => void;
 
   constructor(
     eventBus: EventBus,
@@ -69,6 +67,7 @@ export class ChargeAbility {
       this.sceneManager = sceneManager;
     }
 
+    this._boundHandleAbilityActivation = this.handleAbilityActivation.bind(this);
     this.setupEventListeners();
   }
 
@@ -79,7 +78,7 @@ export class ChargeAbility {
     // Escuchar eventos de tecla Q (o botón de habilidad)
     // Esto se manejará desde el InputManager, pero por ahora usamos un evento personalizado
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.eventBus as any).on('player:abilityQ', this.handleAbilityActivation.bind(this));
+    (this.eventBus as any).on('player:abilityQ', this._boundHandleAbilityActivation);
   }
 
   /**
@@ -91,264 +90,188 @@ export class ChargeAbility {
     if (data.playerId !== this.playerId) return;
 
     // Verificar cooldown
-    if (this.isOnCooldown) {
-      console.log(
-        `[ChargeAbility] ${this.playerId} - Habilidad en cooldown (${this.cooldownTimer.toFixed(1)}s restantes)`
-      );
-      return;
-    }
+    if (this.isOnCooldown) return;
 
-    // Activar dash
+    // Evitar activación múltiple
+    if (this.isDashing) return;
+
+    // Verificar que el personaje esté vivo
+    if (this.character.getCurrentHp() <= 0) return;
+
+    console.log(`[ChargeAbility] ${this.playerId} - Activando dash!`);
     this.activateDash();
   }
 
   /**
-   * Activa el dash.
+   * Activa el dash: guarda dirección y estado inicial.
    */
   private activateDash(): void {
-    if (this.isDashing) return;
+    console.log(`[ChargeAbility] ${this.playerId} - activateDash()`);
 
-    console.log(`[ChargeAbility] ${this.playerId} - ¡Carga activada!`);
+    // Obtener la dirección del personaje
+    const charPos = this.getCharacterPositionVec();
+    this.dashStartPosition.copy(charPos);
 
-    // Iniciar estado de dash
+    // Obtener dirección hacia adelante del personaje (desde el modelo)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const characterAny = this.character as any;
+
+    let forwardDir = new THREE.Vector3(0, 0, 1);
+
+    if (characterAny.model) {
+      // Intentar obtener la dirección del modelo
+      const modelDir = new THREE.Vector3();
+      characterAny.model.getWorldDirection(modelDir);
+      if (modelDir.lengthSq() > 0.01) {
+        forwardDir.copy(modelDir);
+        // Aplanar la dirección (ignorar componente Y)
+        forwardDir.y = 0;
+        if (forwardDir.lengthSq() > 0.01) {
+          forwardDir.normalize();
+        } else {
+          forwardDir.set(0, 0, 1);
+        }
+      }
+    }
+
+    this.dashDirection.copy(forwardDir);
+
     this.isDashing = true;
     this.dashTimer = 0;
+    this.isOnCooldown = true;
+    this.cooldownTimer = 0;
     this.damagedEnemies.clear();
 
-    // Obtener dirección actual de movimiento del personaje
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const characterAny = this.character as any;
-    if (characterAny.moveDirection && characterAny.moveDirection.lengthSq() > 0.001) {
-      // Si el jugador se está moviendo, usar esa dirección
-      this.dashDirection.copy(characterAny.moveDirection).normalize();
-    } else if (
-      characterAny.lastMoveDirection &&
-      characterAny.lastMoveDirection.lengthSq() > 0.001
-    ) {
-      // Si está quieto, usar la última dirección de movimiento conocida
-      this.dashDirection.copy(characterAny.lastMoveDirection).normalize();
-    } else if (characterAny.model) {
-      // Fallback: usar la rotación del modelo
-      const forward = new THREE.Vector3(0, 0, -1);
-      forward.applyQuaternion(characterAny.model.quaternion);
-      forward.y = 0;
-      forward.normalize();
-      if (forward.lengthSq() > 0.001) {
-        this.dashDirection.copy(forward);
-      } else {
-        this.dashDirection.set(0, 0, -1);
-      }
-    } else {
-      // Fallback final: -Z (forward estándar THREE.js)
-      this.dashDirection.set(0, 0, -1);
-    }
-
-    // Guardar posición inicial del dash para detección por barrido
-    if (characterAny.physicsBody && characterAny.physicsWorld) {
-      const body = characterAny.physicsWorld.getBody(characterAny.physicsBody);
-      if (body) {
-        const t = body.translation();
-        this.dashStartPosition.set(t.x, t.y, t.z);
-      }
-    } else if (characterAny.model) {
-      this.dashStartPosition.copy(characterAny.model.position);
-    }
-
-    // Aplicar velocidad de dash al cuerpo físico
-    this.applyDashVelocity();
-
-    // Iniciar cooldown
-    this.isOnCooldown = true;
-    this.cooldownTimer = this.cooldownDuration;
-
-    // Emitir evento para feedback visual
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.eventBus as any).emit('ability:charge:activated', {
-      playerId: this.playerId,
-      position: this.getCharacterPosition(),
-      direction: this.dashDirection.toArray(),
-    });
-
-    // Activar efecto visual de partículas rojas
+    // Efecto visual
     this.activateVisualEffect();
+
+    console.log(`[ChargeAbility] ${this.playerId} - Dash iniciado, dirección:`, this.dashDirection);
   }
 
   /**
-   * Aplica la velocidad del dash al cuerpo físico del personaje.
+   * Aplica la velocidad del dash al personaje cada frame.
    */
   private applyDashVelocity(): void {
+    if (!this.isDashing) return;
+
+    const speed = this.character.getEffectiveStat('speed') * this.dashSpeedMultiplier;
+    const step = speed * 0.016; // Asumiendo 60 FPS
+
+    // Aplicar movimiento directamente a la posición del modelo
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const characterAny = this.character as any;
-    if (!characterAny.physicsBody || !characterAny.physicsWorld) return;
 
-    const body = characterAny.physicsWorld.getBody(characterAny.physicsBody);
-    if (!body) return;
-
-    const baseSpeed = this.character.getEffectiveStat('speed');
-    const dashSpeed = baseSpeed * this.dashSpeedMultiplier;
-
-    // Aplicar velocidad directamente al cuerpo físico
-    body.setLinvel(
-      {
-        x: this.dashDirection.x * dashSpeed,
-        y: 0,
-        z: this.dashDirection.z * dashSpeed,
-      },
-      true
-    );
+    if (characterAny.model) {
+      characterAny.model.position.x += this.dashDirection.x * step;
+      characterAny.model.position.z += this.dashDirection.z * step;
+    }
   }
 
   /**
-   * Obtiene la posición actual del personaje desde el cuerpo físico.
+   * Obtiene la posición actual del personaje para detección de enemigos.
    */
   private getCharacterPosition(): number[] {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const characterAny = this.character as any;
-    if (characterAny.physicsBody && characterAny.physicsWorld) {
-      const body = characterAny.physicsWorld.getBody(characterAny.physicsBody);
-      if (body) {
-        const pos = body.translation();
-        return [pos.x, pos.y, pos.z];
-      }
-    }
     if (characterAny.model) {
-      return [
-        characterAny.model.position.x,
-        characterAny.model.position.y,
-        characterAny.model.position.z,
-      ];
+      return [characterAny.model.position.x, characterAny.model.position.y, characterAny.model.position.z];
     }
     return [0, 0, 0];
   }
 
   /**
-   * Retorna la proporción de cooldown restante (0 = lista, 1 = cooldown completo).
+   * Obtiene el ratio de cooldown (0-1) para el HUD.
    */
   getCooldownRatio(): number {
-    if (!this.isOnCooldown) return 0;
-    return Math.min(1, Math.max(0, this.cooldownTimer / this.cooldownDuration));
+    if (!this.isOnCooldown) return 1;
+    return 1 - (this.cooldownTimer / this.cooldownDuration);
   }
 
   /**
-   * Indica si la habilidad está lista para usarse.
+   * Verifica si la habilidad está lista para usarse.
    */
   isReady(): boolean {
     return !this.isOnCooldown && !this.isDashing;
   }
 
   /**
-   * Actualiza el estado del dash y cooldown.
-   * Debe llamarse en cada frame desde el game loop.
+   * Actualiza el estado del dash cada frame.
    */
   public update(dt: number): void {
     // Actualizar cooldown
     if (this.isOnCooldown) {
-      this.cooldownTimer -= dt;
-      if (this.cooldownTimer <= 0) {
+      this.cooldownTimer += dt;
+      if (this.cooldownTimer >= this.cooldownDuration) {
         this.isOnCooldown = false;
         this.cooldownTimer = 0;
-        console.log(`[ChargeAbility] ${this.playerId} - Habilidad lista`);
+        console.log(`[ChargeAbility] ${this.playerId} - Cooldown terminado`);
       }
     }
-
-    // Actualizar partículas (incluso fuera del dash para que se desvanezcan)
-    this.updateParticles(dt);
 
     // Actualizar dash
     if (this.isDashing) {
       this.dashTimer += dt;
-
-      console.log(
-        `[ChargeAbility] Dash update: timer=${this.dashTimer.toFixed(3)}/${this.dashDuration}, ` +
-          `enemiesHit=${this.damagedEnemies.size}`
-      );
-
-      // Detectar enemigos cercanos por proximidad
-      this.detectNearbyEnemies();
-
-      // Mantener velocidad de dash en cada frame (por si el personaje frena)
       this.applyDashVelocity();
 
-      // Verificar si el dash ha terminado
+      // Detectar enemigos cercanos durante el dash
+      this.detectNearbyEnemies();
+
       if (this.dashTimer >= this.dashDuration) {
         this.endDash();
       }
     }
+
+    // Actualizar partículas
+    this.updateParticles(dt);
   }
 
   /**
-   * Detecta enemigos cercanos durante el dash usando distancia punto-a-línea (sweep).
-   * En lugar de verificar solo la posición actual, verifica si el enemigo está cerca
-   * de la trayectoria completa del dash (desde dashStartPosition en dirección dashDirection).
-   * Esto asegura que enemigos en el camino sean impactados aunque el dash sea muy rápido.
+   * Detecta enemigos cercanos durante el dash y les aplica daño.
    */
   private detectNearbyEnemies(): void {
-    // Obtener todos los enemigos activos
     const enemies = this.getActiveEnemies();
+    if (!enemies || enemies.length === 0) return;
 
-    console.log(
-      `[ChargeAbility] detectNearbyEnemies: ${enemies.length} enemigos activos, ` +
-        `dashStart=(${this.dashStartPosition.x.toFixed(1)}, ${this.dashStartPosition.z.toFixed(1)}), ` +
-        `dir=(${this.dashDirection.x.toFixed(2)}, ${this.dashDirection.z.toFixed(2)})`
-    );
-
-    // Punto inicial del barrido (dónde empezó el dash)
-    const P0 = this.dashStartPosition;
-    // Punto final estimado del barrido (trayectoria completa)
-    const dashLength = 15; // unidades estimadas de recorrido
-    const P1 = P0.clone().add(this.dashDirection.clone().multiplyScalar(dashLength));
-
-    // Vector de la línea de barrido
-    const lineVec = new THREE.Vector3().copy(P1).sub(P0);
-    const lineLenSq = lineVec.lengthSq();
+    const charPosVec = this.getCharacterPositionVec();
 
     for (const enemy of enemies) {
-      if (!enemy.isAlive()) continue;
+      if (this.damagedEnemies.has(enemy.id)) continue;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const enemyId = (enemy as any).id;
-      if (!enemyId) continue;
-
-      // Evitar daño múltiple al mismo enemigo
-      if (this.damagedEnemies.has(enemyId)) continue;
-
-      // Obtener posición del enemigo
       const enemyPos = enemy.getPosition();
       if (!enemyPos) continue;
 
-      // --- Calcular distancia del enemigo a la línea de trayectoria ---
-      let distToLine: number;
-      let closestPointOnLine: THREE.Vector3 | null = null;
+      // Calcular distancia del enemigo a la línea del dash
+      const toEnemy = new THREE.Vector3().copy(enemyPos).sub(this.dashStartPosition);
+      const dashDir = new THREE.Vector3().copy(this.dashDirection);
 
-      if (lineLenSq < 0.0001) {
-        // Si la línea es un punto, usar distancia directa
-        distToLine = P0.distanceTo(enemyPos);
-        closestPointOnLine = P0.clone();
-      } else {
-        // Proyección del enemigo sobre la línea
-        const t = new THREE.Vector3().copy(enemyPos).sub(P0).dot(lineVec) / lineLenSq;
-        // Clampear t a [0, 1] para mantenernos dentro del segmento
-        const clampedT = Math.max(0, Math.min(1, t));
-        // Punto más cercano en el segmento
-        closestPointOnLine = new THREE.Vector3()
-          .copy(P0)
-          .add(lineVec.clone().multiplyScalar(clampedT));
-        // Distancia del enemigo al punto más cercano
-        distToLine = enemyPos.distanceTo(closestPointOnLine);
-      }
+      // Proyección del enemigo sobre la línea del dash
+      const projection = toEnemy.dot(dashDir);
 
-      // Verificar si está dentro del radio de impacto
-      if (distToLine <= this.hitRadius) {
-        console.log(
-          `[ChargeAbility] ¡Impacto! ${enemyId} a ${distToLine.toFixed(2)}u ` +
-            `(hitRadius=${this.hitRadius})`
-        );
-        this.applyDamageToEnemy(enemy, enemyPos, closestPointOnLine);
-        this.damagedEnemies.add(enemyId);
-      } else {
-        console.log(
-          `[ChargeAbility] Enemigo ${enemyId} fuera de rango: ${distToLine.toFixed(2)}u > ${this.hitRadius}`
-        );
+      // Ignorar enemigos detrás del punto de inicio
+      if (projection < 0) continue;
+
+      // Punto más cercano en la línea del dash
+      const closestPoint = new THREE.Vector3().copy(this.dashStartPosition).add(
+        dashDir.multiplyScalar(projection)
+      );
+
+      // Distancia perpendicular desde el enemigo hasta la línea del dash
+      const perpendicularDist = enemyPos.distanceTo(closestPoint);
+
+      // También verificar que esté dentro del rango del dash
+      const dashProgress = this.dashTimer / this.dashDuration;
+      const currentDashPos = new THREE.Vector3().copy(this.dashStartPosition).add(
+        new THREE.Vector3().copy(this.dashDirection).multiplyScalar(
+          this.character.getEffectiveStat('speed') * this.dashSpeedMultiplier * this.dashTimer
+        )
+      );
+
+      // Distancia directa desde la posición actual del dash
+      const directDist = enemyPos.distanceTo(currentDashPos);
+
+      if (perpendicularDist <= this.hitRadius || directDist <= this.hitRadius * 1.5) {
+        // Aplicar daño
+        this.applyDamageToEnemy(enemy);
       }
     }
   }
@@ -359,137 +282,79 @@ export class ChargeAbility {
   private getCharacterPositionVec(): THREE.Vector3 {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const characterAny = this.character as any;
-    if (characterAny.physicsBody && characterAny.physicsWorld) {
-      const body = characterAny.physicsWorld.getBody(characterAny.physicsBody);
-      if (body) {
-        const t = body.translation();
-        return new THREE.Vector3(t.x, t.y, t.z);
-      }
+    if (characterAny.getPosition) {
+      const pos = characterAny.getPosition();
+      if (pos) return pos;
     }
     if (characterAny.model) {
-      return characterAny.model.position.clone();
+      return characterAny.model.position;
     }
     return new THREE.Vector3(0, 0, 0);
   }
 
   /**
-   * Aplica daño y knockback lateral a un enemigo.
-   * El knockback es perpendicular a la dirección del dash (empuja al enemigo hacia afuera).
+   * Aplica daño a un enemigo y emite eventos.
    */
   private applyDamageToEnemy(
-    enemy: Enemy,
-    enemyPos: THREE.Vector3,
-    closestPointOnLine: THREE.Vector3 | null
+    enemy: Enemy
   ): void {
-    const baseDamage = this.character.getEffectiveStat('damage');
-    const chargeDamage = baseDamage * 2.0; // Daño bonus ×2 por carga
+    const damage = this.character.getEffectiveStat('damage') * 1.5; // 150% del daño base
 
+    // Usar el pipeline de daño si está disponible (ataque cuerpo a cuerpo)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const enemyAny = enemy as any;
-    const enemyId = enemyAny.id;
-
-    console.log(`[ChargeAbility] ${this.playerId} - Daño a enemigo ${enemyId}: ${chargeDamage}`);
-
-    // APLICAR DAÑO REAL: llamar a takeDamage() directamente en el enemigo
-    // NOTA: El evento 'enemy:damage' es solo informativo (para UI/HUD),
-    // NO es un mecanismo para aplicar daño. El daño real se aplica llamando
-    // a enemy.takeDamage() directamente.
-    // Pasamos this.playerId como attackerId para tracking de kills.
-    enemy.takeDamage(chargeDamage, this.playerId);
-
-    // Acumular daño infligido para estadísticas de fin de partida
-    this.character.damageDealt += chargeDamage;
-
-    // Emitir evento informativo de daño (para UI, HUD, etc.)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.eventBus as any).emit('enemy:damage', {
-      enemyId,
-      damage: chargeDamage,
-      source: 'charge',
-      playerId: this.playerId,
-    });
-
-    // Aplicar knockback LATERAL: el enemigo es empujado hacia afuera desde la línea del dash
-    let knockbackDir: THREE.Vector3;
-
-    if (closestPointOnLine) {
-      // Dirección desde el punto más cercano en la línea hacia el enemigo (perpendicular al dash)
-      knockbackDir = enemyPos.clone().sub(closestPointOnLine);
-      if (knockbackDir.lengthSq() > 0.001) {
-        knockbackDir.normalize();
-      } else {
-        // Si el enemigo está exactamente sobre la línea, usar perpendicular al dash
-        knockbackDir = new THREE.Vector3(
-          this.dashDirection.z,
-          0,
-          -this.dashDirection.x
-        ).normalize();
-      }
+    const characterAny = this.character as any;
+    if (characterAny.damagePipeline) {
+      characterAny.damagePipeline.processDamage(
+        enemy,
+        damage,
+        this.playerId
+      );
     } else {
-      // Fallback: dirección perpendicular a la dirección del dash
-      knockbackDir = new THREE.Vector3(this.dashDirection.z, 0, -this.dashDirection.x).normalize();
+      enemy.takeDamage(damage, this.playerId);
     }
 
-    // Fuerza de knockback: 40 unidades/segundo para un impacto fuerte y visible
-    const knockbackStrength = 40;
-    const knockbackDuration = 0.6;
-    const knockbackForce = knockbackDir.multiplyScalar(knockbackStrength);
+    this.damagedEnemies.add(enemy.id);
 
-    // Aplicar knockback usando el método del Character
-    // NOTA: applyKnockback llama a disableSteering(), por lo que debemos
-    // programar el re-activación del steering después de la duración
-    enemy.applyKnockback(knockbackForce, knockbackDuration);
+    // Efecto visual: pequeño empuje hacia atrás
+    const enemyPos = enemy.getPosition();
+    if (enemyPos) {
+      const knockbackDir = new THREE.Vector3()
+        .copy(enemyPos)
+        .sub(this.getCharacterPositionVec())
+        .normalize()
+        .multiplyScalar(3);
+      enemy.applyKnockback(knockbackDir, 0.2);
+    }
 
-    // Programar re-activación del steering para que el enemigo no se congele
-    setTimeout(() => {
-      try {
-        if (enemy.isAlive()) {
-          enemy.enableSteering();
-        }
-      } catch {
-        // Ignorar errores si el enemigo ya no existe
-      }
-    }, knockbackDuration * 1000);
-
-    console.log(
-      `[ChargeAbility] Knockback lateral aplicado a ${enemyId}: ` +
-        `fuerza=(${knockbackForce.x.toFixed(1)}, ${knockbackForce.y.toFixed(1)}, ${knockbackForce.z.toFixed(1)})`
-    );
-
-    // Feedback visual de impacto
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.eventBus as any).emit('ability:charge:impact', {
+    // Emitir evento de daño
+    (this.eventBus as any).emit('player:damageDealt' as any, {
       playerId: this.playerId,
-      enemyId,
-      damage: chargeDamage,
+      enemyId: enemy.id,
+      damage,
     });
+
+    // Notificar al sistema de audio
+    (this.eventBus as any).emit('enemy:damaged' as any, {
+      enemyId: enemy.id,
+      damage,
+    });
+
+    setTimeout(() => {
+      console.log(`[ChargeAbility] ${this.playerId} - Daño aplicado a ${enemy.id}: ${damage}`);
+    }, 0);
   }
 
   /**
-   * Finaliza el dash.
+   * Termina el dash y limpia el estado.
    */
   private endDash(): void {
-    console.log(`[ChargeAbility] ${this.playerId} - Dash finalizado`);
-
     this.isDashing = false;
     this.dashTimer = 0;
     this.damagedEnemies.clear();
 
-    // Desactivar efecto visual
     this.deactivateVisualEffect();
 
-    // Emitir evento de finalización
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.eventBus as any).emit('ability:charge:ended', {
-      playerId: this.playerId,
-    });
-  }
-
-  /**
-   * Establece el SceneManager para poder agregar/remover partículas de la escena.
-   */
-  public setSceneManager(sm: SceneManager): void {
-    this.sceneManager = sm;
+    console.log(`[ChargeAbility] ${this.playerId} - Dash finalizado`);
   }
 
   /**
@@ -518,14 +383,15 @@ export class ChargeAbility {
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-    // Material rojo con opacidad
+    // Material rojo intenso con brillo
     const material = new THREE.PointsMaterial({
-      color: 0xff2200,
-      size: 0.6, // aumentado de 0.4 a 0.6
+      color: 0xff3300,
+      size: 1.2, // aumentado de 0.6 a 1.2 para partículas más grandes
       transparent: true,
-      opacity: 0.9, // aumentado de 0.8 a 0.9
+      opacity: 1.0, // aumentado de 0.9 a 1.0
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      sizeAttenuation: true,
     });
 
     this.particleMesh = new THREE.Points(geometry, material);
@@ -571,39 +437,38 @@ export class ChargeAbility {
       charPos = new THREE.Vector3(0, 0, 0);
     }
 
-    const count = this.particleCount;
+    const count = Math.min(80, this.particleCount); // burst con 80 partículas
+
     for (let i = 0; i < count; i++) {
-      // Posición aleatoria alrededor del personaje (radio 2.0, más dispersión)
-      const angle = Math.random() * Math.PI * 2;
-      const radius = Math.random() * 2.0;
-      const heightOffset = (Math.random() - 0.5) * 2.5;
+      const idx = Math.floor(Math.random() * this.particleCount);
+      const i3 = idx * 3;
 
-      this.particlePositions[i * 3] = charPos.x + Math.cos(angle) * radius;
-      this.particlePositions[i * 3 + 1] = charPos.y + 0.5 + heightOffset * 0.5;
-      this.particlePositions[i * 3 + 2] = charPos.z + Math.sin(angle) * radius;
+      // Posición alrededor del personaje con radio de explosión 3.0
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+      const radius = Math.random() * 3.0;
 
-      // Velocidad: hacia atrás (opuesta al dash) con más fuerza
-      const speed = 3 + Math.random() * 5;
-      this.particleVelocities[i * 3] = -this.dashDirection.x * speed + (Math.random() - 0.5) * 3;
-      this.particleVelocities[i * 3 + 1] = 1.5 + Math.random() * 3; // hacia arriba
-      this.particleVelocities[i * 3 + 2] =
-        -this.dashDirection.z * speed + (Math.random() - 0.5) * 3;
+      this.particlePositions[i3] = charPos.x + radius * Math.sin(phi) * Math.cos(theta);
+      this.particlePositions[i3 + 1] = charPos.y + Math.random() * 4.0; // altura hasta 4.0
+      this.particlePositions[i3 + 2] = charPos.z + radius * Math.sin(phi) * Math.sin(theta);
 
-      // Lifetime más largo (0.4 - 1.0 segundos)
-      this.particleLifetimes[i] = 0.4 + Math.random() * 0.6;
+      // Velocidad: explosión hacia afuera
+      const speed = 5 + Math.random() * 13;
+      this.particleVelocities[i3] = (this.particlePositions[i3] - charPos.x) * speed;
+      this.particleVelocities[i3 + 1] = (Math.random() - 0.5) * 8 + 3; // sesgo ascendente
+      this.particleVelocities[i3 + 2] = (this.particlePositions[i3 + 2] - charPos.z) * speed;
+
+      // Vida útil: 0.5 a 1.5 segundos
+      this.particleLifetimes[idx] = 0.5 + Math.random() * 1.0;
     }
 
-    // Actualizar geometry
-    if (this.particleMesh) {
-      const posAttr = this.particleMesh.geometry.attributes.position;
-      if (posAttr) {
-        posAttr.needsUpdate = true;
-      }
-    }
+    // Actualizar buffer de geometría
+    const positionAttr = this.particleMesh!.geometry.attributes.position;
+    positionAttr.needsUpdate = true;
   }
 
   /**
-   * Spawnea una partícula individual durante el dash (efecto de estela).
+   * Spawnea una partícula de estela durante el dash.
    */
   private spawnTrailParticle(): void {
     if (!this.particlePositions || !this.particleLifetimes || !this.particleVelocities) return;
@@ -614,135 +479,124 @@ export class ChargeAbility {
     if (characterAny.model) {
       charPos = characterAny.model.position;
     } else {
-      return;
+      charPos = new THREE.Vector3(0, 0, 0);
     }
 
-    // Encontrar una partícula inactiva (lifetime <= 0) para reutilizar
-    let found = -1;
+    // Buscar una partícula inactiva (lifetime <= 0) o reutilizar una al azar
+    let idx = -1;
     for (let i = 0; i < this.particleCount; i++) {
       if (this.particleLifetimes[i] <= 0) {
-        found = i;
+        idx = i;
         break;
       }
     }
-    if (found < 0) return;
+    if (idx === -1) {
+      // Si todas están activas, reutilizar la más vieja (aleatoria)
+      idx = Math.floor(Math.random() * this.particleCount);
+    }
 
-    const i = found;
+    const i3 = idx * 3;
 
-    // Posición: detrás del personaje (opuesta a la dirección del dash)
-    const offset = this.dashDirection
-      .clone()
-      .negate()
-      .multiplyScalar(0.5 + Math.random() * 1.5);
-    this.particlePositions[i * 3] = charPos.x + offset.x + (Math.random() - 0.5) * 0.8;
-    this.particlePositions[i * 3 + 1] = charPos.y + 0.3 + Math.random() * 1.2;
-    this.particlePositions[i * 3 + 2] = charPos.z + offset.z + (Math.random() - 0.5) * 0.8;
+    // Dispersión horizontal ±5, altura variable 0-4
+    const spread = 5.0;
 
-    // Velocidad: más dispersión
-    this.particleVelocities[i * 3] = (Math.random() - 0.5) * 2.5;
-    this.particleVelocities[i * 3 + 1] = 0.5 + Math.random() * 2.5;
-    this.particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
+    this.particlePositions[i3] = charPos.x + (Math.random() - 0.5) * spread;
+    this.particlePositions[i3 + 1] = charPos.y + Math.random() * 4.0;
+    this.particlePositions[i3 + 2] = charPos.z + (Math.random() - 0.5) * spread;
 
-    // Lifetime más largo
-    this.particleLifetimes[i] = 0.3 + Math.random() * 0.5;
+    // Velocidad: hacia arriba y ligeramente aleatoria
+    this.particleVelocities[i3] = (Math.random() - 0.5) * 3;
+    this.particleVelocities[i3 + 1] = 2 + Math.random() * 5;
+    this.particleVelocities[i3 + 2] = (Math.random() - 0.5) * 3;
+
+    // Vida útil
+    this.particleLifetimes[idx] = 0.5 + Math.random() * 1.0;
   }
 
   /**
-   * Actualiza las partículas cada frame.
+   * Actualiza la simulación de partículas.
    */
   private updateParticles(dt: number): void {
-    if (
-      !this.particleMesh ||
-      !this.particlePositions ||
-      !this.particleLifetimes ||
-      !this.particleVelocities
-    )
+    if (!this.particleMesh || !this.isDashing) {
+      // Si no hay dash, ocultar partículas gradualmente
+      if (this.particleMesh && !this.isDashing) {
+        // Dejar que las partículas activas terminen su ciclo
+      }
       return;
-    if (!this.particleMesh.visible) return;
+    }
 
-    // Spawnear nuevas partículas de estela periódicamente
+    // Spawnear nuevas partículas de estela
     this.particleTimer += dt;
-    if (this.particleTimer >= this.particleSpawnInterval) {
-      this.particleTimer = 0;
+    while (this.particleTimer >= this.particleSpawnInterval) {
+      this.particleTimer -= this.particleSpawnInterval;
       this.spawnTrailParticle();
     }
 
-    // Actualizar cada partícula
-    let allDead = true;
+    // Actualizar partículas existentes
+    const pos = this.particlePositions!;
+    const vel = this.particleVelocities!;
+    const life = this.particleLifetimes!;
+
+    let anyAlive = false;
     for (let i = 0; i < this.particleCount; i++) {
-      if (this.particleLifetimes[i] <= 0) continue;
-      allDead = false;
+      if (life[i] <= 0) continue;
 
-      // Reducir lifetime
-      this.particleLifetimes[i] -= dt;
+      const i3 = i * 3;
 
-      // Mover por velocidad
-      this.particlePositions[i * 3] += this.particleVelocities[i * 3] * dt;
-      this.particlePositions[i * 3 + 1] += this.particleVelocities[i * 3 + 1] * dt;
-      this.particlePositions[i * 3 + 2] += this.particleVelocities[i * 3 + 2] * dt;
+      // Reducir vida
+      life[i] -= dt;
 
-      // Desacelerar
-      this.particleVelocities[i * 3] *= 0.98;
-      this.particleVelocities[i * 3 + 1] *= 0.98;
-      this.particleVelocities[i * 3 + 2] *= 0.98;
-
-      // Si murió, ocultarla
-      if (this.particleLifetimes[i] <= 0) {
-        this.particlePositions[i * 3] = 0;
-        this.particlePositions[i * 3 + 1] = 0;
-        this.particlePositions[i * 3 + 2] = 0;
+      if (life[i] <= 0) {
+        life[i] = 0;
+        // Mover partícula fuera de la escena (inactiva)
+        pos[i3] = 0;
+        pos[i3 + 1] = -100;
+        pos[i3 + 2] = 0;
+        continue;
       }
+
+      anyAlive = true;
+
+      // Aplicar velocidad con fricción
+      vel[i3] *= 0.97;
+      vel[i3 + 1] *= 0.97;
+      vel[i3 + 2] *= 0.97;
+
+      // Gravedad suave
+      vel[i3 + 1] -= 2 * dt;
+
+      // Actualizar posición
+      pos[i3] += vel[i3] * dt;
+      pos[i3 + 1] += vel[i3 + 1] * dt;
+      pos[i3 + 2] += vel[i3 + 2] * dt;
     }
 
-    // Actualizar geometry
-    const posAttr = this.particleMesh.geometry.attributes.position;
-    if (posAttr) {
-      posAttr.needsUpdate = true;
-    }
-
-    // Ajustar opacidad del material basado en si hay partículas vivas
-    if (allDead) {
-      this.particleMesh.visible = false;
+    // Marcar buffer para actualización
+    if (anyAlive) {
+      const positionAttr = this.particleMesh.geometry.attributes.position;
+      if (positionAttr) {
+        positionAttr.needsUpdate = true;
+      }
     }
   }
 
   /**
-   * Desactiva el efecto visual del dash.
+   * Desactiva el efecto visual.
    */
   private deactivateVisualEffect(): void {
-    console.log(`[ChargeAbility] ${this.playerId} - Efecto visual desactivado`);
-
     if (this.particleMesh) {
       this.particleMesh.visible = false;
     }
   }
 
   /**
-   * Método para activar la habilidad manualmente (desde el InputManager).
+   * Activa la habilidad desde el exterior (por ejemplo, desde el personaje).
    */
   public activate(): void {
-    this.handleAbilityActivation({ playerId: this.playerId });
-  }
-
-  /**
-   * Verifica si la habilidad está en cooldown.
-   */
-  public isAbilityReady(): boolean {
-    return !this.isOnCooldown;
-  }
-
-  /**
-   * Obtiene el tiempo restante de cooldown.
-   */
-  public getCooldownRemaining(): number {
-    return this.cooldownTimer;
-  }
-
-  /**
-   * Obtiene el porcentaje de cooldown (0-1).
-   */
-  public getCooldownPercent(): number {
-    return this.cooldownTimer / this.cooldownDuration;
+    if (this.isOnCooldown) return;
+    if (this.isDashing) return;
+    if (this.character.getCurrentHp() <= 0) return;
+    this.activateDash();
   }
 
   /**
@@ -753,15 +607,35 @@ export class ChargeAbility {
   }
 
   /**
+   * Establece el SceneManager para el sistema de partículas.
+   */
+  public setSceneManager(sm: SceneManager): void {
+    this.sceneManager = sm;
+  }
+
+  /**
    * Limpia recursos (para cuando el personaje muere o se destruye).
    */
   public dispose(): void {
-    // Limpiar listeners
+    // Limpiar listeners usando la referencia almacenada
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.eventBus as any).off('player:abilityQ', this.handleAbilityActivation.bind(this));
+    (this.eventBus as any).off('player:abilityQ', this._boundHandleAbilityActivation);
 
     if (this.isDashing) {
       this.endDash();
+    }
+
+    // Limpiar sistema de partículas (geometry + material)
+    if (this.particleMesh) {
+      this.particleMesh.geometry.dispose();
+      (this.particleMesh.material as THREE.Material).dispose();
+      if (this.sceneManager) {
+        this.sceneManager.remove(this.particleMesh);
+      }
+      this.particleMesh = null;
+      this.particlePositions = null;
+      this.particleVelocities = null;
+      this.particleLifetimes = null;
     }
   }
 }
