@@ -57,7 +57,7 @@ export class GameServer {
       },
       // Heartbeat agresivo para evitar que Railway/Netlify proxy terminen conexiones idle
       pingInterval: 5_000,
-      pingTimeout: 3_000,
+      pingTimeout: 5_000,
       transports: ['websocket', 'polling'],
     });
 

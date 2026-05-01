@@ -1273,8 +1273,20 @@ const connectionManager = new ConnectionManager(
         console.log(`[Sync] Local: ${localPlayerId}, Remoto: ${remotePlayerId}`);
       }
 
+      // Timeout de seguridad: si initGameWithPhysics no completa en 30s, warning
+      const initTimeout = setTimeout(() => {
+        console.warn('[Main] ⚠️ initGameWithPhysics tardó más de 30s — posible cuelgue en carga de assets');
+        showNotification('Error al cargar assets del juego', 'error');
+      }, 30_000);
+
       // Iniciar el juego real (Three.js, Rapier, etc.)
-      void initGameWithPhysics();
+      void initGameWithPhysics().then(() => {
+        clearTimeout(initTimeout);
+      }).catch(err => {
+        clearTimeout(initTimeout);
+        console.error('[Main] ❌ initGameWithPhysics falló:', err);
+        showNotification('Error al inicializar el juego: ' + err.message, 'error');
+      });
     },
     onGameState: snapshot => {
       // Guardar el último snapshot para procesarlo en el fixed update

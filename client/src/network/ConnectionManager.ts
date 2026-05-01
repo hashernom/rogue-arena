@@ -160,6 +160,8 @@ export class ConnectionManager {
     this.socket.on('game:started', (data: { code: string; players: RoomData['players']; seed?: number }) => {
       console.log(`[ConnectionManager] Juego iniciado en sala ${data.code}${data.seed !== undefined ? ` (seed=${data.seed})` : ''}`);
       this.callbacks.onGameStarted?.(data);
+      this.startHeartbeat();
+      this.setStatus('connected');
     });
 
     this.socket.on(SocketEvents.GAME_STATE, (snapshot: GameStateSnapshot) => {

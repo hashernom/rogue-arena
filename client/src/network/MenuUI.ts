@@ -280,7 +280,19 @@ export class MenuUI {
   private async handleStartGame(): Promise<void> {
     this.startBtn.disabled = true;
     this.startBtn.textContent = '⏳ Iniciando...';
-    const result = await this.connectionManager.startGame();
+
+    // Timeout de seguridad: si el servidor no responde en 15s, mostrar error
+    const timeoutPromise = new Promise<{ success: false; error: string }>(resolve => {
+      setTimeout(() => {
+        resolve({ success: false, error: 'Tiempo de espera agotado. Reintenta.' });
+      }, 15_000);
+    });
+
+    const result = await Promise.race([
+      this.connectionManager.startGame(),
+      timeoutPromise,
+    ]);
+
     if (!result.success) {
       this.showError(result.error || 'Error al iniciar');
       this.startBtn.disabled = false;
