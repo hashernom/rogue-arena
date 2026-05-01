@@ -20,8 +20,10 @@ const CORS_ORIGINS = [
   'http://localhost:5173',  // Vite dev
   'http://localhost:4173',  // Vite preview
   'http://localhost:3001',  // Self (para debugging)
-  // Netlify production
+  // Netlify production (legacy)
   'https://rogue-arena.netlify.app',
+  // Vercel production
+  'https://rogue-arena.vercel.app',
 ];
 
 // Dominio de producción custom (si está configurado en Railway)
