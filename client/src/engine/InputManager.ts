@@ -123,8 +123,25 @@ export class InputManager {
   /**
    * Configura listeners de teclado y eventos de foco.
    */
+  /**
+   * Verifica si el foco actual está en un input de texto.
+   * En ese caso NO se deben interceptar las teclas para permitir escribir.
+   */
+  private isInputFocused(): boolean {
+    const active = document.activeElement;
+    if (!active) return false;
+    const tag = active.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || (active as HTMLElement).isContentEditable;
+  }
+
   private setupEventListeners(): void {
     window.addEventListener('keydown', e => {
+      // No interceptar si el usuario está escribiendo en un input
+      if (this.isInputFocused()) {
+        // Aún así, registrar la tecla para inputs del juego (como ready-up)
+        this.keys.add(e.code);
+        return;
+      }
       if (this.isGameKey(e.code)) {
         e.preventDefault();
       }
@@ -132,6 +149,10 @@ export class InputManager {
     });
 
     window.addEventListener('keyup', e => {
+      if (this.isInputFocused()) {
+        this.keys.delete(e.code);
+        return;
+      }
       if (this.isGameKey(e.code)) {
         e.preventDefault();
       }

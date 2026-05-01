@@ -20,11 +20,19 @@ const CORS_ORIGINS = [
   'http://localhost:5173',  // Vite dev
   'http://localhost:4173',  // Vite preview
   'http://localhost:3001',  // Self (para debugging)
+  // Netlify production
+  'https://rogue-arena.netlify.app',
 ];
 
-// Dominio de producción (si está configurado)
+// Dominio de producción custom (si está configurado en Railway)
 if (process.env.CLIENT_ORIGIN) {
-  CORS_ORIGINS.push(process.env.CLIENT_ORIGIN);
+  // Si se configura como '*' permite cualquier origin (útil para preview branches)
+  if (process.env.CLIENT_ORIGIN === '*') {
+    CORS_ORIGINS.length = 0; // Vaciar
+    CORS_ORIGINS.push('*');  // Permitir todos
+  } else {
+    CORS_ORIGINS.push(process.env.CLIENT_ORIGIN);
+  }
 }
 
 // ============================================================
