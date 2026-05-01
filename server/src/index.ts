@@ -72,6 +72,7 @@ httpServer.listen(PORT, HOST, () => {
   logger.info(`Health check: http://localhost:${PORT}/health`);
   logger.info(`CORS origins: ${CORS_ORIGINS.join(', ')}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info(`CLIENT_ORIGIN: ${process.env.CLIENT_ORIGIN || 'no configurado'}`);
 });
 
 // ============================================================
@@ -86,7 +87,3 @@ httpServer.on('error', (err: NodeJS.ErrnoException) => {
   }
   process.exit(1);
 });
-
-// Logs de configuración al iniciar
-logger.info(`CLIENT_ORIGIN: ${process.env.CLIENT_ORIGIN || 'no configurado'}`);
-logger.info(`PORT: ${PORT}, HOST: ${HOST}, NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
