@@ -43,6 +43,19 @@ if (process.env.CLIENT_ORIGIN) {
 
 const app = express();
 
+// Middleware CORS manual - permite TODOS los orígenes
+// Necesario para que Express también responda con headers CORS
+app.use((_req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (_req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
+
 // Health check endpoint
 app.get('/health', (_req, res) => {
   res.json({
@@ -64,14 +77,21 @@ app.get('/metrics', (_req, res) => {
   });
 });
 
-const httpServer = createServer(app);
+// Crear HTTP server SIN requestListener para que Socket.io se adjunte primero
+const httpServer = createServer();
 
-// Crear GameServer (inicializa Socket.io + RoomManager + GameState)
+// Adjuntar GameServer (Socket.io) PRIMERO - así maneja /socket.io/ antes que Express
 const gameServer = new GameServer(httpServer, {
   port: PORT,
   host: HOST,
   corsOrigins: CORS_ORIGINS,
 });
+
+// Adjuntar Express DESPUÉS de Socket.io - Express solo maneja /health y /metrics
+httpServer.on('request', app);
+
+// Log para diagnosticar si Socket.io está activo
+logger.info(`Socket.io path: /socket.io/`);
 
 // ============================================================
 // Startup
