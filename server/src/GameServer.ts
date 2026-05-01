@@ -51,7 +51,17 @@ export class GameServer {
     // Inicializar Socket.io
     this.io = new Server(this.httpServer, {
       cors: {
-        origin: this.config.corsOrigins,
+        origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+          // Sin origin en request no-browser
+          if (!origin) {
+            callback(null, true);
+            return;
+          }
+          // Permitir si está en la lista o es subdominio de vercel.app
+          const allowed = this.config.corsOrigins.some(o => origin === o) ||
+                          origin.endsWith('.vercel.app');
+          callback(null, allowed);
+        },
         methods: ['GET', 'POST'],
         credentials: true,
       },
